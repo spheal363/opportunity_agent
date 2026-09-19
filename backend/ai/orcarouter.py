@@ -66,7 +66,15 @@ class LLMResponse:
 
 
 class LLMError(Exception):
-    """LLM 呼び出しの失敗。"""
+    """LLM 呼び出しの失敗。
+
+    失敗するまでに消費した分を `usages` に載せる。失敗した Agent Run の
+    コストが 0 として扱われないようにするため（#26 のコスト記録）。
+    """
+
+    def __init__(self, *args: object) -> None:
+        super().__init__(*args)
+        self.usages: list[LLMUsage] = []
 
 
 class LLMConfigError(LLMError):
@@ -116,7 +124,9 @@ class OrcaRouterClient:
     ) -> None:
         self._settings = settings or get_settings()
         self._timeout = timeout
-        self._client = client
+        # 遅延生成にすると、BackgroundTask が同時に走ったときに 2 つ生成され
+        # 片方が close されないまま leak する。最初から作る。
+        self._client = client if client is not None else httpx.Client(timeout=timeout)
         self._owns_client = client is None
 
     # -- 設定 ------------------------------------------------------------
@@ -144,11 +154,6 @@ class OrcaRouterClient:
             raise LLMConfigError("ORCAROUTER_API_KEY が設定されていません")
         if not self._settings.orcarouter_base_url:
             raise LLMConfigError("ORCAROUTER_BASE_URL が設定されていません")
-
-    def _http(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(timeout=self._timeout)
-        return self._client
 
     # -- 呼び出し --------------------------------------------------------
 
@@ -187,7 +192,7 @@ class OrcaRouterClient:
 
         started = time.perf_counter()
         try:
-            res = self._http().post(url, json=payload, headers=headers)
+            res = self._client.post(url, json=payload, headers=headers)
         except httpx.TimeoutException as exc:
             raise LLMRequestError(f"LLM がタイムアウトしました: {model}", retryable=True) from exc
         except httpx.HTTPError as exc:
@@ -239,16 +244,18 @@ class OrcaRouterClient:
         )
 
         if not content.strip():
-            raise EmptyResponseError(
+            error = EmptyResponseError(
                 f"LLM が空の応答を返しました: {model}"
                 f"（reasoning={usage.reasoning_tokens} tokens。max_tokens 不足の可能性）"
             )
+            # この回も課金されている。呼び出し元がコストを取りこぼさないよう載せる。
+            error.usages = [usage]
+            raise error
         return LLMResponse(content=content, usage=usage)
 
     def close(self) -> None:
-        if self._client is not None and self._owns_client:
+        if self._owns_client:
             self._client.close()
-            self._client = None
 
     def __enter__(self) -> OrcaRouterClient:
         return self

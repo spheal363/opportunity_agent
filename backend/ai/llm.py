@@ -25,6 +25,8 @@ from functools import lru_cache
 from pydantic import BaseModel, ValidationError
 
 from ai.orcarouter import (
+    DEFAULT_MAX_TOKENS,
+    EmptyResponseError,
     LLMError,
     LLMRequestError,
     LLMUsage,
@@ -38,6 +40,11 @@ logger = get_logger(__name__)
 # 既定の試行回数（初回 + リトライ）。ハッカソン中は待たせすぎない。
 DEFAULT_MAX_ATTEMPTS = 3
 _BACKOFF_SECONDS = (0.5, 1.5)
+
+# 空応答は reasoning が max_tokens を使い切ったサイン。同じ上限で再試行しても
+# 同じ結果になるため、再試行のたびに上限を倍にする。
+_EMPTY_RESPONSE_GROWTH = 2
+_MAX_TOKENS_CEILING = 16384
 
 # json_mode を付けていても稀にフェンスで包まれることがあるため防御的に剥がす。
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
@@ -110,6 +117,7 @@ def generate_structured[T: BaseModel](
     user: str,
     tier: ModelTier = ModelTier.STANDARD,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     client: OrcaRouterClient | None = None,
     temperature: float | None = None,
 ) -> LLMResult[T]:
@@ -122,9 +130,15 @@ def generate_structured[T: BaseModel](
 
     Validation に失敗したときは、**何が不正だったかを添えて**再度問い合わせる。
     同じ間違いを繰り返させないため。
+
+    空応答（reasoning が `max_tokens` を使い切った）で再試行するときは、
+    上限を倍にしてから投げ直す。同じ上限で繰り返しても結果は変わらないため。
+
+    失敗して例外を上げる場合も、そこまでに消費した分を例外の `usages` に載せる。
     """
     llm = client or get_client()
     usages: list[LLMUsage] = []
+    current_max_tokens = max_tokens
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
@@ -133,17 +147,32 @@ def generate_structured[T: BaseModel](
 
     for attempt in range(1, max_attempts + 1):
         try:
-            res = llm.chat(messages, tier=tier, json_mode=True, temperature=temperature)
+            res = llm.chat(
+                messages,
+                tier=tier,
+                json_mode=True,
+                max_tokens=current_max_tokens,
+                temperature=temperature,
+            )
         except LLMRequestError as exc:
             last_error = exc
+            # 空応答など、応答は返っているが例外になった回の消費を取りこぼさない。
+            usages.extend(exc.usages)
             if not exc.retryable or attempt == max_attempts:
+                exc.usages = list(usages)
                 raise
+            if isinstance(exc, EmptyResponseError):
+                # 同じ上限で投げ直しても同じ結果になる。枠を広げてから再試行する。
+                current_max_tokens = min(
+                    current_max_tokens * _EMPTY_RESPONSE_GROWTH, _MAX_TOKENS_CEILING
+                )
             _sleep(attempt)
             logger.warning(
-                "llm.retry reason=request attempt=%d/%d schema=%s",
+                "llm.retry reason=request attempt=%d/%d schema=%s max_tokens=%d",
                 attempt,
                 max_attempts,
                 schema.__name__,
+                current_max_tokens,
             )
             continue
 
@@ -185,10 +214,12 @@ def generate_structured[T: BaseModel](
         )
         _sleep(attempt)
 
-    raise LLMValidationError(
+    error = LLMValidationError(
         f"{schema.__name__} を {max_attempts} 回の試行で得られませんでした: "
         f"{_safe_reason(last_error)}"
     )
+    error.usages = list(usages)
+    raise error
 
 
 def _safe_reason(error: Exception | None) -> str:

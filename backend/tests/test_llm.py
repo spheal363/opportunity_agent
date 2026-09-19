@@ -13,7 +13,12 @@ from ai.llm import (
     generate_structured,
     untrusted_block,
 )
-from ai.orcarouter import LLMRequestError, ModelTier, OrcaRouterClient
+from ai.orcarouter import (
+    EmptyResponseError,
+    LLMRequestError,
+    ModelTier,
+    OrcaRouterClient,
+)
 from config import Settings
 
 
@@ -207,3 +212,99 @@ def test_retry_feedback_does_not_include_input_values():
     feedback = sent[1]["messages"][-1]["content"]
     assert "999" not in feedback
     assert "score" in feedback
+
+
+# --- PR #1 レビュー指摘への回帰テスト ---
+
+
+def _empty_response_client() -> tuple[OrcaRouterClient, list[int]]:
+    """常に空応答を返し、各回の max_tokens を記録するクライアント。"""
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body["max_tokens"])
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": ""}}],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": body["max_tokens"],
+                    "total_tokens": 10 + body["max_tokens"],
+                    "completion_tokens_details": {"reasoning_tokens": body["max_tokens"]},
+                },
+            },
+        )
+
+    return (
+        OrcaRouterClient(_settings(), client=httpx.Client(transport=httpx.MockTransport(handler))),
+        seen,
+    )
+
+
+def test_caller_can_set_max_tokens():
+    c, sent = _client_returning('{"goal_summary": "AI", "score": 1}')
+    generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=8000)
+    assert sent[0]["max_tokens"] == 8000
+
+
+def test_empty_response_retry_raises_the_limit():
+    """同じ上限で投げ直しても結果は変わらない。再試行のたびに倍にする。"""
+    c, seen = _empty_response_client()
+    with pytest.raises(EmptyResponseError):
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
+    assert seen == [2048, 4096, 8192]
+
+
+def test_empty_response_recovers_when_limit_is_enough():
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body["max_tokens"])
+        content = "" if body["max_tokens"] < 4096 else '{"goal_summary": "AI", "score": 1}'
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": content}}],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 2,
+                    "total_tokens": 3,
+                    "completion_tokens_details": {"reasoning_tokens": 0},
+                },
+            },
+        )
+
+    c = OrcaRouterClient(_settings(), client=httpx.Client(transport=httpx.MockTransport(handler)))
+    res = generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
+    assert res.data.score == 1
+    assert seen == [2048, 4096]
+
+
+def test_validation_failure_keeps_usages_on_the_exception():
+    """失敗した Run のコストが 0 として扱われないようにする（#26）。"""
+    c, _ = _client_returning('{"bad": 1}', '{"bad": 2}', '{"bad": 3}')
+    with pytest.raises(LLMValidationError) as exc:
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
+
+    assert len(exc.value.usages) == 3
+    assert sum(u.total_tokens for u in exc.value.usages) == 9
+
+
+def test_empty_response_error_keeps_usages():
+    """応答は返っているので課金されている。取りこぼさない。"""
+    c, _ = _empty_response_client()
+    with pytest.raises(EmptyResponseError) as exc:
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
+
+    assert len(exc.value.usages) == 3
+    assert sum(u.total_tokens for u in exc.value.usages) == (10 + 2048) + (10 + 4096) + (10 + 8192)
+
+
+def test_non_retryable_error_keeps_usages():
+    c, _ = _client_returning('{"bad": 1}', 401)
+    with pytest.raises(LLMRequestError) as exc:
+        generate_structured(schema=Sample, system="s", user="u", client=c)
+    assert len(exc.value.usages) == 1

@@ -184,3 +184,47 @@ def test_error_message_does_not_leak_api_key():
     with pytest.raises(LLMRequestError) as exc:
         _client(handler).chat([{"role": "user", "content": "hi"}])
     assert "sk-orca-test" not in str(exc.value)
+
+
+def test_http_client_is_created_once_without_race():
+    """BackgroundTask が同時に走っても httpx.Client を二重生成しない。"""
+    import threading
+
+    created = []
+    original = httpx.Client
+
+    class Counting(original):
+        def __init__(self, *a, **k):
+            created.append(1)
+            super().__init__(*a, **k)
+
+    httpx.Client = Counting
+    try:
+        c = OrcaRouterClient(_settings())
+        barrier = threading.Barrier(8)
+
+        def touch():
+            barrier.wait()
+            assert c._client is not None
+
+        threads = [threading.Thread(target=touch) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(created) == 1
+        c.close()
+    finally:
+        httpx.Client = original
+
+
+def test_empty_response_error_carries_its_usage():
+    c = _client(
+        lambda r: httpx.Response(
+            200, json=_ok_body("", completion_tokens_details={"reasoning_tokens": 32})
+        )
+    )
+    with pytest.raises(EmptyResponseError) as exc:
+        c.chat([{"role": "user", "content": "hi"}])
+    assert len(exc.value.usages) == 1
+    assert exc.value.usages[0].reasoning_tokens == 32
