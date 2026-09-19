@@ -86,11 +86,11 @@ def parse_diff(diff: str) -> DiffIndex:
         if raw.startswith("diff --git "):
             path, old_path, deleted, in_hunk = None, None, False, False
             continue
-        if raw.startswith("--- "):
+        if not in_hunk and raw.startswith("--- "):
             source = raw[4:].strip()
             old_path = None if source == "/dev/null" else source.removeprefix("a/")
             continue
-        if raw.startswith("+++ "):
+        if not in_hunk and raw.startswith("+++ "):
             target = raw[4:].strip()
             # 全体削除されたファイルは +++ が /dev/null。--- 側のパスで LEFT だけ登録する。
             deleted = target == "/dev/null"
@@ -127,13 +127,21 @@ def parse_diff(diff: str) -> DiffIndex:
     return index
 
 
-def _gh(args: list[str], stdin: str | None = None) -> str:
+def _gh_try(args: list[str], stdin: str | None = None) -> tuple[bool, str]:
+    """gh を実行し、成否と出力を返す。呼び出し元が失敗を扱えるようにする。"""
     res = subprocess.run(
         ["gh", *args], input=stdin, capture_output=True, text=True, check=False
     )
     if res.returncode != 0:
-        sys.exit(f"gh {' '.join(args)} が失敗しました:\n{res.stderr.strip()}")
-    return res.stdout
+        return False, res.stderr.strip()
+    return True, res.stdout
+
+
+def _gh(args: list[str], stdin: str | None = None) -> str:
+    ok, out = _gh_try(args, stdin)
+    if not ok:
+        sys.exit(f"gh {' '.join(args)} が失敗しました:\n{out}")
+    return out
 
 
 def comment_body(f: dict) -> str:
@@ -148,8 +156,18 @@ def split(findings: list[dict], index: DiffIndex) -> tuple[list[dict], list[tupl
     fallback: list[tuple[dict, str]] = []
 
     for f in findings:
-        path, line = f.get("path"), f.get("line")
-        side = (f.get("side") or "RIGHT").upper()
+        path, raw_line = f.get("path"), f.get("line")
+        # LEFT 以外はすべて RIGHT に寄せる。想定外の値が payload に載ると
+        # GitHub が 422 を返して Review 全体が失敗するため。
+        side = "LEFT" if str(f.get("side") or "RIGHT").upper() == "LEFT" else "RIGHT"
+
+        # line は LLM が書くので数値でないことがある。落とさず fallback へ回す。
+        line: int | None
+        try:
+            line = None if raw_line is None else int(raw_line)
+        except (TypeError, ValueError):
+            fallback.append((f, f"line が数値ではありません（{raw_line!r}）"))
+            continue
 
         if not path:
             fallback.append((f, "ファイルを特定できない指摘"))
@@ -157,12 +175,10 @@ def split(findings: list[dict], index: DiffIndex) -> tuple[list[dict], list[tupl
             fallback.append((f, "行を特定できない指摘"))
         elif path not in index.paths():
             fallback.append((f, "この PR の差分に含まれないファイル"))
-        elif not index.allows(path, int(line), side):
+        elif not index.allows(path, line, side):
             fallback.append((f, f"{path}:{line} は diff の範囲外"))
         else:
-            inline.append(
-                {"path": path, "line": int(line), "side": side, "body": comment_body(f)}
-            )
+            inline.append({"path": path, "line": line, "side": side, "body": comment_body(f)})
     return inline, fallback
 
 
@@ -243,6 +259,25 @@ def load_replies(path: str) -> list[dict]:
     return data
 
 
+def resolve_event(pr: int, event: str) -> tuple[str, str]:
+    """自分が作成した PR では APPROVE も REQUEST_CHANGES も GitHub が拒否する。
+
+    そのまま投げると 422 になり、inline comment を含む Review 全体が失われる。
+    作成者が自分なら COMMENT へ倒し、本来の判定を本文の冒頭へ残す。
+    """
+    if event == "COMMENT":
+        return event, ""
+    author = json.loads(_gh(["pr", "view", str(pr), "--json", "author"]))["author"]["login"]
+    me = json.loads(_gh(["api", "user"]))["login"]
+    if author != me:
+        return event, ""
+    note = (
+        f"> **本来の判定は {event} です。** 自分が作成した PR には GitHub が "
+        f"{event} を付けさせないため（HTTP 422）、Comment として投稿しています。\n\n"
+    )
+    return "COMMENT", note
+
+
 def cmd_review(args: argparse.Namespace) -> None:
     findings = load_findings(args.findings)
     findings.sort(
@@ -255,14 +290,15 @@ def cmd_review(args: argparse.Namespace) -> None:
     index = parse_diff(_gh(["pr", "diff", str(args.pr)]))
     inline, fallback = split(findings, index)
 
+    event, note = resolve_event(args.pr, args.event)
     with open(args.body_file, encoding="utf-8") as fp:
-        body = fp.read().rstrip() + fallback_section(fallback)
+        body = note + fp.read().rstrip() + fallback_section(fallback)
     repo = json.loads(_gh(["repo", "view", "--json", "nameWithOwner"]))["nameWithOwner"]
-    payload = {"event": args.event, "body": body, "comments": inline}
+    payload = {"event": event, "body": body, "comments": inline}
 
     if args.dry_run:
         print(f"POST /repos/{repo}/pulls/{args.pr}/reviews")
-        print(f"  event    : {args.event}")
+        print(f"  event    : {event}" + (f"（指定は {args.event}）" if event != args.event else ""))
         print(f"  severity : {counts(findings) or '指摘なし'}")
         print(f"  inline   : {len(inline)} 件")
         for c in inline:
@@ -280,7 +316,7 @@ def cmd_review(args: argparse.Namespace) -> None:
         )
     )
     print(f"投稿しました: {res.get('html_url')}")
-    print(f"  event={args.event}  inline={len(inline)}  fallback={len(fallback)}")
+    print(f"  event={event}  inline={len(inline)}  fallback={len(fallback)}")
 
 
 def cmd_reply(args: argparse.Namespace) -> None:
@@ -299,18 +335,32 @@ def cmd_reply(args: argparse.Namespace) -> None:
             print(f"      id={r['comment_id']}  {len(r['body'])} 文字  {head}")
         return
 
+    # 途中で止めない。止めると、原因を直して再実行したときに成功済みの分を
+    # 二重投稿してしまう。全件試して最後に成否を id 単位で出す。
+    done: list[int] = []
+    failed: list[tuple[int, str]] = []
     for r in replies:
-        out = _gh(
+        cid = r["comment_id"]
+        ok, out = _gh_try(
             [
                 "api", "--method", "POST",
-                f"repos/{repo}/pulls/{args.pr}/comments/{r['comment_id']}/replies",
+                f"repos/{repo}/pulls/{args.pr}/comments/{cid}/replies",
                 "--input", "-",
             ],
             stdin=json.dumps({"body": r["body"]}),
         )
-        url = json.loads(out).get("html_url", "")
-        print(f"  返信しました id={r['comment_id']}  {url}")
-    print(f"{len(replies)} 件のスレッドへ返信しました。")
+        if ok:
+            done.append(cid)
+            print(f"  成功 id={cid}  {json.loads(out).get('html_url', '')}")
+        else:
+            failed.append((cid, out.splitlines()[0] if out else "不明なエラー"))
+            print(f"  失敗 id={cid}  {failed[-1][1]}", file=sys.stderr)
+
+    print(f"\n成功 {len(done)} 件 / 失敗 {len(failed)} 件")
+    if failed:
+        print("再実行するときは、成功した以下の id を replies.json から除くこと:", file=sys.stderr)
+        print(f"  {done}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main() -> None:

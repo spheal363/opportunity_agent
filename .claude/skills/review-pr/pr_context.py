@@ -56,23 +56,31 @@ def cmd_scope(args: argparse.Namespace) -> None:
         )
     )
     slug = repo_slug()
-    reviews = json.loads(_gh(["api", f"repos/{slug}/pulls/{args.pr}/reviews"]))
+    # --paginate だけだと複数ページの JSON 配列が連結されて壊れるため --slurp と併用する。
+    pages = json.loads(
+        _gh(["api", "--paginate", "--slurp", f"repos/{slug}/pulls/{args.pr}/reviews"])
+    )
+    reviews = [r for page in pages for r in page]
 
-    # 自分が以前に投稿したレビューのうち、最後のものの commit_id を起点にする。
-    mine = [r for r in reviews if r.get("commit_id")]
+    # **自分が**以前に投稿したレビューのうち、最後のものの commit_id を起点にする。
+    # 投稿者で絞らないと、相方が先にレビューしていた場合にその commit を起点にしてしまい、
+    # 自分がまだ見ていない commit が静かにレビュー対象から抜け落ちる。
+    me = json.loads(_gh(["api", "user"]))["login"]
+    mine = [r for r in reviews if r.get("commit_id") and (r.get("user") or {}).get("login") == me]
     last = mine[-1] if mine else None
     head = pr["headRefOid"]
 
     print(f"PR #{pr['number']}  {pr['state']}  {pr['headRefName']} -> {pr['baseRefName']}")
     print(f"  head            : {head[:12]}")
     print(f"  全体の差分      : {pr['changedFiles']} files  +{pr['additions']} / -{pr['deletions']}")
-    print(f"  過去のレビュー  : {len(reviews)} 件")
+    print(f"  過去のレビュー  : {len(reviews)} 件（うち自分 {len(mine)} 件）")
 
     if last is None:
         print()
         print("  → 初回レビュー。PR の全差分を対象にする。")
         print(f"     gh pr diff {args.pr}")
         return
+
 
     base = last["commit_id"]
     print(f"  前回レビュー    : {last['state']} @ {base[:12]}  ({last.get('submitted_at')})")
@@ -83,11 +91,12 @@ def cmd_scope(args: argparse.Namespace) -> None:
         return
 
     rng = f"{base}...{head}"
-    changed = _gh(["api", f"repos/{slug}/compare/{base}...{head}", "--jq", ".files[].filename"])
+    changed = _gh(["api", f"repos/{slug}/compare/{rng}", "--jq", ".files[].filename"])
     files = [f for f in changed.splitlines() if f]
     print()
     print("  → 再レビュー。**前回以降の差分だけ**を対象にする。")
-    print(f"     git diff {rng}")
+    # ローカル git に依存しない。fetch していないクローンや fork からの PR でも動く。
+    print(f'     gh api repos/{slug}/compare/{rng} -H "Accept: application/vnd.github.v3.diff"')
     print(f"     変更されたファイル: {len(files)} 件")
     for f in files:
         print(f"       {f}")
@@ -97,10 +106,11 @@ def cmd_scope(args: argparse.Namespace) -> None:
 
 
 _THREADS_QUERY = """
-query($owner:String!, $name:String!, $number:Int!) {
+query($owner:String!, $name:String!, $number:Int!, $after:String) {
   repository(owner:$owner, name:$name) {
     pullRequest(number:$number) {
-      reviewThreads(first:100) {
+      reviewThreads(first:100, after:$after) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
           isOutdated
@@ -120,16 +130,25 @@ query($owner:String!, $name:String!, $number:Int!) {
 
 def cmd_threads(args: argparse.Namespace) -> None:
     owner, name = repo_slug().split("/")
-    out = _gh(
-        [
+    nodes: list[dict] = []
+    cursor: str | None = None
+    # 100 件で打ち切らない。スレッドが増えると一部が表示されず、返信先を取りこぼす。
+    while True:
+        cmd = [
             "api", "graphql",
             "-f", f"query={_THREADS_QUERY}",
             "-F", f"owner={owner}",
             "-F", f"name={name}",
             "-F", f"number={args.pr}",
         ]
-    )
-    nodes = json.loads(out)["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+        if cursor:
+            cmd += ["-F", f"after={cursor}"]
+        threads = json.loads(_gh(cmd))["data"]["repository"]["pullRequest"]["reviewThreads"]
+        nodes.extend(threads["nodes"])
+        info = threads.get("pageInfo") or {}
+        if not info.get("hasNextPage"):
+            break
+        cursor = info["endCursor"]
     if not nodes:
         print("inline comment スレッドはありません。")
         return
@@ -142,7 +161,7 @@ def cmd_threads(args: argparse.Namespace) -> None:
         state = "resolved" if n["isResolved"] else "OPEN    "
         outdated = " [outdated]" if n["isOutdated"] else ""
         line = n["line"] or n["originalLine"]
-        head = (c.get("body") or "").splitlines()[0][:70]
+        head = ((c.get("body") or "").splitlines() or [""])[0][:70]
         print(f"  {state} id={c.get('databaseId')}  {n['path']}:{line}{outdated}")
         print(f"           {head}")
     print()

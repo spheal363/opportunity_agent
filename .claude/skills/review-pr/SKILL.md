@@ -43,8 +43,12 @@ gh pr diff <PR番号>
 
 再レビューなら `scope` が出した range だけを取る。**全差分を取り直さない。**
 
+`scope` が出力するコマンドをそのまま使う。**ローカルの `git diff` を使わない。**
+fetch していないクローンや fork からの PR では落ちる。
+
 ```bash
-git diff <前回レビューのcommit>...<head>
+gh api repos/<owner>/<repo>/compare/<前回レビューのcommit>...<head> \
+  -H "Accept: application/vnd.github.v3.diff"
 ```
 
 state が `OPEN` でなければ、その旨を伝えて止まる。
@@ -166,14 +170,23 @@ diff の範囲外の行を指定すると API が 422 を返して Review 全体
 **このスクリプトは `ask` に入れてある。** 実行時にユーザーの承認を求める。
 これは意図した設計なので、回避しようとしない。
 
-### 自分の PR は APPROVE できない
+### 自分の PR には APPROVE も REQUEST_CHANGES も付けられない
 
-GitHub は自分が作成した PR への Approve を拒否する
-（`Can not approve your own pull request`）。
+GitHub は自分が作成した PR への **Approve と Request changes の両方**を拒否する
+（HTTP 422）。**指摘があるとき（= 最も頻繁に通る経路）で必ず当たる。**
 
-APPROVE が失敗したら `--event COMMENT` で実行し直す。本文の冒頭に
-「問題は見つかりませんでした（自分の PR のため Approve ではなく Comment で投稿）」
-と書き添える。
+そのまま投げると Review 全体が失われ、inline comment もまとめて消える。
+
+**`post_review.py` が自動で処理する。** 作成者が自分なら `COMMENT` へ倒し、
+本文の冒頭に本来の判定を注記として入れる。
+
+```
+> **本来の判定は REQUEST_CHANGES です。** 自分が作成した PR には GitHub が
+> REQUEST_CHANGES を付けさせないため（HTTP 422）、Comment として投稿しています。
+```
+
+`--dry-run` の出力に `event : COMMENT（指定は REQUEST_CHANGES）` と出るので、
+倒されたかどうかはそこで分かる。判定自体は本来のものを指定すればよい。
 
 ## Review 本文の形式
 

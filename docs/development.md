@@ -86,7 +86,7 @@ lint / test は Stop hook が変更領域だけ自動実行する（`.claude/hoo
 PR を出したあとのレビューは `/review-pr <PR番号>` で通せる。
 reviewer Subagent が差分を読んで指摘し、その結果をメイン Agent が
 `post_review.py` 経由でまとめて投稿する（inline comments を 1 つの Review に束ねる）。
-reviewer 自身は GitHub へ書き込めない。
+reviewer 自身は GitHub へ書き込めない（hook による多層防御の 1 枚目であり、完全な保証ではない）。
 
 security review が**必要な変更**:
 

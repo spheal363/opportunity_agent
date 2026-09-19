@@ -20,14 +20,15 @@ r"""レビュー用 Subagent から外部への書き込みを禁止する PreTo
 
 これは多層防御の 1 枚目であり、完全な保証ではない。Bash がある以上、
 文字列照合で到達手段をすべて列挙することはできない。
-インタプリタのワンライナーと `api.github.com` への直接アクセスも塞いでいるが、
-「塞ぎ得ないものがある」前提で運用する。
+インタプリタの起動（ワンライナー・スクリプトファイルとも）、透過ラッパーの前置、
+`api.github.com` への直接アクセスも塞いでいるが、「塞ぎ得ないものがある」前提で運用する。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 
@@ -60,6 +61,17 @@ INTERPRETER_EVAL_FLAGS = {"-c", "-e", "--eval", "--exec", "-E"}
 # gh を介さず GitHub API へ到達する経路。
 HTTP_CLIENTS = {"curl", "wget", "http", "httpie", "xh"}
 
+# 引数を別コマンドとして実行する透過ラッパー。1 語前置しただけで判定を外れるため、
+# 実際のコマンドに辿り着くまで再帰的に読み飛ばす。
+WRAPPERS = {
+    "env", "command", "builtin", "exec", "nice", "nohup", "time", "timeout",
+    "xargs", "stdbuf", "sudo", "doas", "setsid", "ionice", "watch", "nocorrect",
+    "noglob", "script",
+}
+
+# python -m <module> の形でだけ許す module。レビュアーはテストと lint を回す。
+SAFE_PYTHON_MODULES = {"pytest", "ruff"}
+
 SHELL_OPERATORS = ("&&", "||", ";", "|", "&", "\n")
 
 
@@ -69,13 +81,47 @@ def deny(reason: str) -> None:
 
 
 def segments(command: str) -> list[str]:
-    """シェル演算子とコマンド置換で分割する。"""
-    text = command
-    for token in ("$(", "`", ")"):
-        text = text.replace(token, ";")
+    """シェル演算子とコマンド置換で分割する。
+
+    `)` を一律で区切りにすると `grep -n "def main()"` のような通常の読み取りが
+    引用符ごと分断され、shlex が失敗して fail-closed で拒否されてしまう。
+    コマンド置換は `$(...)` と `` `...` `` の対応した組だけを狙い、中身は
+    独立したセグメントとして残して検査対象にする。
+    """
+    text = re.sub(r"\$\(([^()]*)\)", r" ; \1 ; ", command)
+    text = re.sub(r"`([^`]*)`", r" ; \1 ; ", text)
     for op in SHELL_OPERATORS:
         text = text.replace(op, "\n")
     return [s for s in (line.strip() for line in text.split("\n")) if s]
+
+
+def unwrap(args: list[str]) -> list[str]:
+    """環境変数代入と透過ラッパーを読み飛ばし、実際に動くコマンドを返す。
+
+    `env gh pr merge` `timeout 10 gh pr review` `FOO=bar gh ...` のように、
+    1 語足すだけで判定を外れるのを防ぐ。
+    """
+    rest = list(args)
+    changed = True
+    while changed and rest:
+        changed = False
+
+        # VAR=VAL の連なり（env なしの前置代入）
+        while rest and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", rest[0]):
+            rest.pop(0)
+            changed = True
+
+        if rest and program_name(rest[0]) in WRAPPERS:
+            rest.pop(0)
+            changed = True
+            # ラッパー自身のオプション・秒数・代入を飛ばす
+            while rest and (
+                rest[0].startswith("-")
+                or re.fullmatch(r"\d+(\.\d+)?[smhd]?", rest[0])
+                or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", rest[0])
+            ):
+                rest.pop(0)
+    return rest
 
 
 def program_name(token: str) -> str:
@@ -130,11 +176,28 @@ def check_git(args: list[str]) -> None:
 
 
 def check_interpreter(program: str, args: list[str]) -> None:
+    """インタプリタの起動を拒否する。
+
+    ワンライナーだけでなく**スクリプトファイルの実行も**塞ぐ。レビュアーは
+    Bash でヒアドキュメントからファイルを作れるため、ファイル実行を許すと
+    文字列照合による制限がすべて無意味になる。
+
+    例外は `python -m pytest` / `python -m ruff` のみ。レビュアーが
+    テストと lint を回せる必要があるため。
+    """
+    positional = [a for a in args if not a.startswith("-")]
+    if "-m" in args and positional and positional[0] in SAFE_PYTHON_MODULES:
+        return
     if any(a in INTERPRETER_EVAL_FLAGS for a in args):
         deny(
             f"レビュアーは {program} のワンライナー実行を使えません。"
             "任意コードを実行できるため、書き込みの制限を回避できてしまいます。"
         )
+    deny(
+        f"レビュアーは {program} を起動できません。"
+        "任意コードを実行できるため、書き込みの制限を回避できてしまいます。"
+        "テストと lint は .venv/bin/pytest / .venv/bin/ruff を直接使ってください。"
+    )
 
 
 def check_http(raw: str) -> None:
@@ -167,6 +230,10 @@ def main() -> None:
         if not args:
             continue
 
+        args = unwrap(args)
+        if not args:
+            continue
+
         program = program_name(args[0])
         rest = args[1:]
 
@@ -183,4 +250,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:  # 予期しない例外でも素通りさせない
+        # exit 1 は「非ブロックのエラー」として扱われ、コマンドが実行されてしまう。
+        # 境界が黙って無効化されるのを防ぐため、必ず exit 2 で拒否する。
+        deny(f"hook が予期しないエラーで停止しました（安全側に倒して拒否します）: {type(exc).__name__}")
