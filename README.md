@@ -38,6 +38,8 @@ cp .env.example .env
 .venv/bin/uvicorn main:app --reload --port 8000
 ```
 
+必要な環境変数は [`backend/.env.example`](backend/.env.example) を参照（`backend/config.py` と対応）。
+
 - Health check: http://localhost:8000/api/health
 - OpenAPI (Swagger): http://localhost:8000/docs
 
@@ -54,6 +56,8 @@ npm install
 cp .env.example .env
 npm run dev
 ```
+
+必要な環境変数は [`frontend/.env.example`](frontend/.env.example) を参照（`frontend/src/vite-env.d.ts` と対応）。
 
 http://localhost:5173 で起動する。
 
