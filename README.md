@@ -95,9 +95,9 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | コスト記録 | 未実装（列と同期はあるが加算処理が無く常に 0） |
 | DB Migration | なし（`create_all`。列追加時は DB を作り直す） |
 | Calendar API | 未実装（501 を返す） |
-| OrcaRouter / LLM | 未実装 |
+| OrcaRouter / LLM | 実装済み（接続・Schema Validation・Retry。Fallback とコスト記録は未実装） |
 | Web Search / Extraction | 未実装 |
-| Prompt Injection 対策 | 未実装 |
+| Prompt Injection 対策 | 未実装（外部データを囲む仕組みのみ。cheap モデルは突破される。#27 で対応） |
 | Retry / Fallback | 未実装 |
 
 Frontend 側は `VITE_USE_MOCK=true` にすると Backend なしで画面を作れる。
