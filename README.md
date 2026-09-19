@@ -118,13 +118,16 @@ Frontend 側は `VITE_USE_MOCK=true` にすると Backend なしで画面を作�
 
 ## 開発ルール
 
-- Branch: `main` / `feature/*` / `fix/*`
-- Commit: `feat:` `fix:` `refactor:` `docs:` `test:` `chore:`
-- `main` は常にデモ可能な状態を保つ
+Branch / Commit / Merge ルールの正本は **[docs/development.md](docs/development.md)**。
+
+要点だけ挙げると:
+
+- **1 つのまとまった機能 = 1 ブランチ / 1 チケット = 1 commit**
+- `main` は常にデモ可能な状態を保つ。`main` 上で直接機能開発しない
 - **Secret を commit しない**（`.env.example` だけ commit する）
 - **API / Schema を勝手に変更しない**（①共有 → ②仕様更新 → ③実装）
 - 30 分以上詰まったら共有する
 
-詳細は [docs/architecture.md](docs/architecture.md) と Notion のタスクトラッカーを参照。
-
 **Code Freeze: 9/22 10:00** — 以降は Bug Fix・デモ安定化・発表準備のみ。
+
+アーキテクチャは [docs/architecture.md](docs/architecture.md)、タスクは Notion のタスクトラッカーを参照。

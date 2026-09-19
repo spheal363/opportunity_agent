@@ -7,7 +7,9 @@ when_to_use: "Agent Loop を実装, Goal Analysis を繋ぐ, Search Planning を
 # Agent ステップの実装手順
 
 `backend/agent/loop.py` の `AGENT_STUB_MODE` 分岐を、1 ステップずつ実処理へ置き換える。
-**一度に複数ステップを置き換えない。** 1 ステップ = 1 PR。
+**一度に複数ステップを置き換えない。** 1 ステップ = 1 commit。
+ブランチは機能単位でまとめる（例: `feature/agent-loop` に #19〜#22）。
+Branch / Commit ルールは `docs/development.md` を参照。
 
 ## 0. 前提を確認する
 

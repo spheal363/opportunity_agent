@@ -79,6 +79,7 @@ npm run format
 | AI 各処理の Input / Output | `backend/ai/schemas/*.py` |
 | Tool と権限レベル | `backend/tools/base.py` |
 | 製品要求・ユーザーフロー・タスク | Notion（Product内容 / タスク一覧） |
+| Branch / Commit / Merge ルール | `docs/development.md` |
 | セットアップ・現在の実装状況 | `README.md` |
 
 ## 重要原則
@@ -90,3 +91,8 @@ npm run format
 4. **Secret を commit しない / Log に出さない。** `.env.example` のみ commit する。
 5. **既存アーキテクチャを勝手に変更しない。** 迷ったら実装前に聞く。
 6. 変更後は該当する test / lint / build を通す（Stop hook が自動で走る）。
+7. **`main` 上で直接機能開発しない。**
+   1 つのまとまった機能 = 1 ブランチ、1 チケット = 1 commit（`feat: ... (#14)`）。
+   関連の強いチケットは 1 つの feature branch にまとめる。
+   軽微なドキュメント修正は例外として `main` へ直接 commit してよい。
+   詳細は `docs/development.md`。
