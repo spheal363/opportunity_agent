@@ -1,5 +1,8 @@
 # アーキテクチャ
 
+このページは**設計**を書く。実装状況の正本は `README.md` の表。
+設計のうち未実装のものには 🚧 を付けている。
+
 ## 全体
 
 ```
@@ -68,6 +71,9 @@ Feedback
 State は `backend/agent/state.py`、DB 同期は `agent_runs` テーブル。
 途中で落ちても `status` / `current_step` / `progress` から状態を追える。
 
+🚧 **再探索ループ（十分？ → NO）は未実装。** 現在は 1 周で終わる。
+`AgentState.max_iterations` は用意してあるが誰も見ていない（タスク22）。
+
 ## データの分離
 
 Opportunity の情報は 3 種類に分けて扱う。混同しない。
@@ -107,7 +113,8 @@ Tool には権限レベルを持たせ、LLM が騙されても重要操作を�
 - OrcaRouter でモデルを振り分ける（単純な分類は cheap、重要な判断は powerful）
 - 絞り込みは `Rule/Embedding → Cheap LLM → Powerful LLM` の段階式にして、
   全件を高性能モデルへ投げない
-- `agent_runs.cost_jpy` / `expensive_model_calls` にコストを記録する
+- 🚧 `agent_runs.cost_jpy` / `expensive_model_calls` にコストを記録する
+  （列と DB 同期は実装済み。`AgentState` の値を加算する処理が無いため常に 0）
 - LLM 失敗時は Retry → Fallback Model → Agent 再開。
   **モデル障害 ≠ Agent 全体停止**
 
@@ -122,7 +129,11 @@ MVP は SQLite + SQLAlchemy。PostgreSQL へ移す場合も `DATABASE_URL` の�
 | `agent_runs` | Agent 実行の状態・コスト |
 | `agent_logs` | Agent が何を考え何をしたか |
 | `feedbacks` | 👍 / 👎 / 参加した / 結果 |
-| `agent_memories` | Reflection で学習した内容 |
+| `agent_memories` | 🚧 Reflection で学習した内容（テーブルのみ。書き込み経路なし） |
+
+**Migration ツールは入れていない。** `db/session.py` の `init_db()` が
+`create_all` でテーブルを作る。列を追加したらローカルの
+`backend/opportunity_agent.db` を消して作り直すこと。
 
 ## 認証
 

@@ -85,6 +85,11 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Opportunity API | 実装済み |
 | Feedback API | 実装済み（Reflection 未接続） |
 | Tool 権限制御 | 枠組みのみ（`backend/tools/`） |
+| Verification | 未実装（`interest` で公式情報を再確認していない） |
+| 再探索・終了条件 | 未実装（1 周で終わる） |
+| Reflection / Agent Memory | 未実装（テーブルのみ） |
+| コスト記録 | 未実装（列と同期はあるが加算処理が無く常に 0） |
+| DB Migration | なし（`create_all`。列追加時は DB を作り直す） |
 | Calendar API | 未実装（501 を返す） |
 | OrcaRouter / LLM | 未実装 |
 | Web Search / Extraction | 未実装 |
