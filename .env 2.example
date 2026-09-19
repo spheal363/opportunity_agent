@@ -1,0 +1,21 @@
+# 実際の値は backend/.env と frontend/.env に置く。
+# このファイルは「どんな環境変数が必要か」の一覧。
+#
+#   cp backend/.env.example  backend/.env
+#   cp frontend/.env.example frontend/.env
+#
+# Secret（API Key / Token / 認証情報）は絶対に commit しない。
+# 誤って commit した場合は、削除するだけでなく該当 Secret を無効化・再発行する。
+
+# ---- Backend ----
+DATABASE_URL=sqlite:///./opportunity_agent.db
+FRONTEND_URL=http://localhost:5173
+ORCAROUTER_API_KEY=
+SEARCH_API_KEY=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+AGENT_STUB_MODE=true
+
+# ---- Frontend ----
+VITE_API_BASE_URL=http://localhost:8000/api
+VITE_USE_MOCK=false

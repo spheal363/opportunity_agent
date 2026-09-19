@@ -1,0 +1,91 @@
+# API 仕様
+
+Base URL: `/api`
+起動中は Swagger UI が使える: http://localhost:8000/docs
+
+## レスポンス形式
+
+成功:
+
+```json
+{ "success": true, "data": {} }
+```
+
+失敗:
+
+```json
+{ "success": false, "error": { "code": "ERROR_CODE", "message": "エラー内容" } }
+```
+
+| code | status | 意味 |
+| --- | --- | --- |
+| `NOT_FOUND` | 404 | 対象が存在しない |
+| `VALIDATION_ERROR` | 422 | リクエスト形式が不正 |
+| `NOT_IMPLEMENTED` | 501 | 未実装の機能（Calendar など） |
+| `INTERNAL_ERROR` | 500 | 想定外のエラー |
+
+## MVP の基本フロー
+
+```
+PUT  /api/profile
+      ↓
+POST /api/agent/runs                          -> run_id
+      ↓
+GET  /api/agent/runs/{run_id}                 （completed まで polling）
+      ↓
+GET  /api/opportunities                       -> TOP3
+      ↓
+GET  /api/opportunities/{id}
+      ↓
+POST /api/opportunities/{id}/interest
+      ↓
+GET  /api/calendar/availability?opportunity_id={id}
+      ↓
+【ユーザーが外部サイトで登録】
+      ↓
+POST /api/opportunities/{id}/calendar
+      ↓
+POST /api/opportunities/{id}/feedback
+```
+
+## エンドポイント
+
+| | Endpoint | 状態 |
+| --- | --- | --- |
+| 1 | `PUT /api/profile` | 実装済み |
+| | `GET /api/profile` | 実装済み |
+| 2 | `POST /api/agent/runs` | 実装済み |
+| 3 | `GET /api/agent/runs/{run_id}` | 実装済み |
+| | `GET /api/agent/runs/{run_id}/logs` | 実装済み |
+| 4 | `GET /api/opportunities` | 実装済み |
+| 5 | `GET /api/opportunities/{opportunity_id}` | 実装済み |
+| 6 | `POST /api/opportunities/{opportunity_id}/interest` | 実装済み（Verification 未接続） |
+| 7 | `GET /api/calendar/availability` | 未実装（501） |
+| 8 | `POST /api/opportunities/{opportunity_id}/calendar` | 未実装（501） |
+| 9 | `POST /api/opportunities/{opportunity_id}/feedback` | 実装済み（Reflection 未接続） |
+| | `GET /api/health` | 実装済み |
+
+### Agent 実行状態
+
+`GET /api/agent/runs/{run_id}` は Frontend の探索中画面がポーリングする。
+
+`status`: `queued` / `running` / `completed` / `failed`
+`current_step`: `analyzing_profile` / `planning` / `searching` / `evaluating` / `verifying` / `completed`
+
+### 日時
+
+すべて ISO 8601 の **UTC**（`2026-10-10T10:00:00Z`）で返す。
+表示側のタイムゾーン変換は Frontend が行う（`frontend/src/utils/date.ts`）。
+Web から取得できなかった日時は推測せず `null`。
+
+## Schema の対応
+
+| 定義 | Backend | Frontend |
+| --- | --- | --- |
+| UserProfile | `backend/schemas/profile.py` | `frontend/src/types/profile.ts` |
+| Opportunity | `backend/schemas/opportunity.py` | `frontend/src/types/opportunity.ts` |
+| AgentRun | `backend/schemas/agent.py` | `frontend/src/types/agent.ts` |
+| Calendar | `backend/schemas/calendar.py` | `frontend/src/types/calendar.ts` |
+| AI 各処理 I/O | `backend/ai/schemas/` | — |
+
+**フィールド名・型がズレないよう、変更するときは必ず両方を同時に直して共有する。**
