@@ -31,7 +31,8 @@
       "Bash(gh pr list)",
       "Bash(gh pr status)",
       "Bash(gh run view *)",
-      "Bash(gh run list *)"
+      "Bash(gh run list *)",
+      "Bash(.claude/skills/review-pr/pr_context.py *)"
     ],
     "ask": [
       "Bash(git push *)",

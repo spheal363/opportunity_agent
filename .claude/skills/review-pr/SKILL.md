@@ -9,18 +9,42 @@ when_to_use: "PR をレビュー, プルリクをレビュー, review-pr, PR の
 引数で PR 番号を受け取る（例: `/review-pr 1`）。省略された場合はこのセッションに
 bound された PR、それも無ければ現在のブランチの PR を使う。
 
+**初回レビューと再レビューで対象範囲が違う。** 最初に必ず範囲を確認する。
+
+```bash
+.claude/skills/review-pr/pr_context.py scope --pr <PR番号>
+```
+
+- 過去のレビューが無い → PR の全差分をレビューする
+- **過去のレビューがある → 前回レビューの commit 以降の差分だけをレビューする**
+
+再レビューで全文を読み直さない。トークンを無駄に使い、既に指摘して対応済みの
+箇所を再指摘してしまう。既存の指摘は `pr_context.py threads` で確認する。
+
 **役割分担を崩さない。**
 
 | | |
 | --- | --- |
 | reviewer Subagent | 差分を読んで指摘する。**GitHub へ書き込まない**（PreToolUse hook でブロック） |
-| メイン Agent（あなた） | 差分の取得、判定、`post_review.py` での投稿 |
+| メイン Agent（あなた） | 範囲の決定、差分の取得、判定、`post_review.py` での投稿と返信 |
 
 ## 1. PR を特定して差分を取る
 
 ```bash
 gh pr view <PR番号> --json number,title,state,baseRefName,headRefName,isDraft,additions,deletions,changedFiles
+.claude/skills/review-pr/pr_context.py scope --pr <PR番号>
+```
+
+初回レビューなら全差分を取る。
+
+```bash
 gh pr diff <PR番号>
+```
+
+再レビューなら `scope` が出した range だけを取る。**全差分を取り直さない。**
+
+```bash
+git diff <前回レビューのcommit>...<head>
 ```
 
 state が `OPEN` でなければ、その旨を伝えて止まる。
@@ -118,7 +142,7 @@ Review 本文を `$CLAUDE_SCRATCHPAD/summary.md` に書き、スクリプトへ�
 **投稿前に必ず `--dry-run` で確認する。** inline と fallback の振り分けを見てから本番実行する。
 
 ```bash
-.claude/skills/review-pr/post_review.py \
+.claude/skills/review-pr/post_review.py review \
   --pr <PR番号> --event <APPROVE|REQUEST_CHANGES|COMMENT> \
   --body-file "$CLAUDE_SCRATCHPAD/summary.md" \
   --findings "$CLAUDE_SCRATCHPAD/findings.json" \
@@ -184,6 +208,46 @@ backend pass / frontend pass
 
 指摘が無ければ「問題は見つかりませんでした」と正直に書く。
 **無理に指摘を作らない。** ハッカソン中に Minor を大量に並べない。
+
+## 6. 指摘に対応したあとの返信
+
+**指摘ごとに、そのスレッドへ個別に返信する。** 1 つのコメントに全件をまとめない。
+まとめると読みづらく、`Resolve conversation` を指摘単位で押せなくなる。
+
+まずスレッド id を取る。
+
+```bash
+.claude/skills/review-pr/pr_context.py threads --pr <PR番号>
+```
+
+`$CLAUDE_SCRATCHPAD/replies.json` を書く。
+
+```json
+[
+  {
+    "comment_id": 4052670690,
+    "body": "対応しました（`abc1234`）。\n\n再現も確認しています。\n\n修正後は DENY になります。"
+  }
+]
+```
+
+```bash
+.claude/skills/review-pr/post_review.py reply --pr <PR番号> \
+  --replies "$CLAUDE_SCRATCHPAD/replies.json" --dry-run
+```
+
+問題なければ `--dry-run` を外す。
+
+各返信には以下を書く。**その指摘だけ読んで判断できるようにする。**
+
+- 対応したか / しなかったか（しない場合は理由）
+- 対応した commit
+- 再現と修正後の確認結果
+
+対応方針の全体像や、指摘に含まれない補足は **PR 本文へのコメント 1 件**（`gh pr comment`）
+に分ける。スレッドへの返信と混ぜない。
+
+解決済みにするのはレビュアー（人間）の判断。**自分で Resolve conversation しない。**
 
 ## やらないこと
 
