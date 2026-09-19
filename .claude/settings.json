@@ -36,7 +36,8 @@
     "ask": [
       "Bash(git push *)",
       "Bash(gh pr review *)",
-      "Bash(gh pr comment *)"
+      "Bash(gh pr comment *)",
+      "Bash(.claude/skills/review-pr/post_review.py *)"
     ],
     "deny": [
       "Bash(git push --force *)",

@@ -18,6 +18,12 @@ deny() {
   exit 2
 }
 
+# --- PR への投稿スクリプト ---
+# レビュアーが直接叩けば gh の制限を迂回できてしまうため塞ぐ。
+if printf '%s' "$COMMAND" | grep -qE 'post_review\.py'; then
+  deny "レビュアーは PR へ投稿できません。指摘は報告として返してください。投稿はメイン Agent が行います。"
+fi
+
 # --- git の書き込み系 ---
 if printf '%s' "$COMMAND" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+(push|commit|merge|rebase|reset|revert|tag|checkout|switch|cherry-pick|clean|am|apply)([[:space:]]|$)'; then
   deny "レビュアーは git への書き込みを実行できません。指摘と修正案の報告のみ行ってください。"
