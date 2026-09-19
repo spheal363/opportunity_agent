@@ -237,7 +237,10 @@ frontend/dist/
 .DS_Store
 
 # エディタ / ツール固有の設定
-.claude/
+# .claude/ 配下は共有する（CLAUDE.md / rules / skills / agents / hooks / settings.json）。
+# 個人設定とローカル起動設定だけ除外する。
+.claude/settings.local.json
+.claude/launch.json
 .idea/
 .vscode/
 

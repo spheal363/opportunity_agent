@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/pytest)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(backend/.venv/bin/pytest)",
+      "Bash(backend/.venv/bin/pytest *)",
+      "Bash(backend/.venv/bin/python -m pytest *)",
+      "Bash(backend/.venv/bin/ruff *)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm run format)",
+      "Bash(npm --prefix frontend run lint)",
+      "Bash(npm --prefix frontend run build)",
+      "Bash(npm --prefix frontend run format)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch)",
+      "Bash(git ls-files *)"
+    ],
+    "ask": [
+      "Bash(git push *)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean *)",
+      "Bash(rm -rf *)",
+      "Read(**/.env)",
+      "Edit(**/.env)",
+      "Write(**/.env)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/format.sh",
+            "timeout": 30,
+            "statusMessage": "整形しています..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/verify.sh",
+            "timeout": 180,
+            "statusMessage": "変更箇所を検証しています..."
+          }
+        ]
+      }
+    ]
+  }
+}

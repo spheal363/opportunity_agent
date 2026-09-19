@@ -95,6 +95,18 @@ Frontend 側は `VITE_USE_MOCK=true` にすると Backend なしで画面を作�
 
 ---
 
+## Claude Code
+
+`.claude/` に開発環境を用意してある。クローンしてそのまま使える。
+
+| | |
+| --- | --- |
+| `CLAUDE.md` | 常時読まれる。製品概要・スタック・コマンド・重要原則 |
+| `.claude/rules/` | 領域ごとのルール。backend / frontend などは該当ファイルを触ったときだけ読み込まれる |
+| `.claude/skills/` | `/implement-agent-step`（Agent のスタブを実装に置き換える手順）、`/pre-demo-check`（デモ前チェック） |
+| `.claude/agents/` | `code-reviewer` / `security-reviewer`。差分をレビューする（コードは変更しない） |
+| `.claude/hooks/` | 編集時に整形、応答完了時に変更領域だけ検証 |
+
 ## 開発ルール
 
 - Branch: `main` / `feature/*` / `fix/*`
