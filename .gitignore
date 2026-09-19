@@ -240,3 +240,10 @@ frontend/dist/
 .claude/
 .idea/
 .vscode/
+
+# iCloud 同期が作る重複ファイル / ディレクトリ（例: "docs/api 2.md"）
+# 正当なファイル名が "... 2.md" の場合は git add -f で追加する
+* 2
+* 2.*
+* [0-9]
+* [0-9].*
