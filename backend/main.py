@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai.llm import close_client
 from api import api_router
 from api.errors import register_error_handlers
 from config import get_settings
@@ -24,6 +25,7 @@ async def lifespan(_: FastAPI):
     init_db()
     logger.info("backend started env=%s stub_mode=%s", settings.app_env, settings.agent_stub_mode)
     yield
+    close_client()
 
 
 app = FastAPI(
