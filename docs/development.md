@@ -83,6 +83,10 @@ feature branch 上で以下の順に進める。
 
 lint / test は Stop hook が変更領域だけ自動実行する（`.claude/hooks/verify.sh`）。
 
+PR を出したあとのレビューは `/review-pr <PR番号>` で通せる。
+reviewer Subagent が差分を読んで指摘し、その結果をメイン Agent が
+`gh pr review` で投稿する。reviewer 自身は GitHub へ書き込めない。
+
 security review が**必要な変更**:
 
 - `backend/agent/` `backend/ai/` `backend/tools/` を触った

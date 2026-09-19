@@ -23,10 +23,20 @@
       "Bash(git log *)",
       "Bash(git show *)",
       "Bash(git branch)",
-      "Bash(git ls-files *)"
+      "Bash(git ls-files *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr list)",
+      "Bash(gh pr status)",
+      "Bash(gh run view *)",
+      "Bash(gh run list *)"
     ],
     "ask": [
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(gh pr review *)",
+      "Bash(gh pr comment *)"
     ],
     "deny": [
       "Bash(git push --force *)",
@@ -36,7 +46,10 @@
       "Bash(rm -rf *)",
       "Read(**/.env)",
       "Edit(**/.env)",
-      "Write(**/.env)"
+      "Write(**/.env)",
+      "Bash(gh pr merge *)",
+      "Bash(gh pr close *)",
+      "Bash(gh repo delete *)"
     ]
   },
   "hooks": {
