@@ -14,7 +14,7 @@ bound された PR、それも無ければ現在のブランチの PR を使う�
 | | |
 | --- | --- |
 | reviewer Subagent | 差分を読んで指摘する。**GitHub へ書き込まない**（PreToolUse hook でブロック） |
-| メイン Agent（あなた） | 差分の取得、判定、`gh pr review` での投稿 |
+| メイン Agent（あなた） | 差分の取得、判定、`post_review.py` での投稿 |
 
 ## 1. PR を特定して差分を取る
 

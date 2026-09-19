@@ -66,18 +66,24 @@ def parse_diff(diff: str) -> DiffIndex:
     """
     index = DiffIndex()
     path: str | None = None
+    old_path: str | None = None
+    deleted = False
     old_no = new_no = 0
     in_hunk = False
 
     for raw in diff.splitlines():
         if raw.startswith("diff --git "):
-            path, in_hunk = None, False
+            path, old_path, deleted, in_hunk = None, None, False, False
+            continue
+        if raw.startswith("--- "):
+            source = raw[4:].strip()
+            old_path = None if source == "/dev/null" else source.removeprefix("a/")
             continue
         if raw.startswith("+++ "):
             target = raw[4:].strip()
-            path = None if target == "/dev/null" else target.removeprefix("b/")
-            continue
-        if raw.startswith("--- "):
+            # 全体削除されたファイルは +++ が /dev/null。--- 側のパスで LEFT だけ登録する。
+            deleted = target == "/dev/null"
+            path = old_path if deleted else target.removeprefix("b/")
             continue
 
         m = _HUNK.match(raw)
@@ -99,7 +105,8 @@ def parse_diff(diff: str) -> DiffIndex:
             index.left.setdefault(path, set()).add(old_no)
             old_no += 1
         elif marker == " " or raw == "":
-            index.right.setdefault(path, set()).add(new_no)
+            if not deleted:
+                index.right.setdefault(path, set()).add(new_no)
             index.left.setdefault(path, set()).add(old_no)
             old_no += 1
             new_no += 1
@@ -120,8 +127,8 @@ def _gh(args: list[str], stdin: str | None = None) -> str:
 
 def comment_body(f: dict) -> str:
     """inline comment の本文。1 件で完結させ、独立した conversation として扱えるようにする。"""
-    parts = [f"**[{f['severity']}] {f.get('title', '').strip()}**".rstrip(), ""]
-    parts.append(f["body"].strip())
+    parts = [f"**[{f.get('severity', '?')}] {f.get('title', '').strip()}**".rstrip(), ""]
+    parts.append(f.get("body", "").strip())
     return "\n".join(parts).strip()
 
 
@@ -174,28 +181,53 @@ def fallback_section(fallback: list[tuple[dict, str]]) -> str:
         lines.append(f"**[{f.get('severity', '?')}] {loc}** — {f.get('title', '').strip()}")
         lines.append(f"（{reason}）")
         lines.append("")
-        lines.append(f["body"].strip())
+        lines.append(f.get("body", "").strip())
         lines.append("")
     return "\n".join(lines)
 
 
+def load_findings(path: str | None) -> list[dict]:
+    """findings JSON を読む。壊れていたら理由が分かる形で落とす。
+
+    書くのは LLM なので、キー欠落や JSON 崩れは現実に起こる。
+    スタックトレースではなく直せるメッセージにする。
+    """
+    if not path:
+        return []
+    try:
+        with open(path, encoding="utf-8") as fp:
+            data = json.load(fp)
+    except FileNotFoundError:
+        sys.exit(f"findings が見つかりません: {path}")
+    except json.JSONDecodeError as exc:
+        sys.exit(f"findings が JSON として不正です: {path}\n  {exc}")
+    if not isinstance(data, list):
+        sys.exit(f"findings は配列である必要があります: {path}")
+    for i, f in enumerate(data):
+        if not isinstance(f, dict):
+            sys.exit(f"findings[{i}] がオブジェクトではありません")
+        if not str(f.get("body", "")).strip():
+            sys.exit(f"findings[{i}] に body がありません（path={f.get('path')}）")
+    return data
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pr", required=True)
+    ap.add_argument("--pr", required=True, type=int)
     ap.add_argument("--event", required=True, choices=["APPROVE", "REQUEST_CHANGES", "COMMENT"])
     ap.add_argument("--body-file", required=True)
     ap.add_argument("--findings", help="findings JSON。省略時は指摘なし")
     ap.add_argument("--dry-run", action="store_true", help="投稿せず内容を表示する")
     args = ap.parse_args()
 
-    findings = json.loads(open(args.findings).read()) if args.findings else []
+    findings = load_findings(args.findings)
     findings.sort(
         key=lambda f: SEVERITY_ORDER.index(f["severity"])
         if f.get("severity") in SEVERITY_ORDER
         else len(SEVERITY_ORDER)
     )
 
-    index = parse_diff(_gh(["pr", "diff", args.pr]))
+    index = parse_diff(_gh(["pr", "diff", str(args.pr)]))
     inline, fallback = split(findings, index)
 
     body = open(args.body_file).read().rstrip() + fallback_section(fallback)
