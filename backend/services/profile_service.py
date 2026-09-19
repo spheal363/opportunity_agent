@@ -6,9 +6,7 @@ from models import DEFAULT_USER_ID, UserProfile
 from schemas.profile import UserProfileOut, UserProfileUpsert
 
 
-def upsert_profile(
-    db: Session, payload: UserProfileUpsert, user_id: str = DEFAULT_USER_ID
-) -> str:
+def upsert_profile(db: Session, payload: UserProfileUpsert, user_id: str = DEFAULT_USER_ID) -> str:
     row = db.get(UserProfile, user_id)
     if row is None:
         row = UserProfile(user_id=user_id)

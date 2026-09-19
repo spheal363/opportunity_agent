@@ -1,6 +1,6 @@
 """API のエラー形式を統一する。
 
-    {"success": false, "error": {"code": "...", "message": "..."}}
+{"success": false, "error": {"code": "...", "message": "..."}}
 """
 
 from fastapi import FastAPI, Request
@@ -32,14 +32,10 @@ class NotFound(ApiError):
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code, content=err(exc.code, exc.message)
-        )
+        return JSONResponse(status_code=exc.status_code, content=err(exc.code, exc.message))
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_error(
-        _: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         return JSONResponse(
             status_code=422,
             content=err("VALIDATION_ERROR", "リクエストの形式が正しくありません"),

@@ -11,9 +11,7 @@ from db.base import Base
 _settings = get_settings()
 
 # SQLite は既定で同一スレッド以外からの利用を禁止するため、FastAPI 用に解除する。
-_connect_args = (
-    {"check_same_thread": False} if _settings.database_url.startswith("sqlite") else {}
-)
+_connect_args = {"check_same_thread": False} if _settings.database_url.startswith("sqlite") else {}
 
 engine = create_engine(_settings.database_url, connect_args=_connect_args, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

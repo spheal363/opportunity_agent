@@ -23,10 +23,5 @@ def get_run(db: Session, run_id: str) -> AgentRunState | None:
 
 
 def list_logs(db: Session, run_id: str) -> list[AgentLogEntry]:
-    rows = (
-        db.query(AgentLog)
-        .filter(AgentLog.run_id == run_id)
-        .order_by(AgentLog.id.asc())
-        .all()
-    )
+    rows = db.query(AgentLog).filter(AgentLog.run_id == run_id).order_by(AgentLog.id.asc()).all()
     return [AgentLogEntry.model_validate(r, from_attributes=True) for r in rows]

@@ -1,6 +1,6 @@
 """Opportunity Agent Backend。
 
-    uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 """
 
 from contextlib import asynccontextmanager
