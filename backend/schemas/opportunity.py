@@ -1,0 +1,99 @@
+"""Opportunity スキーマ。
+
+情報を 3 種類に分けて扱う。
+  1. Web から取得した事実 (title / start_at / deadline / location ...)
+  2. AI が生成した評価 (score / reason / serendipity_score / match_reasons)
+  3. ユーザーとの関係 (status)
+"""
+
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, Field
+
+
+def _assume_utc(value: datetime | None) -> datetime | None:
+    """SQLite は tz を保持しないため、naive な値は UTC とみなす。
+
+    これをしないと JSON に tz 指定が付かず、Frontend の `new Date(...)` が
+    ローカル時刻として解釈してしまう。
+    """
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+# 常に tz 付きで返す datetime
+Timestamp = Annotated[datetime | None, AfterValidator(_assume_utc)]
+
+
+class OpportunityType(StrEnum):
+    EVENT = "event"
+    HACKATHON = "hackathon"
+    JOB = "job"
+    FREELANCE = "freelance"
+    COMMUNITY = "community"
+    ACCELERATOR = "accelerator"
+    COMPETITION = "competition"
+    SCHOLARSHIP = "scholarship"
+    OTHER = "other"
+
+
+class OpportunityFormat(StrEnum):
+    OFFLINE = "offline"
+    ONLINE = "online"
+    HYBRID = "hybrid"
+
+
+class OpportunityStatus(StrEnum):
+    DISCOVERED = "discovered"
+    RECOMMENDED = "recommended"
+    INTERESTED = "interested"
+    REGISTERED = "registered"
+    ATTENDED = "attended"
+    DISMISSED = "dismissed"
+
+
+class OpportunitySummary(BaseModel):
+    """GET /api/opportunities（TOP3 一覧）で返す形。"""
+
+    opportunity_id: str
+    type: OpportunityType
+    title: str
+    description: str | None = None
+    url: str | None = None
+    start_at: Timestamp = None
+    location: str | None = None
+    deadline: Timestamp = None
+
+    score: int = Field(ge=0, le=100)
+    serendipity_score: int = Field(ge=0, le=100)
+    reason: str | None = None
+    match_reasons: list[str] = Field(default_factory=list)
+
+    verified: bool = False
+    status: OpportunityStatus = OpportunityStatus.DISCOVERED
+
+
+class OpportunityDetail(OpportunitySummary):
+    """GET /api/opportunities/{id}（詳細画面）で返す形。"""
+
+    source: str | None = None
+    end_at: Timestamp = None
+    format: OpportunityFormat | None = None
+    eligibility: str | None = None
+    cost: int | None = None
+
+    verified_at: Timestamp = None
+    verification_source: str | None = None
+
+
+class InterestResult(BaseModel):
+    """POST /api/opportunities/{id}/interest のレスポンス。"""
+
+    opportunity_id: str
+    status: OpportunityStatus
+    verified: bool
+    registration_url: str | None = None
+    warnings: list[str] = Field(default_factory=list)

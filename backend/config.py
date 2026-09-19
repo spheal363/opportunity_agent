@@ -1,0 +1,42 @@
+"""アプリ全体の設定。値は .env から読み込む（.env.example を参照）。"""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    app_env: str = "local"
+    log_level: str = "INFO"
+
+    database_url: str = "sqlite:///./opportunity_agent.db"
+
+    # CORS 許可 Origin。カンマ区切りで複数指定できる。
+    frontend_url: str = "http://localhost:5173"
+
+    orcarouter_api_key: str | None = None
+    orcarouter_base_url: str | None = None
+    llm_model_cheap: str | None = None
+    llm_model_standard: str | None = None
+    llm_model_powerful: str | None = None
+
+    search_api_key: str | None = None
+
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+
+    # LLM を呼ばずモックデータで Agent Loop を流すモード。
+    agent_stub_mode: bool = True
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.frontend_url.split(",") if o.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

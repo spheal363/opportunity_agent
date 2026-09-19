@@ -216,3 +216,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- Opportunity Agent ----
+# Node / Frontend
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# 環境変数（.env.example のみ commit する）
+.env
+.env.*
+!.env.example
+
+# SQLite（MVP のローカル DB）
+*.db
+*.db-journal
+*.sqlite3
+
+# OS
+.DS_Store
+
+# エディタ / ツール固有の設定
+.claude/
+.idea/
+.vscode/
