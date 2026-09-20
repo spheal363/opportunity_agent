@@ -92,7 +92,8 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Agent Loop: Web 探索 | 実装済み（検索 → 抽出 → 保存。重複は URL で除去） |
 | Agent Loop: Goal 分析 | 実装済み（プロフィール → 目標・興味の交差点） |
 | Agent Loop: 探索計画 | 実装済み（Serendipity 方向を最低 1 つ確保） |
-| Agent Loop: 評価 / Verification | 未実装（`AGENT_STUB_MODE=false` では通らない） |
+| Agent Loop: 評価 / TOP3選定 / 推薦理由 | 実装済み（選定は LLM 不使用。意外性を重みづけ） |
+| Agent Loop: Verification | 未実装（`AGENT_STUB_MODE=false` では通らない。#67） |
 | Verification | 未実装（`interest` で公式情報を再確認していない） |
 | 再探索・終了条件 | 未実装（1 周で終わる） |
 | Reflection / Agent Memory | 未実装（テーブルのみ） |

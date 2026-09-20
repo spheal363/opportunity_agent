@@ -20,8 +20,10 @@ from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
+from ai.evaluation import evaluate_many, recommend, select_top
 from ai.extraction import extract_many
 from ai.goal_analysis import analyze_goal
+from ai.llm import LLMError
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.extraction import ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
@@ -244,20 +246,90 @@ def _domain_of(url: str | None) -> str | None:
 
 def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list[str]:
     """④ Evaluation + ⑤ TOP3 Selection + ⑥ Recommendation"""
-    if not get_settings().agent_stub_mode:
-        raise NotImplementedError("evaluation / selection is not implemented yet")
+    if get_settings().agent_stub_mode:
+        rows = (
+            db.query(Opportunity)
+            .filter(Opportunity.opportunity_id.in_(ids))
+            .order_by(Opportunity.score.desc())
+            .limit(3)
+            .all()
+        )
+        for row in rows:
+            row.status = OpportunityStatus.RECOMMENDED
+        db.commit()
+        return [r.opportunity_id for r in rows]
 
-    rows = (
-        db.query(Opportunity)
-        .filter(Opportunity.opportunity_id.in_(ids))
-        .order_by(Opportunity.score.desc())
-        .limit(3)
-        .all()
+    goal = state.goal_analysis
+    if goal is None:  # 順序を崩した呼び出しへの保険
+        raise RuntimeError("goal analysis の前に evaluation を呼んでいます")
+    if not ids:
+        return []
+
+    rows = {
+        r.opportunity_id: r
+        for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
+    }
+
+    # ④ 全件を評価する
+    evaluated, failed = evaluate_many(
+        goal_summary=goal.goal_summary,
+        interest_connections=goal.interest_connections,
+        opportunities=[_as_dict(r) for r in rows.values()],
     )
-    for row in rows:
-        row.status = "recommended"
+    for opportunity_id, out in evaluated:
+        row = rows[opportunity_id]
+        row.score = out.score
+        row.serendipity_score = out.serendipity_score
+        row.match_reasons = out.match_reasons
     db.commit()
-    return [r.opportunity_id for r in rows]
+
+    if failed:
+        # 評価できなかった事実を隠さない。
+        _log(db, state, AgentStep.EVALUATING, f"{len(failed)}件は評価できませんでした")
+
+    # ⑤ TOP3 を選ぶ（LLM を使わない）
+    selected = select_top(evaluated)
+
+    # ⑥ 推薦理由は TOP3 にだけ書く
+    for opportunity_id in selected:
+        row = rows[opportunity_id]
+        out = dict(evaluated)[opportunity_id]
+        row.status = OpportunityStatus.RECOMMENDED
+        try:
+            rec = recommend(
+                goals=state.goal_analysis.goal_directions,
+                opportunity=_as_dict(row),
+                evaluation=out,
+            )
+            row.reason = rec.reason
+        except LLMError as exc:
+            # 理由が無くても推薦自体は成立する。run を落とさない。
+            logger.warning("recommendation.failed id=%s reason=%s", opportunity_id, exc)
+        _log(
+            db,
+            state,
+            AgentStep.EVALUATING,
+            f"「{row.title}」を推薦（適合度{row.score} / 意外性{row.serendipity_score}）",
+        )
+    db.commit()
+    return selected
+
+
+def _as_dict(row: Opportunity) -> dict:
+    """LLM へ渡す形。ORM オブジェクトをそのまま渡さない。"""
+    return {
+        "opportunity_id": row.opportunity_id,
+        "title": row.title,
+        "type": row.type,
+        "description": row.description,
+        "location": row.location,
+        "format": row.format,
+        "start_at": row.start_at.isoformat() if row.start_at else None,
+        "deadline": row.deadline.isoformat() if row.deadline else None,
+        "eligibility": row.eligibility,
+        "cost": row.cost,
+        "source": row.source,
+    }
 
 
 def _verify(db: Session, state: AgentState) -> None:
