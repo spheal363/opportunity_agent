@@ -97,10 +97,10 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | `interest` 時の再確認 | 未実装（探索時には検証済み。押した時点では再確認しない） |
 | 再探索・終了条件 | 未実装（1 周で終わる） |
 | Reflection / Agent Memory | 未実装（テーブルのみ） |
-| コスト記録 | 未実装（列と同期はあるが加算処理が無く常に 0） |
+| コスト記録 | 実装済み（見積もり。1 探索あたり約 1 円。実単価が出たら差し替える） |
 | DB Migration | なし（`create_all`。列追加時は DB を作り直す） |
 | Calendar API | 未実装（501 を返す） |
-| OrcaRouter / LLM | 実装済み（接続・Schema Validation・Retry・Fallback。コスト記録は未実装） |
+| OrcaRouter / LLM | 実装済み（接続・Schema Validation・Retry・Fallback・コスト記録） |
 | Web Search | 実装済み（Tavily。provider 差し替え可能） |
 | ページ取得 | 実装済み（Tavily extract。一部失敗しても残りを返す） |
 | Opportunity 構造化 | 実装済み（LLM 抽出。日時は tz 必須、不明な項目は null） |

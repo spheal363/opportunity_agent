@@ -16,6 +16,8 @@ export async function fetchAgentRun(runId: string): Promise<AgentRun> {
       message: '探索が完了しました',
       progress: 100,
       error: null,
+      cost_jpy: 0,
+      expensive_model_calls: 0,
     };
   }
   return api.get<AgentRun>(`/agent/runs/${runId}`);

@@ -72,6 +72,11 @@ POST /api/opportunities/{id}/feedback
 `status`: `queued` / `running` / `completed` / `failed`
 `current_step`: `analyzing_profile` / `planning` / `searching` / `evaluating` / `verifying` / `completed`
 
+`cost_jpy`: この探索にかかった**見積もり額**。請求額ではない（`backend/ai/cost.py` の単価表を参照）。
+`expensive_model_calls`: 高性能モデルを使った回数。**全件を高性能モデルへ投げていない**ことを示す。
+
+どちらも進捗の更新ごとに増える。途中で失敗しても、そこまでの分が残る。
+
 ### 日時
 
 すべて ISO 8601 の **UTC**（`2026-10-10T10:00:00Z`）で返す。

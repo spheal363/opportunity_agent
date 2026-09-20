@@ -23,6 +23,11 @@ export type AgentRun = {
   message: string | null;
   progress: number;
   error: string | null;
+
+  /** この探索にかかった見積もり額。**請求額ではない**（backend/ai/cost.py の単価表）。 */
+  cost_jpy: number;
+  /** 高性能モデルを使った回数。全件を高性能モデルへ投げていないことを示す。 */
+  expensive_model_calls: number;
 };
 
 export type AgentLogEntry = {

@@ -24,6 +24,7 @@ from functools import lru_cache
 
 from pydantic import BaseModel, ValidationError
 
+from ai import cost
 from ai.orcarouter import (
     DEFAULT_MAX_TOKENS,
     EmptyResponseError,
@@ -221,6 +222,8 @@ def _attempt_with_tier[T: BaseModel](
             last_error = exc
             # 空応答など、応答は返っているが例外になった回の消費を取りこぼさない。
             usages.extend(exc.usages)
+            for u in exc.usages:
+                cost.record(u)
             if not exc.retryable or attempt == max_attempts:
                 exc.usages = list(usages)
                 raise
@@ -240,6 +243,7 @@ def _attempt_with_tier[T: BaseModel](
             continue
 
         usages.append(res.usage)
+        cost.record(res.usage)
         raw = _extract_json(res.content)
 
         try:

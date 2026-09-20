@@ -11,6 +11,8 @@
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
+from ai import cost
+
 # 同時に投げる LLM 呼び出しの数。
 # 増やすほど速いが、provider 側のレート制限に当たると 429 が増えて
 # かえって遅くなる（Retry が挟まるため）。実測で調整する値。
@@ -31,5 +33,19 @@ def map_parallel[T, R](
     items = list(items)
     if len(items) <= 1:
         return [fn(x) for x in items]
+
+    # **ThreadPoolExecutor は contextvars を自動で引き継がない。**
+    # 引き継がないと、ワーカー内のコスト記録（ai/cost.py）が黙って落ちて
+    # 「安く済んだ」ように見える。
+    #
+    # **context 全体は複製しない。** `copy_context()` を使うと、将来
+    # 認証情報やトレース ID を ContextVar で持たせたときに、それらまで
+    # 気づかれずにワーカーへ流れる。**引き継ぐものは cost 側が決める。**
+    tracker = cost.snapshot()
+
+    def run(item: T) -> R:
+        with cost.restore(tracker):
+            return fn(item)
+
     with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
-        return list(pool.map(fn, items))
+        return list(pool.map(run, items))
