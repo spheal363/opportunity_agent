@@ -159,3 +159,23 @@ def test_cost_tracker_still_propagates():
     with cost.track() as t:
         map_parallel(range(4), lambda _n: cost.record(_usage()))
     assert t.calls == 4
+
+
+# --- スキーマの制約（レビュー指摘 Low）------------------------------------
+
+
+@pytest.mark.parametrize("field", ["cost_jpy", "expensive_model_calls"])
+def test_negative_cost_is_rejected_by_the_schema(field):
+    """**コストは負にならない。** 内部のバグで巻き戻ったら早く気づけるようにする。
+
+    同じスキーマの progress は ge=0 で縛られているのに、追加した 2 つだけ
+    制約が無かった（レビュー指摘）。基準を揃える。
+    """
+    from pydantic import ValidationError
+
+    from schemas.agent import AgentRunState
+
+    base = {"run_id": "r", "status": "running"}
+    AgentRunState(**base, **{field: 0})  # 0 は通る
+    with pytest.raises(ValidationError):
+        AgentRunState(**base, **{field: -1})
