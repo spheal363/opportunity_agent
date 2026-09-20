@@ -172,6 +172,10 @@ def generate_structured[T: BaseModel](
         except LLMError as exc:
             last = exc
             if index == len(tiers) - 1 or not _should_fallback(exc):
+                # **そこまでに消費した分を取りこぼさない。**
+                # Fallback 先が未設定などで落ちても、前の tier では課金されている。
+                # コスト記録（#26）がこれを使う。
+                exc.usages = list(usages)
                 raise
             logger.warning(
                 "llm.fallback from=%s to=%s schema=%s reason=%s",
@@ -327,9 +331,12 @@ def _looks_truncated(raw: str) -> bool:
     """
     if not raw:
         return False
+    # 主判定: 括弧が閉じていない
     if raw.count("{") > raw.count("}") or raw.count("[") > raw.count("]"):
         return True
-    return raw.count('"') % 2 == 1
+    # 補助: 文字列の途中で切れた場合。**括弧が閉じているのに引用符が奇数**なのは
+    # エスケープ漏れでも起こるため、末尾が閉じていないことも併せて見る。
+    return raw.count('"') % 2 == 1 and not raw.rstrip().endswith(("}", "]", '"'))
 
 
 def _safe_reason(error: Exception | None) -> str:

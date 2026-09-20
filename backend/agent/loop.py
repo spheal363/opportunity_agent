@@ -197,18 +197,22 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
     extracted, failed = extract_many([r for _, r in candidates])
 
-    by_url = {r.url: direction for direction, r in candidates}
+    # クエリ文字列ではなく**方向の位置**を鍵にする。LLM が同じ query を持つ方向を
+    # 2 つ返すことがあり、文字列で集計すると件数が合算されて二重に表示される。
+    order = {id(d): i for i, d in enumerate(state.search_directions)}
+    by_url = {r.url: order[id(direction)] for direction, r in candidates}
+
     ids: list[str] = []
-    per_direction: dict[str, int] = {}
+    per_direction: dict[int, int] = {}
     for source_url, item in extracted:
         row = _save_extracted(db, state, item, source_url)
         ids.append(row.opportunity_id)
-        query = by_url[source_url].query
-        per_direction[query] = per_direction.get(query, 0) + 1
+        index = by_url[source_url]
+        per_direction[index] = per_direction.get(index, 0) + 1
 
     # --- ③ 探索方向ごとに結果を伝える（画面に出る単位を保つ）-----------------
-    for direction in state.search_directions:
-        count = per_direction.get(direction.query, 0)
+    for index, direction in enumerate(state.search_directions):
+        count = per_direction.get(index, 0)
         if count:
             _log(
                 db,
@@ -392,11 +396,15 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
     by_id = dict(evaluated)
     goals = state.goal_analysis.goal_directions
 
+    # ORM をワーカースレッドへ渡さない。メインスレッドで dict にしてから渡す
+    # （_verify と同じ形）。lazy load がスレッドをまたぐと壊れる。
+    targets = {i: _as_dict(rows[i]) for i in selected}
+
     def one(opportunity_id: str) -> str | None:
         try:
             return recommend(
                 goals=goals,
-                opportunity=_as_dict(rows[opportunity_id]),
+                opportunity=targets[opportunity_id],
                 evaluation=by_id[opportunity_id],
             ).reason
         except LLMError as exc:

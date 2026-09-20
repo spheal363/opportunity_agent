@@ -15,6 +15,7 @@ from ai.llm import (
 )
 from ai.orcarouter import (
     EmptyResponseError,
+    LLMError,
     LLMRequestError,
     ModelTier,
     OrcaRouterClient,
@@ -469,3 +470,24 @@ def test_fallback_depends_on_whether_the_model_is_the_problem(status, expected_m
         generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=1)
 
     assert [s["model"] for s in sent] == expected_models
+
+
+def test_usages_survive_across_fallback():
+    """Fallback 先で落ちても、前の tier で消費した分を取りこぼさない。
+
+    失敗した Agent Run のコストが 0 として扱われないようにするため（#26）。
+    """
+    c, _ = _client_returning('{"bad": 1}', '{"bad": 2}')
+    # powerful を未設定にして、Fallback 先で LLMConfigError を起こす
+    c._settings = Settings(
+        orcarouter_api_key="sk-orca-test",
+        orcarouter_base_url="https://api.example.com/v1",
+        llm_model_standard="standard/model",
+        llm_model_powerful=None,
+    )
+    with pytest.raises(LLMError) as exc:
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=2)
+
+    # standard で 2 回消費している
+    assert len(exc.value.usages) == 2
+    assert sum(u.total_tokens for u in exc.value.usages) == 6
