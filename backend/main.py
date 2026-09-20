@@ -14,6 +14,7 @@ from api.errors import register_error_handlers
 from config import get_settings
 from db.session import init_db
 from logging_config import get_logger, setup_logging
+from tools.search import close_provider
 
 settings = get_settings()
 setup_logging(settings.log_level)
@@ -26,6 +27,7 @@ async def lifespan(_: FastAPI):
     logger.info("backend started env=%s stub_mode=%s", settings.app_env, settings.agent_stub_mode)
     yield
     close_client()
+    close_provider()
 
 
 app = FastAPI(
