@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     search_provider: str = "tavily"  # tavily | serper
     page_fetcher: str = "tavily"  # tavily | jina
 
+    # 応答に実費（usage.cost_usd）を載せてもらうヘッダを送るか。
+    # **モデルの挙動は変わらない。** 既定は無効にしてあり、比較のときだけ
+    # 有効にする。見積もりと実費は別々に記録する（#65）。
+    orcarouter_include_cost: bool = False
+
     search_api_key: str | None = None  # Tavily
     serper_api_key: str | None = None
     # 日本語のイベントを探す用途に合わせる。英語圏の既定のままだと比較が用途とずれる。

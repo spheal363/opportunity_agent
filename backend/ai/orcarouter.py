@@ -58,6 +58,16 @@ class LLMUsage:
     total_tokens: int
     latency_ms: int
 
+    # OrcaRouter が返した**実費**（USD）。`X-OrcaRouter-Include-Cost: true` を
+    # 送ったときだけ入る。**`ai/cost.py` の円見積もりとは別物。**
+    #
+    # 見積もりは公開価格から置いた値で、請求額ではない。こちらは請求側が
+    # 計算した額。ただし公式は「応答時に計算した値」で、確定額は
+    # GET /v1/generation?id= のほうだと明記している。
+    cost_usd: float | None = None
+    # 確定額を後から引くための ID（レスポンスヘッダ X-Orca-Request-Id）。
+    request_id: str | None = None
+
 
 @dataclass(frozen=True)
 class LLMResponse:
@@ -165,11 +175,28 @@ class OrcaRouterClient:
         json_mode: bool = True,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
+        reasoning_effort: str | None = None,
+        include_cost: bool | None = None,
     ) -> LLMResponse:
         """1 回の chat completion。Retry はしない（#15 の責務）。
 
         json_mode=True のとき response_format を付けて JSON を強制する。
         フェンス付きで返るモデルがあるため、原則 True のまま使う。
+
+        `reasoning_effort` は**思考量の指定**（#65 の比較用）。
+        公式（docs.orcarouter.ai/advanced/reasoning）で
+        OpenAI 互換エンドポイントの正式なパラメータとされており、
+        値は low / medium / high、モデルによって minimal / max。
+        Gemini 2.5 Flash は対応モデルとして挙がっている。
+
+        **None のときは送らない。** 既定の挙動を変えないため。
+
+        **受理されたことと、効いたことは別。** 送っても
+        `usage.completion_tokens_details.reasoning_tokens` が減らなければ
+        反映されていない。呼び出し元がそれを確かめる。
+
+        **max_tokens は下げない。** 枠を削ると JSON が途中で切れ、
+        Retry が増えて逆に高くつく（実測でそうなった）。
         """
         self._require_config()
         model = self.model_for(tier)
@@ -183,12 +210,18 @@ class OrcaRouterClient:
             payload["response_format"] = {"type": "json_object"}
         if temperature is not None:
             payload["temperature"] = temperature
+        if reasoning_effort is not None:
+            payload["reasoning_effort"] = reasoning_effort
 
         url = f"{self._settings.orcarouter_base_url.rstrip('/')}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self._settings.orcarouter_api_key}",
             "Content-Type": "application/json",
         }
+        # 実費を応答に載せてもらう。**モデルの挙動は変わらない**（応答に
+        # 欄が増えるだけ）。既定は無効で、比較のときだけ有効にする。
+        if self._settings.orcarouter_include_cost if include_cost is None else include_cost:
+            headers["X-OrcaRouter-Include-Cost"] = "true"
 
         started = time.perf_counter()
         try:
@@ -223,6 +256,7 @@ class OrcaRouterClient:
 
         usage_body = body.get("usage") or {}
         details = usage_body.get("completion_tokens_details") or {}
+        cost_usd = usage_body.get("cost_usd")
         usage = LLMUsage(
             model=model,
             tier=tier,
@@ -231,6 +265,9 @@ class OrcaRouterClient:
             reasoning_tokens=details.get("reasoning_tokens", 0),
             total_tokens=usage_body.get("total_tokens", 0),
             latency_ms=latency_ms,
+            cost_usd=float(cost_usd) if isinstance(cost_usd, (int, float)) else None,
+            # 確定額は GET /v1/generation?id= で引く。ID を捨てない。
+            request_id=res.headers.get("X-Orca-Request-Id"),
         )
 
         # Secret とプロンプト本文は出さない。追跡に必要な情報だけ残す。

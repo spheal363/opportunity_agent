@@ -228,3 +228,91 @@ def test_empty_response_error_carries_its_usage():
         c.chat([{"role": "user", "content": "hi"}])
     assert len(exc.value.usages) == 1
     assert exc.value.usages[0].reasoning_tokens == 32
+
+
+# --- 思考量の指定と実費の取得（#65）-----------------------------------------
+#
+# **受理されたことと、効いたことは別。** ここで確かめるのは「送っているか」
+# だけで、reasoning が実際に減るかは実 API でしか分からない。
+
+
+def _sent(handler_capture: dict):
+    import json as _json
+
+    return _json.loads(handler_capture["body"])
+
+
+def _capture_client(response: httpx.Response, **overrides):
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = request.content
+        seen["headers"] = dict(request.headers)
+        return response
+
+    return _client(handler, **overrides), seen
+
+
+def test_reasoning_effort_is_not_sent_by_default():
+    """**既定の挙動を変えない。** 指定が無ければパラメータを足さない。"""
+    client, seen = _capture_client(httpx.Response(200, json=_ok_body()))
+    client.chat([{"role": "user", "content": "hi"}])
+
+    assert "reasoning_effort" not in _sent(seen)
+
+
+def test_reasoning_effort_is_sent_when_given():
+    client, seen = _capture_client(httpx.Response(200, json=_ok_body()))
+    client.chat([{"role": "user", "content": "hi"}], reasoning_effort="minimal")
+
+    assert _sent(seen)["reasoning_effort"] == "minimal"
+
+
+def test_reasoning_effort_does_not_touch_max_tokens():
+    """**枠は削らない。** 削ると JSON が途中で切れ、Retry が増えて逆に高くつく。"""
+    client, seen = _capture_client(httpx.Response(200, json=_ok_body()))
+    client.chat([{"role": "user", "content": "hi"}], max_tokens=8192, reasoning_effort="low")
+
+    assert _sent(seen)["max_tokens"] == 8192
+
+
+def test_cost_header_is_off_by_default():
+    client, seen = _capture_client(httpx.Response(200, json=_ok_body()))
+    client.chat([{"role": "user", "content": "hi"}])
+
+    assert "x-orcarouter-include-cost" not in seen["headers"]
+
+
+def test_cost_header_is_sent_when_enabled():
+    client, seen = _capture_client(httpx.Response(200, json=_ok_body()))
+    client.chat([{"role": "user", "content": "hi"}], include_cost=True)
+
+    assert seen["headers"]["x-orcarouter-include-cost"] == "true"
+
+
+def test_actual_cost_is_read_when_present():
+    """**見積もりとは別の欄に持つ。** 請求側が計算した値。"""
+    body = _ok_body()
+    body["usage"]["cost_usd"] = 0.00846
+    client, _ = _capture_client(httpx.Response(200, json=body))
+
+    res = client.chat([{"role": "user", "content": "hi"}], include_cost=True)
+    assert res.usage.cost_usd == 0.00846
+
+
+def test_actual_cost_is_none_when_absent():
+    """ヘッダを送っていなければ欄は無い。**0 とは書かない。**"""
+    client, _ = _capture_client(httpx.Response(200, json=_ok_body()))
+    res = client.chat([{"role": "user", "content": "hi"}])
+
+    assert res.usage.cost_usd is None
+
+
+def test_request_id_is_kept_for_the_settled_amount():
+    """確定額は GET /v1/generation?id= で引く。**ID を捨てない。**"""
+    client, _ = _capture_client(
+        httpx.Response(200, json=_ok_body(), headers={"X-Orca-Request-Id": "20260921-abc"})
+    )
+    res = client.chat([{"role": "user", "content": "hi"}])
+
+    assert res.usage.request_id == "20260921-abc"
