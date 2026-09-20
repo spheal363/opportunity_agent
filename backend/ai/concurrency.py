@@ -8,6 +8,7 @@
 ワーカーを増やせる（`ai/llm.get_client()` は lru_cache の singleton）。
 """
 
+import contextvars
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,5 +32,21 @@ def map_parallel[T, R](
     items = list(items)
     if len(items) <= 1:
         return [fn(x) for x in items]
+
+    # **ThreadPoolExecutor は contextvars を自動で引き継がない。**
+    # 引き継がないと、ワーカー内のコスト記録（ai/cost.py）が黙って落ちて
+    # 「安く済んだ」ように見える。
+    #
+    # `Context.run()` は使えない。1 つの Context へ複数スレッドから同時に
+    # 入れず `cannot enter context` で落ちる。呼び出し時点の**値を控えて、
+    # 各ワーカーのスレッドで set し直す**。スレッドごとに独立した context を
+    # 持つので互いに干渉しない。
+    snapshot = list(contextvars.copy_context().items())
+
+    def run(item: T) -> R:
+        for var, value in snapshot:
+            var.set(value)
+        return fn(item)
+
     with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:
-        return list(pool.map(fn, items))
+        return list(pool.map(run, items))
