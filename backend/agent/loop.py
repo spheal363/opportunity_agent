@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -20,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
+from ai import cost
 from ai.concurrency import map_parallel
 from ai.evaluation import evaluate_many, recommend, select_top
 from ai.extraction import extract_many
@@ -74,6 +77,21 @@ def run_agent(run_id: str, user_id: str) -> None:
     呼び出し元とは別セッションを使う（リクエストの寿命に縛られないため）。
     """
     db = SessionLocal()
+    # この run で起きた LLM 呼び出しの消費量を集める。失敗しても記録は残す
+    # （失敗した run のコストが 0 として扱われないようにするため）。
+    with cost.track(), _closing(db):
+        _run(db, run_id, user_id)
+
+
+@contextmanager
+def _closing(db: Session) -> Iterator[None]:
+    try:
+        yield
+    finally:
+        db.close()
+
+
+def _run(db: Session, run_id: str, user_id: str) -> None:
     try:
         state = AgentState(run_id=run_id, user_id=user_id, status=AgentRunStatus.RUNNING)
         profile = db.get(UserProfile, user_id)
@@ -113,8 +131,6 @@ def run_agent(run_id: str, user_id: str) -> None:
         logger.exception("agent run failed run_id=%s", run_id)
         db.rollback()
         _fail(db, AgentState(run_id=run_id, user_id=user_id), str(exc))
-    finally:
-        db.close()
 
 
 # --------------------------------------------------------------------------
@@ -543,6 +559,13 @@ def _fail(db: Session, state: AgentState, error: str) -> None:
 
 
 def _sync(db: Session, state: AgentState) -> None:
+    # 進捗を書くたびに、そこまでの消費量を state へ反映する。
+    # 途中で落ちても、そこまでのコストが残る。
+    tracker = cost.current()
+    if tracker is not None:
+        state.cost_jpy = round(tracker.jpy, 4)
+        state.expensive_model_calls = tracker.expensive_calls
+
     run = db.get(AgentRun, state.run_id)
     if run is None:
         return
