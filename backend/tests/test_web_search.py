@@ -204,3 +204,160 @@ def test_tool_returns_untrusted_result(monkeypatch):
     assert isinstance(out, ToolResult)
     assert out.external is True
     assert out.data[0].url == "https://e.com"
+
+
+# --- ページ取得（#17）----------------------------------------------------
+
+
+def _extract_body(*results: dict, failed: list | None = None) -> dict:
+    return {
+        "results": list(results),
+        "failed_results": failed or [],
+        "response_time": 0.7,
+    }
+
+
+def _page(**overrides) -> dict:
+    base = {
+        "url": "https://example.com/hackathon",
+        "title": "AI Hackathon Tokyo",
+        "raw_content": "ページ本文" * 100,
+        "images": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_extract_request_shape():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_extract_body(_page()))
+
+    _provider(handler).extract(["https://a.com", "https://b.com"])
+
+    assert seen["url"] == "https://api.tavily.com/extract"
+    # 複数 URL は 1 リクエストにまとめる
+    assert seen["body"]["urls"] == ["https://a.com", "https://b.com"]
+
+
+def test_extract_maps_to_page_content():
+    p = _provider(lambda r: httpx.Response(200, json=_extract_body(_page())))
+    pages, failed = p.extract(["https://example.com/hackathon"])
+
+    assert failed == []
+    assert len(pages) == 1
+    assert pages[0].url == "https://example.com/hackathon"
+    assert pages[0].title == "AI Hackathon Tokyo"
+    assert len(pages[0].content) == 500
+
+
+def test_extract_partial_failure_does_not_raise():
+    """一部が落ちても残りを捨てない。Tavily は HTTP 200 で failed_results を返す。"""
+    p = _provider(
+        lambda r: httpx.Response(
+            200,
+            json=_extract_body(
+                _page(),
+                failed=[{"url": "https://broken.example", "error": "Failed to fetch url"}],
+            ),
+        )
+    )
+    pages, failed = p.extract(["https://example.com/hackathon", "https://broken.example"])
+
+    assert len(pages) == 1
+    assert failed == ["https://broken.example"]
+
+
+def test_extract_skips_results_without_content():
+    p = _provider(
+        lambda r: httpx.Response(200, json=_extract_body(_page(), _page(raw_content=None)))
+    )
+    pages, _ = p.extract(["https://a.com", "https://b.com"])
+    assert len(pages) == 1
+
+
+def test_extract_with_empty_urls_does_not_call_api():
+    called = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        called.append(1)
+        return httpx.Response(200, json=_extract_body())
+
+    pages, failed = _provider(handler).extract([])
+    assert (pages, failed, called) == ([], [], [])
+
+
+def test_extract_error_is_classified():
+    p = _provider(lambda r: httpx.Response(429, json={"detail": "rate limit"}))
+    with pytest.raises(SearchError) as exc:
+        p.extract(["https://a.com"])
+    assert exc.value.retryable is True
+
+
+def test_tavily_supports_extract():
+    assert _provider(lambda r: httpx.Response(200)).supports_extract is True
+
+
+def test_provider_without_extract_raises():
+    """Brave / Serper のように検索のみの provider へ差し替えたとき。"""
+    from tools.search.base import SearchProvider
+
+    class SearchOnly(SearchProvider):
+        name = "search-only"
+
+        def search(self, query, *, limit=10):
+            return []
+
+    with pytest.raises(SearchError, match="ページ取得に対応していません"):
+        SearchOnly().extract(["https://a.com"])
+
+
+# --- Page Reader Tool -----------------------------------------------------
+
+
+def test_page_reader_is_registered_as_auto():
+    assert registry.get("read_page").permission is PermissionLevel.AUTO
+
+
+def test_page_reader_accepts_single_and_multiple_urls(monkeypatch):
+    from tools.search.base import PageContent
+
+    seen = {}
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            seen["urls"] = urls
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+
+    out = registry.invoke("read_page", url="https://a.com")
+    assert seen["urls"] == ["https://a.com"]
+    assert out.external is True
+    assert len(out.data["pages"]) == 1
+
+    registry.invoke("read_page", url=["https://a.com", "https://b.com"])
+    assert seen["urls"] == ["https://a.com", "https://b.com"]
+
+
+def test_page_reader_reports_failed_urls(monkeypatch):
+    from tools.search.base import PageContent
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            return [PageContent(url=urls[0], title="t", content="c")], [urls[1]]
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.com", "https://ng.com"])
+
+    assert len(out.data["pages"]) == 1
+    assert out.data["failed"] == ["https://ng.com"]

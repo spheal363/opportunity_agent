@@ -7,7 +7,7 @@ MVP は Tavily。別 provider（Brave / Serper など）への差し替えは
 
 from functools import lru_cache
 
-from tools.search.base import SearchError, SearchProvider, SearchResult
+from tools.search.base import PageContent, SearchError, SearchProvider, SearchResult
 from tools.search.tavily import TavilyProvider
 
 
@@ -25,6 +25,7 @@ def close_provider() -> None:
 
 
 __all__ = [
+    "PageContent",
     "SearchError",
     "SearchProvider",
     "SearchResult",
