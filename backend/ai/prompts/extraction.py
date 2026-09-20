@@ -57,10 +57,11 @@ def build_user(source_url: str, page_content: str, *, today: date | None = None)
 
     今日の日付を渡すのは、「9/21(土)」のように年が書かれていない日付を
     解釈させるため。
+
+    **URL も囲みの内側に入れる。** 検索結果の URL は攻撃者がドメインもパスも
+    自由に決められるため、本文と同じく信頼できないデータである。囲みの外に
+    置くと、URL 文字列に仕込んだ指示が system 直後の位置に並ぶ。
     """
     today = today or date.today()
-    return (
-        f"今日の日付: {today.isoformat()}\n"
-        f"取得元 URL: {source_url}\n\n"
-        f"{untrusted_block('page_content', page_content)}"
-    )
+    source = f"取得元 URL: {source_url}\n\n{page_content}"
+    return f"今日の日付: {today.isoformat()}\n\n{untrusted_block('page_content', source)}"

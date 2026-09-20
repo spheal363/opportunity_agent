@@ -40,6 +40,14 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 # 再試行する価値がある HTTP ステータス。401 / 422 は再試行しても同じ。
 _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
+# 実測した API 側の上限。
+#   /extract は 21 件以上で HTTP 400「Max 20 URLs are allowed.」
+#   /search は max_results を大きくしてもエラーにならず、20 件前後で頭打ち
+MAX_EXTRACT_URLS = 20
+MAX_SEARCH_RESULTS = 20
+# クエリ長の上限。これを超える検索語は実質無意味で、トークンとコストだけ増える。
+MAX_QUERY_CHARS = 400
+
 
 class TavilyProvider(SearchProvider):
     name = "tavily"
@@ -70,6 +78,17 @@ class TavilyProvider(SearchProvider):
     ) -> list[SearchResult]:
         if not self._settings.search_api_key:
             raise SearchError("SEARCH_API_KEY が設定されていません")
+
+        query = query.strip()
+        if not query:
+            raise SearchError("検索クエリが空です")
+        if len(query) > MAX_QUERY_CHARS:
+            logger.warning("search.query_truncated len=%d", len(query))
+            query = query[:MAX_QUERY_CHARS]
+
+        # Agent が大きな limit を出しても API 側は黙って頭打ちにする。
+        # ここで揃えておかないと「20 件頼んだのに 10 件」が理由不明に見える。
+        limit = max(1, min(limit, MAX_SEARCH_RESULTS))
 
         payload: dict[str, Any] = {
             "query": query,
@@ -105,8 +124,15 @@ class TavilyProvider(SearchProvider):
         except (ValueError, KeyError) as exc:
             raise SearchError("検索 API のレスポンス形式が想定と違います", retryable=True) from exc
 
+        # provider の失敗はすべて SearchError に寄せる設計。ここでガードしないと
+        # item.get で AttributeError が漏れ、retryable の分類を丸ごと迂回する。
+        if not isinstance(raw_results, list):
+            raise SearchError("検索 API のレスポンス形式が想定と違います", retryable=True)
+
         results: list[SearchResult] = []
         for item in raw_results:
+            if not isinstance(item, dict):
+                continue
             url = item.get("url")
             if not url:
                 continue
@@ -136,6 +162,10 @@ class TavilyProvider(SearchProvider):
             raise SearchError("SEARCH_API_KEY が設定されていません")
         if not urls:
             return [], []
+        if len(urls) > MAX_EXTRACT_URLS:
+            raise SearchError(
+                f"一度に取得できる URL は {MAX_EXTRACT_URLS} 件までです（{len(urls)} 件）"
+            )
 
         headers = {
             "Authorization": f"Bearer {self._settings.search_api_key}",
@@ -163,16 +193,30 @@ class TavilyProvider(SearchProvider):
             ) from exc
 
         pages: list[PageContent] = []
+        failed: list[str] = []
+
         for item in body.get("results") or []:
+            if not isinstance(item, dict):
+                continue
             url = item.get("url")
+            if not url:
+                continue
             content = item.get("raw_content")
-            if not url or not content:
+            if not content:
+                # HTTP 200 だが本文が無い。取れなかった事実として残す。
+                # ここで捨てると、要求した URL が pages にも failed にも現れない。
+                failed.append(url)
                 continue
             pages.append(PageContent(url=url, title=item.get("title") or "", content=content))
 
-        failed = [f.get("url") for f in (body.get("failed_results") or []) if f.get("url")]
-        # 取得した URL の一覧は残すが、本文は Log へ出さない。
-        logger.info("search.tavily.extract ok=%d failed=%d", len(pages), len(failed))
+        for item in body.get("failed_results") or []:
+            if isinstance(item, dict) and item.get("url"):
+                failed.append(item["url"])
+
+        # 失敗した URL は Log に残す（原因を追えるようにするため）。本文は出さない。
+        logger.info(
+            "search.tavily.extract ok=%d failed=%d urls=%s", len(pages), len(failed), failed
+        )
         return pages, failed
 
     def close(self) -> None:

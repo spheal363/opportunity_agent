@@ -12,7 +12,12 @@ from config import Settings
 from tools import registry
 from tools.base import PermissionLevel, ToolResult
 from tools.search import SearchError, SearchResult
-from tools.search.tavily import TavilyProvider
+from tools.search.tavily import (
+    MAX_EXTRACT_URLS,
+    MAX_QUERY_CHARS,
+    MAX_SEARCH_RESULTS,
+    TavilyProvider,
+)
 
 
 def _settings(**overrides) -> Settings:
@@ -141,11 +146,40 @@ def test_missing_optional_fields():
     assert r.score is None
 
 
-def test_malformed_response_is_retryable():
-    p = _provider(lambda r: httpx.Response(200, json={"unexpected": True}))
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"unexpected": True},  # results が無い
+        {"results": "not-a-list"},  # results が list でない
+    ],
+)
+def test_malformed_response_is_retryable(body):
+    """provider の失敗はすべて SearchError に寄せる。
+
+    AttributeError が漏れると retryable の分類を迂回して Agent Run 全体が落ちる。
+    """
+    p = _provider(lambda r: httpx.Response(200, json=body))
     with pytest.raises(SearchError) as exc:
         p.search("q")
     assert exc.value.retryable is True
+
+
+@pytest.mark.parametrize("broken", [None, 42, "text", []])
+def test_non_dict_items_are_skipped_not_raised(broken):
+    """要素が dict でなくても AttributeError を漏らさない。"""
+    p = _provider(lambda r: httpx.Response(200, json=_body(_result(), broken)))
+    results = p.search("q")
+    assert len(results) == 1
+
+
+@pytest.mark.parametrize("broken", [None, 42, "text"])
+def test_extract_non_dict_items_are_skipped(broken):
+    p = _provider(
+        lambda r: httpx.Response(200, json=_extract_body(_page(), broken, failed=[broken]))
+    )
+    pages, failed = p.extract(["https://a.com"])
+    assert len(pages) == 1
+    assert failed == []
 
 
 # --- エラー分類 ----------------------------------------------------------
@@ -271,12 +305,27 @@ def test_extract_partial_failure_does_not_raise():
     assert failed == ["https://broken.example"]
 
 
-def test_extract_skips_results_without_content():
+def test_url_without_content_is_reported_as_failed():
+    """HTTP 200 だが本文が無い URL を黙って捨てない。
+
+    捨てると、要求した URL が pages にも failed にも現れなくなる。
+    """
     p = _provider(
-        lambda r: httpx.Response(200, json=_extract_body(_page(), _page(raw_content=None)))
+        lambda r: httpx.Response(
+            200,
+            json=_extract_body(
+                _page(url="https://ok.com"),
+                _page(url="https://empty.com", raw_content=None),
+            ),
+        )
     )
-    pages, _ = p.extract(["https://a.com", "https://b.com"])
-    assert len(pages) == 1
+    requested = ["https://ok.com", "https://empty.com"]
+    pages, failed = p.extract(requested)
+
+    assert [x.url for x in pages] == ["https://ok.com"]
+    assert failed == ["https://empty.com"]
+    # 要求した URL は必ずどちらかに現れる
+    assert set(requested) == {x.url for x in pages} | set(failed)
 
 
 def test_extract_with_empty_urls_does_not_call_api():
@@ -361,3 +410,114 @@ def test_page_reader_reports_failed_urls(monkeypatch):
 
     assert len(out.data["pages"]) == 1
     assert out.data["failed"] == ["https://ng.com"]
+
+
+# --- 入力の検証（レビュー指摘）--------------------------------------------
+
+
+def test_query_is_required():
+    p = _provider(lambda r: httpx.Response(200, json=_body()))
+    with pytest.raises(SearchError, match="空です"):
+        p.search("   ")
+
+
+def test_long_query_is_truncated():
+    """長すぎる検索語はトークンとコストだけ増やす。"""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_body(_result()))
+
+    _provider(handler).search("あ" * 1000)
+    assert len(seen["body"]["query"]) == MAX_QUERY_CHARS
+
+
+@pytest.mark.parametrize("asked,sent", [(0, 1), (-5, 1), (5, 5), (50, MAX_SEARCH_RESULTS)])
+def test_limit_is_clamped(asked, sent):
+    """API 側は大きな値を黙って頭打ちにする。ここで揃える。"""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json=_body(_result()))
+
+    _provider(handler).search("q", limit=asked)
+    assert seen["body"]["max_results"] == sent
+
+
+def test_extract_rejects_too_many_urls():
+    """実測: 21 件以上は Tavily が HTTP 400 を返す。手前で弾く。"""
+    p = _provider(lambda r: httpx.Response(200, json=_extract_body()))
+    with pytest.raises(SearchError, match="20 件まで"):
+        p.extract([f"https://e{i}.com" for i in range(MAX_EXTRACT_URLS + 1)])
+
+
+def test_extract_accepts_max_urls():
+    p = _provider(lambda r: httpx.Response(200, json=_extract_body()))
+    p.extract([f"https://e{i}.com" for i in range(MAX_EXTRACT_URLS)])
+
+
+# --- page_reader の入力検証（レビュー指摘）--------------------------------
+
+
+@pytest.mark.parametrize(
+    "bad", ["file:///etc/passwd", "data:text/html,x", "javascript:alert(1)", "ftp://e.com/x"]
+)
+def test_page_reader_rejects_non_http_schemes(monkeypatch, bad):
+    """file: や data: を Agent に踏ませない。"""
+    from tools.search.base import PageContent
+
+    called = []
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            called.append(urls)
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.com", bad])
+
+    # provider には渡さない
+    assert called == [["https://ok.com"]]
+    # だが「取れなかった」事実としては残す
+    assert out.data["failed"] == [bad]
+
+
+def test_page_reader_with_only_bad_urls_does_not_call_provider(monkeypatch):
+    called = []
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            called.append(urls)
+            return [], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url="file:///etc/passwd")
+
+    assert called == []
+    assert out.data["failed"] == ["file:///etc/passwd"]
+
+
+def test_page_reader_truncates_huge_content(monkeypatch):
+    """実測で 43,910 文字のページがあった。際限なく持たない。"""
+    from tools.page_reader import MAX_CONTENT_CHARS
+    from tools.search.base import PageContent
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            return [PageContent(url=urls[0], title="t", content="あ" * 200_000)], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url="https://e.com")
+
+    assert len(out.data["pages"][0].content) == MAX_CONTENT_CHARS

@@ -13,10 +13,19 @@ Tavily の検索は 800〜1500 文字の本文抜粋を返すため、多くの�
 """
 
 from typing import Any
+from urllib.parse import urlparse
 
 from tools.base import PermissionLevel, Tool, ToolResult, registry
 from tools.search import get_provider
-from tools.search.base import SearchError
+from tools.search.base import PageContent, SearchError
+
+# http / https 以外は取りに行かない。file: や data: を Agent に踏ませない。
+ALLOWED_SCHEMES = frozenset({"http", "https"})
+
+# 1 ページあたりの本文上限。実測で 43,910 文字のページがあった。
+# これは安全側の歯止めで、LLM へ渡す量ではない（そちらは
+# ai/schemas/extraction.MAX_PAGE_CONTENT_CHARS が別に絞る）。
+MAX_CONTENT_CHARS = 50_000
 
 
 class PageReaderTool(Tool):
@@ -36,9 +45,33 @@ class PageReaderTool(Tool):
         if not provider.supports_extract:
             raise SearchError(f"{provider.name} はページ取得に対応していません")
 
-        pages, failed = provider.extract(urls)
+        # 取りに行けない URL は provider へ渡さず、失敗として返す。
+        # 要求した URL は必ず pages か failed のどちらかに現れる。
+        allowed, rejected = _split_by_scheme(urls)
+        pages, failed = provider.extract(allowed) if allowed else ([], [])
+
         # 外部から取得した内容。命令として扱わない。
-        return ToolResult({"pages": pages, "failed": failed}, external=True)
+        return ToolResult(
+            {"pages": [_truncate(p) for p in pages], "failed": failed + rejected},
+            external=True,
+        )
 
 
 registry.register(PageReaderTool())
+
+
+def _split_by_scheme(urls: list[str]) -> tuple[list[str], list[str]]:
+    """http / https のものと、それ以外に分ける。"""
+    allowed: list[str] = []
+    rejected: list[str] = []
+    for u in urls:
+        scheme = urlparse(u).scheme.lower()
+        (allowed if scheme in ALLOWED_SCHEMES else rejected).append(u)
+    return allowed, rejected
+
+
+def _truncate(page: PageContent) -> PageContent:
+    """本文が際限なく大きくならないようにする。"""
+    if len(page.content) <= MAX_CONTENT_CHARS:
+        return page
+    return PageContent(url=page.url, title=page.title, content=page.content[:MAX_CONTENT_CHARS])
