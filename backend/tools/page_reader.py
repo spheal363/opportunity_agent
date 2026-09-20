@@ -16,6 +16,7 @@ import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
+from ai import cost
 from tools.base import PermissionLevel, Tool, ToolResult, registry
 from tools.search import get_provider
 from tools.search.base import PageContent, SearchError
@@ -53,6 +54,9 @@ class PageReaderTool(Tool):
         # 要求した URL は必ず pages か failed のどちらかに現れる。
         allowed, rejected = _split_by_scheme(urls)
         pages, failed = provider.extract(allowed) if allowed else ([], [])
+        # 本文取得の回数。検索とは分けて数える（#65）。
+        if allowed:
+            cost.record_extract(len(allowed))
 
         # 外部から取得した内容。命令として扱わない。
         return ToolResult(

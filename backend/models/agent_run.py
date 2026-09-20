@@ -5,7 +5,7 @@ Agent State を DB に持たせることで、途中で落ちても状態を追�
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
@@ -23,9 +23,21 @@ class AgentRun(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- この run の最終選定 ---
+    # **順位順の opportunity_id。** Opportunity 側の run_id は同じ URL を再発見すると
+    # 上書きされるため、過去 run の選定結果は保てない。ここに記録する。
+    #
+    # 保証するのは「どれをどの順で選んだか」だけ。**候補の内容は最新値**で、
+    # 選定時点の本文を保存するものではない。
+    selected_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 3 件に満たなかった理由。後から同じ内容を返せるよう run に持つ。
+    shortfall_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # コスト計測（OrcaRouter のモデル振り分けを見せるため）
     cost_jpy: Mapped[float] = mapped_column(Float, default=0.0)
     expensive_model_calls: Mapped[int] = mapped_column(Integer, default=0)
+    # 工程別の使用量。ai/cost.py の CostTracker.to_dict() が作る形。
+    usage_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

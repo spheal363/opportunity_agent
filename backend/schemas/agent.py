@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from schemas.opportunity import OpportunitySummary
+
 
 class AgentRunStatus(StrEnum):
     QUEUED = "queued"
@@ -42,6 +44,26 @@ class AgentRunState(BaseModel):
     # 「全件を高性能モデルへ投げていない」ことを示すために出す。
     cost_jpy: float = Field(default=0.0, ge=0)
     expensive_model_calls: int = Field(default=0, ge=0)
+
+
+class AgentRunResult(BaseModel):
+    """GET /api/agent/runs/{run_id}/result。**この run の最終選定。**
+
+    `GET /api/opportunities`（保存一覧の母集合）とは別物。あちらは status で
+    絞った最新の一覧で、こちらは**その run で選んだものを順位順**に返す。
+
+    `recorded` が False なら「まだ結果が無い」。未完了と、完了したが 0 件は
+    `status` と `selected` の組で区別する。
+    """
+
+    run_id: str
+    status: AgentRunStatus
+    # 結果が記録されているか。未完了・古い run では False
+    recorded: bool = False
+    # 順位順。**3 件に満たないことがある**
+    selected: list[OpportunitySummary] = Field(default_factory=list)
+    # 3 件に満たなかった理由
+    shortfall_reason: str | None = None
 
 
 class AgentLogEntry(BaseModel):

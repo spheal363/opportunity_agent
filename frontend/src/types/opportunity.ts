@@ -13,6 +13,9 @@ export type OpportunityType =
 
 export type OpportunityFormat = 'offline' | 'online' | 'hybrid';
 
+/** 受付状況。`verified` とは別の軸。 */
+export type Availability = 'open' | 'closed' | 'unknown';
+
 export type OpportunityStatus =
   | 'discovered'
   | 'recommended'
@@ -40,6 +43,15 @@ export type Opportunity = {
   match_reasons: string[];
 
   verified: boolean;
+
+  /**
+   * いま応募・参加できるか。**`verified`（情報を確認できたか）とは別の軸。**
+   * open は「受付中を確認できた」という意味で、参加資格や空き枠は保証しない。
+   */
+  availability: Availability;
+  availability_reason: string | null;
+  /** いつ時点の確認か。古い結果を今の状態として読まないために対で見る。 */
+  availability_checked_at: string | null;
   status: OpportunityStatus;
 };
 

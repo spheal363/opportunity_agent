@@ -1,6 +1,6 @@
-import type { AgentLogEntry, AgentRun, AgentRunCreated } from '../types';
+import type { AgentRunResult, AgentLogEntry, AgentRun, AgentRunCreated } from '../types';
 import { api, USE_MOCK } from './client';
-import { MOCK_AGENT_LOGS } from './mock';
+import { MOCK_AGENT_LOGS, MOCK_OPPORTUNITY_SUMMARIES } from './mock';
 
 export async function startAgentRun(): Promise<AgentRunCreated> {
   if (USE_MOCK) return { run_id: 'run_mock', status: 'running' };
@@ -26,4 +26,18 @@ export async function fetchAgentRun(runId: string): Promise<AgentRun> {
 export async function fetchAgentLogs(runId: string): Promise<AgentLogEntry[]> {
   if (USE_MOCK) return MOCK_AGENT_LOGS;
   return api.get<AgentLogEntry[]>(`/agent/runs/${runId}/logs`);
+}
+
+/** この run の最終選定。結果画面はこれを使う。 */
+export async function fetchAgentRunResult(runId: string): Promise<AgentRunResult> {
+  if (USE_MOCK) {
+    return {
+      run_id: runId,
+      status: 'completed',
+      recorded: true,
+      selected: MOCK_OPPORTUNITY_SUMMARIES,
+      shortfall_reason: null,
+    };
+  }
+  return api.get<AgentRunResult>(`/agent/runs/${runId}/result`);
 }

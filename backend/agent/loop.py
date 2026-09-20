@@ -22,13 +22,14 @@ from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
-from ai import cost
+from ai import availability, cost
 from ai.concurrency import map_parallel
-from ai.evaluation import evaluate_many, recommend, select_top
+from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
 from ai.extraction import extract_many
 from ai.goal_analysis import analyze_goal
 from ai.llm import LLMError
 from ai.schemas import GoalAnalysisOutput, SearchDirection
+from ai.schemas.evaluation import EvaluationOutput
 from ai.schemas.extraction import ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
 from ai.search_plan import plan_search
@@ -100,11 +101,13 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
             return
 
         _step(db, state, AgentStep.ANALYZING_PROFILE, "プロフィールを分析しています")
-        state.goal_analysis = _analyze_goal(profile)
+        with cost.step("goal_analysis"):
+            state.goal_analysis = _analyze_goal(profile)
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
 
         _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
-        state.search_directions = _plan_search(state, profile)
+        with cost.step("search_plan"):
+            state.search_directions = _plan_search(state, profile)
         for d in state.search_directions:
             _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
 
@@ -113,17 +116,15 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         _log(db, state, AgentStep.SEARCHING, f"{len(found)}件のOpportunityを発見")
 
         _step(db, state, AgentStep.EVALUATING, "Opportunityを評価しています")
-        state.selected_ids = _evaluate_and_select(db, state, found)
-        _log(
-            db,
-            state,
-            AgentStep.EVALUATING,
-            f"{len(found)}件からTOP{len(state.selected_ids)}件に絞り込み",
-        )
+        ranked = _evaluate_and_select(db, state, found)
+        _log(db, state, AgentStep.EVALUATING, f"{len(found)}件から{len(ranked)}件を順位付け")
 
-        _step(db, state, AgentStep.VERIFYING, "TOP3の公式情報を確認しています")
-        _verify(db, state)
-        _log(db, state, AgentStep.VERIFYING, "TOP3の公式情報を確認しました")
+        _step(db, state, AgentStep.VERIFYING, "上位候補の公式情報を確認しています")
+        _verify_and_finalize(db, state)
+        if state.shortfall_reason:
+            _log(db, state, AgentStep.VERIFYING, state.shortfall_reason)
+        else:
+            _log(db, state, AgentStep.VERIFYING, f"{len(state.selected_ids)}件を推薦します")
 
         state.status = AgentRunStatus.COMPLETED
         _step(db, state, AgentStep.COMPLETED, "探索が完了しました")
@@ -187,9 +188,10 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     candidates = []  # (探索方向, SearchResult)
     for direction in state.search_directions:
         try:
-            found = registry.invoke(
-                "search_web", query=direction.query, limit=MAX_RESULTS_PER_DIRECTION
-            ).data
+            with cost.step("search"):
+                found = registry.invoke(
+                    "search_web", query=direction.query, limit=MAX_RESULTS_PER_DIRECTION
+                ).data
         except SearchError as exc:
             # 1 方向の失敗で探索全体を止めない。他の方向はまだ試せる。
             _log(db, state, AgentStep.SEARCHING, f"「{direction.query}」の検索に失敗しました")
@@ -211,7 +213,8 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # --- ② 全候補をまとめて抽出する -----------------------------------------
     # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
     # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
-    extracted, failed = extract_many([r for _, r in candidates])
+    with cost.step("extraction"):
+        extracted, failed = extract_many([r for _, r in candidates])
 
     # クエリ文字列ではなく**方向の位置**を鍵にする。LLM が同じ query を持つ方向を
     # 2 つ返すことがあり、文字列で集計すると件数が合算されて二重に表示される。
@@ -361,8 +364,25 @@ def _domain_of(url: str | None) -> str | None:
     return urlparse(url).netloc or None
 
 
+# 検証にかける件数の上限。**時間そのものは保証できない**（実行中の通信を
+# 中断できないため）。件数で抑える。
+MAX_VERIFY = 5
+MAX_PROMOTIONS = 2
+
+
 def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list[str]:
-    """④ Evaluation + ⑤ TOP3 Selection + ⑥ Recommendation"""
+    """④ Evaluation + ⑤ 順位付け。**検証と推薦理由はここでは行わない。**
+
+    処理順を変えた（#68）。
+
+        抽出 -> 明確な期限切れを除外 -> 評価・順位付け
+        -> 上位を検証 -> 終了候補を除外 -> 次順位を追加検証
+        -> 最終候補にだけ推薦理由 -> 結果保存
+
+    推薦理由を検証の後に移したのは、**終了した候補の理由を書かずに済ませる**
+    ためと、警告を理由へ織り込めるようにするため。
+    **これで費用が必ず減るとは限らない**（繰り上げの追加検証が増える）。
+    """
     if get_settings().agent_stub_mode:
         rows = (
             db.query(Opportunity)
@@ -371,11 +391,10 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
             .limit(3)
             .all()
         )
-        for row in rows:
-            if row.status not in _USER_DECIDED:
-                row.status = OpportunityStatus.RECOMMENDED
         db.commit()
-        return [r.opportunity_id for r in rows]
+        # **状態の更新は _verify_and_finalize に任せる**（実経路と同じ形にする）。
+        state.ranked_ids = [r.opportunity_id for r in rows]
+        return state.ranked_ids
 
     goal = state.goal_analysis
     if goal is None:  # 順序を崩した呼び出しへの保険
@@ -388,12 +407,18 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
         for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
     }
 
-    # ④ 全件を評価する
-    evaluated, failed = evaluate_many(
-        goal_summary=goal.goal_summary,
-        interest_connections=goal.interest_connections,
-        opportunities=[_as_dict(r) for r in rows.values()],
-    )
+    # --- 評価の前に落とす ---------------------------------------------------
+    candidates = _drop_before_evaluation(db, state, rows)
+    if not candidates:
+        return []
+
+    # --- ④ 評価する ---------------------------------------------------------
+    with cost.step("evaluation"):
+        evaluated, failed = evaluate_many(
+            goal_summary=goal.goal_summary,
+            interest_connections=goal.interest_connections,
+            opportunities=[_as_dict(rows[i]) for i in candidates],
+        )
     for opportunity_id, out in evaluated:
         row = rows[opportunity_id]
         row.score = out.score
@@ -403,48 +428,67 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
 
     if failed:
         # 評価できなかった事実を隠さない。
+        cost.record_dropped("evaluation_failed", len(failed))
         _log(db, state, AgentStep.EVALUATING, f"{len(failed)}件は評価できませんでした")
 
-    # ⑤ TOP3 を選ぶ（LLM を使わない）
-    selected = select_top(evaluated)
+    # --- ⑤ 順位付け（LLM を使わない）----------------------------------------
+    state.ranked_ids = select_top(evaluated, limit=len(evaluated))
+    return state.ranked_ids
 
-    # ⑥ 推薦理由は TOP3 にだけ書く。3 件を直列にすると待ち時間が積み上がる。
-    by_id = dict(evaluated)
-    goals = state.goal_analysis.goal_directions
 
-    # ORM をワーカースレッドへ渡さない。メインスレッドで dict にしてから渡す
-    # （_verify と同じ形）。lazy load がスレッドをまたぐと壊れる。
-    targets = {i: _as_dict(rows[i]) for i in selected}
+def _drop_before_evaluation(
+    db: Session, state: AgentState, rows: dict[str, Opportunity]
+) -> list[str]:
+    """評価より前に、**確実に対象外と分かるものだけ**落とす。
 
-    def one(opportunity_id: str) -> str | None:
-        try:
-            return recommend(
-                goals=goals,
-                opportunity=targets[opportunity_id],
-                evaluation=by_id[opportunity_id],
-            ).reason
-        except LLMError as exc:
-            # 理由が無くても推薦自体は成立する。run を落とさない。
-            logger.warning("recommendation.failed id=%s reason=%s", opportunity_id, exc)
-            return None
+    落とすのは 2 種類。
 
-    reasons = map_parallel(selected, one)
+      - ユーザーが自分で外した（dismissed）
+      - 日時から**受付終了と言い切れる**（deadline / end_at が過去）
 
-    for opportunity_id, reason in zip(selected, reasons, strict=True):
-        row = rows[opportunity_id]
-        # ユーザーが「興味なし」にしたものを再探索で推薦へ戻さない。
-        if row.status not in _USER_DECIDED:
-            row.status = OpportunityStatus.RECOMMENDED
-        if reason is not None:
-            row.reason = reason
-        _log(
-            db,
-            state,
-            AgentStep.EVALUATING,
-            f"「{row.title}」を推薦（適合度{row.score} / 意外性{row.serendipity_score}）",
+    **不明は落とさない。** deadline が null は「受付終了でも受付中でもない」。
+    `start_at` が過去でも落とさない（開始済みでも参加できる機会がある）。
+    """
+    kept: list[str] = []
+    dismissed = 0
+    closed = 0
+
+    for opportunity_id, row in rows.items():
+        if row.status == OpportunityStatus.DISMISSED:
+            dismissed += 1
+            continue
+
+        status, reason = availability.from_dates(
+            opportunity_type=row.type, deadline=row.deadline, end_at=row.end_at
         )
+        if status is availability.Availability.CLOSED:
+            _set_availability(row, status, reason, source=None)
+            closed += 1
+            continue
+        kept.append(opportunity_id)
+
     db.commit()
-    return selected
+
+    if dismissed:
+        cost.record_dropped("dismissed", dismissed)
+    if closed:
+        cost.record_dropped("closed_by_date", closed)
+        _log(db, state, AgentStep.EVALUATING, f"{closed}件は期限切れのため評価しませんでした")
+    return kept
+
+
+def _set_availability(
+    row: Opportunity, status: str, reason: str | None, *, source: str | None
+) -> None:
+    """受付状況を**今回確認した結果として**書く。
+
+    確認日時と取得元を必ず一緒に更新する。**古い open を今回の結果として
+    返さない**ため、読む側は checked_at と対で見る。
+    """
+    row.availability = status
+    row.availability_reason = reason
+    row.availability_checked_at = datetime.now(UTC)
+    row.availability_source = source
 
 
 def _as_dict(row: Opportunity) -> dict:
@@ -464,49 +508,188 @@ def _as_dict(row: Opportunity) -> dict:
     }
 
 
-def _verify(db: Session, state: AgentState) -> None:
-    """⑦ Verification。TOP3 の公式ページを見に行き、抽出済みの内容と突き合わせる。
+def _verify_and_finalize(db: Session, state: AgentState) -> None:
+    """⑦ 検証 -> 終了候補を除外 -> 次順位を追加検証 -> 推薦理由 -> 結果保存。
 
-    **TOP3 だけに限る。** 全件の公式ページを取りに行くと read_page も LLM も
-    一気に増える。推薦する 3 件だけ裏を取る。
+    **繰り上げは既存の候補からのみ。** Web の再検索は #22 として分離する。
     """
     if get_settings().agent_stub_mode:
-        now = datetime.now(UTC)
-        for opportunity_id in state.selected_ids:
-            row = db.get(Opportunity, opportunity_id)
-            if row is not None:
-                row.verified = True
-                row.verified_at = now
-                row.verification_source = row.url
-        db.commit()
+        _verify_stub(db, state)
         return
 
-    rows = [db.get(Opportunity, i) for i in state.selected_ids]
-    rows = [r for r in rows if r is not None]
-    if not rows:
-        return
+    ranked = list(state.ranked_ids)
+    final: list[str] = []
+    checked = 0
+    promotions = 0
 
-    # 3 件それぞれが「ページ取得 + LLM 呼び出し」で、直列だと待ち時間が積み上がる。
-    # DB への書き込みと Log はこのスレッドでまとめて行う（Session を共有しない）。
-    targets = [(_as_dict(r), r.url) for r in rows]
-    outs = map_parallel(
-        targets,
-        lambda t: verify_with_page(opportunity=t[0], url=t[1], fetch_page=_fetch_page),
-    )
+    while ranked and len(final) < TOP_N and checked < MAX_VERIFY:
+        opportunity_id = ranked.pop(0)
+        row = db.get(Opportunity, opportunity_id)
+        if row is None:
+            continue
 
-    for row, out in zip(rows, outs, strict=True):
+        with cost.step("verification"):
+            out = verify_with_page(opportunity=_as_dict(row), url=row.url, fetch_page=_fetch_page)
+        checked += 1
+
         row.verified = out.verified
         row.verified_at = out.verified_at
         row.verification_source = out.verification_source
+        _set_availability(
+            row,
+            out.availability,
+            out.availability_reason,
+            source=row.url if out.verified else None,
+        )
+        db.commit()
 
-        # 確認できなかったことも、食い違いも隠さない。
-        if out.verified:
-            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」を公式ページで確認しました")
-        else:
-            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」は確認できませんでした")
-        for warning in out.warnings:
-            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {warning}")
+        _log_verification(db, state, row, out)
 
+        if availability.is_actionable(row.availability):
+            final.append(opportunity_id)
+            continue
+
+        # 受付終了。**期限切れで 3 件を埋めない。** 次順位を繰り上げる。
+        cost.record_dropped("closed_by_verification")
+        if promotions < MAX_PROMOTIONS and ranked:
+            promotions += 1
+            _log(
+                db,
+                state,
+                AgentStep.VERIFYING,
+                f"「{row.title}」は受付終了のため、次の候補を確認します",
+            )
+
+    state.selected_ids = final
+    state.shortfall_reason = _shortfall_reason(final, state)
+    _write_reasons(db, state, final)
+    _save_result(db, state)
+
+
+def _log_verification(db: Session, state: AgentState, row: Opportunity, out) -> None:
+    """確認できたことと、受付状況を**分けて**伝える。"""
+    if out.verified:
+        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」を公式ページで確認しました")
+    else:
+        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」は確認できませんでした")
+
+    if row.availability == availability.Availability.CLOSED:
+        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: 受付終了を確認しました")
+    elif row.availability == availability.Availability.OPEN:
+        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: 受付中を確認しました")
+
+    for warning in out.warnings:
+        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {warning}")
+
+
+def _shortfall_reason(final: list[str], state: AgentState) -> str | None:
+    """3 件に満たない理由。**後から同じ内容を返せるよう run に保存する。**"""
+    if len(final) >= TOP_N:
+        return None
+    if not state.ranked_ids:
+        return "条件に合う機会が見つかりませんでした"
+    if not final:
+        return "見つかった機会はいずれも受付を終了していました"
+    return f"受付中または要確認の機会が{len(final)}件しか見つかりませんでした"
+
+
+def _write_reasons(db: Session, state: AgentState, final: list[str]) -> None:
+    """**最終候補にだけ**推薦理由を書く。"""
+    if not final:
+        return
+    goals = state.goal_analysis.goal_directions if state.goal_analysis else []
+    rows = {i: db.get(Opportunity, i) for i in final}
+    targets = {i: _as_dict(r) for i, r in rows.items() if r is not None}
+
+    def one(opportunity_id: str) -> str | None:
+        row = rows[opportunity_id]
+        if row is None:
+            return None
+        try:
+            return recommend(
+                goals=goals,
+                opportunity=targets[opportunity_id],
+                evaluation=EvaluationOutput(
+                    score=row.score,
+                    serendipity_score=row.serendipity_score,
+                    match_reasons=row.match_reasons or [],
+                    concerns=[row.availability_reason] if row.availability_reason else [],
+                ),
+            ).reason
+        except LLMError as exc:
+            # 理由が無くても推薦自体は成立する。run を落とさない。
+            logger.warning("recommendation.failed id=%s reason=%s", opportunity_id, exc)
+            return None
+
+    with cost.step("recommendation"):
+        reasons = map_parallel(final, one)
+
+    for opportunity_id, reason in zip(final, reasons, strict=True):
+        row = rows[opportunity_id]
+        if row is None:
+            continue
+        if row.status not in _USER_DECIDED:
+            row.status = OpportunityStatus.RECOMMENDED
+        if reason is not None:
+            row.reason = reason
+        _log(
+            db,
+            state,
+            AgentStep.EVALUATING,
+            f"「{row.title}」を推薦（適合度{row.score} / 意外性{row.serendipity_score}）",
+        )
+    db.commit()
+
+
+def _save_result(db: Session, state: AgentState) -> None:
+    """**選定 ID と順位を run に保存する。**
+
+    Opportunity.run_id は同じ URL を再発見すると上書きされるため、過去 run の
+    選定結果を保てない。ここに残すことで**画面と Agent の選定が一致する**。
+
+    保証するのは「どれをどの順で選んだか」だけ。**候補の内容は最新値**で、
+    選定時点の本文を保存するものではない。
+    """
+    run = db.get(AgentRun, state.run_id)
+    if run is None:
+        return
+    run.selected_ids = list(state.selected_ids)
+    run.shortfall_reason = state.shortfall_reason
+    tracker = cost.current()
+    if tracker is not None:
+        tracker.record_final_availability(
+            [
+                db.get(Opportunity, i).availability
+                for i in state.selected_ids
+                if db.get(Opportunity, i) is not None
+            ]
+        )
+        run.usage_json = tracker.to_dict()
+    db.commit()
+
+
+def _verify_stub(db: Session, state: AgentState) -> None:
+    """Stub 経路。相方が API キー無しで動かせる状態を保つ。"""
+    now = datetime.now(UTC)
+    for opportunity_id in state.ranked_ids[:TOP_N]:
+        row = db.get(Opportunity, opportunity_id)
+        if row is None:
+            continue
+        row.verified = True
+        row.verified_at = now
+        row.verification_source = row.url
+        _set_availability(row, availability.Availability.OPEN, None, source=row.url)
+    state.selected_ids = state.ranked_ids[:TOP_N]
+    db.commit()
+    _write_reasons_stub(db, state)
+    _save_result(db, state)
+
+
+def _write_reasons_stub(db: Session, state: AgentState) -> None:
+    for opportunity_id in state.selected_ids:
+        row = db.get(Opportunity, opportunity_id)
+        if row is not None and row.status not in _USER_DECIDED:
+            row.status = OpportunityStatus.RECOMMENDED
     db.commit()
 
 

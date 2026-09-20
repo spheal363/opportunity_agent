@@ -46,6 +46,14 @@ class OpportunityFormat(StrEnum):
     HYBRID = "hybrid"
 
 
+class Availability(StrEnum):
+    """いま応募・参加できるか。`verified`（情報を確認できたか）とは別。"""
+
+    OPEN = "open"
+    CLOSED = "closed"
+    UNKNOWN = "unknown"
+
+
 class OpportunityStatus(StrEnum):
     DISCOVERED = "discovered"
     RECOMMENDED = "recommended"
@@ -73,6 +81,12 @@ class OpportunitySummary(BaseModel):
     match_reasons: list[str] = Field(default_factory=list)
 
     verified: bool = False
+    # **verified とは別の軸。** open は「受付中を確認できた」という意味で、
+    # 参加資格や空き枠までは保証しない。
+    availability: Availability = Availability.UNKNOWN
+    availability_reason: str | None = None
+    # **いつ時点の確認か。** 古い結果を今の状態として読まないために必ず対で見る。
+    availability_checked_at: Timestamp = None
     status: OpportunityStatus = OpportunityStatus.DISCOVERED
 
 
@@ -87,6 +101,7 @@ class OpportunityDetail(OpportunitySummary):
 
     verified_at: Timestamp = None
     verification_source: str | None = None
+    availability_source: str | None = None
 
 
 class InterestResult(BaseModel):

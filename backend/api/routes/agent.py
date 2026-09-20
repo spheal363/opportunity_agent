@@ -5,7 +5,13 @@ from agent.loop import run_agent
 from api.deps import current_user_id
 from api.errors import NotFound
 from db.session import get_db
-from schemas.agent import AgentLogEntry, AgentRunCreated, AgentRunState, AgentRunStatus
+from schemas.agent import (
+    AgentLogEntry,
+    AgentRunCreated,
+    AgentRunResult,
+    AgentRunState,
+    AgentRunStatus,
+)
 from schemas.common import ApiSuccess, ok
 from services import agent_service, profile_service
 
@@ -43,3 +49,15 @@ def get_run_logs(run_id: str, db: Session = Depends(get_db)) -> dict:
     if agent_service.get_run(db, run_id) is None:
         raise NotFound("指定された run_id が見つかりません")
     return ok(agent_service.list_logs(db, run_id))
+
+
+@router.get("/runs/{run_id}/result", response_model=ApiSuccess[AgentRunResult])
+def get_run_result(run_id: str, db: Session = Depends(get_db)) -> dict:
+    """この run の最終選定。**結果画面はこれを使う。**
+
+    `GET /api/opportunities` は保存一覧の母集合で、今回の選定とは別物。
+    """
+    result = agent_service.get_result(db, run_id)
+    if result is None:
+        raise NotFound("run が見つかりません")
+    return ok(result)

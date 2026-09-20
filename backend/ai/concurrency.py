@@ -41,10 +41,10 @@ def map_parallel[T, R](
     # **context 全体は複製しない。** `copy_context()` を使うと、将来
     # 認証情報やトレース ID を ContextVar で持たせたときに、それらまで
     # 気づかれずにワーカーへ流れる。**引き継ぐものは cost 側が決める。**
-    tracker = cost.snapshot()
+    snap = cost.snapshot()
 
     def run(item: T) -> R:
-        with cost.restore(tracker):
+        with cost.restore(snap):
             return fn(item)
 
     with ThreadPoolExecutor(max_workers=min(workers, len(items))) as pool:

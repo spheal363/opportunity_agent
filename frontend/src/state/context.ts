@@ -12,6 +12,16 @@ export interface AppState {
   profile: UserProfile | null;
   profileError: string | null;
 
+  /**
+   * ユーザーに提示済みの候補。**保存一覧・次の一歩の母集合。**
+   *
+   * **今回の選定結果ではない。** そちらは ResultsPage が
+   * `GET /api/agent/runs/{run_id}/result` から取る。ここで絞ると、
+   * 保存した候補が上位 3 件の外にあるときに保存一覧から消える。
+   */
+  /** 最後に実行した run。結果画面が URL に run_id を持たないときの既定。 */
+  lastRunId: string | null;
+
   opportunities: Opportunity[] | null;
   opportunitiesError: string | null;
   refreshOpportunities: () => Promise<void>;

@@ -1,3 +1,5 @@
+import type { Opportunity } from './opportunity';
+
 /** backend/schemas/agent.py と対応。 */
 
 export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -44,4 +46,21 @@ export const AGENT_STEP_LABEL: Record<AgentStep, string> = {
   evaluating: 'Opportunity を評価中',
   verifying: '公式情報を確認中',
   completed: '完了',
+};
+
+/**
+ * GET /api/agent/runs/{run_id}/result。**この run の最終選定。**
+ *
+ * `GET /api/opportunities`（保存一覧の母集合）とは別物。あちらは status で
+ * 絞った最新の一覧で、こちらは**その run が選んだものを順位順**に返す。
+ */
+export type AgentRunResult = {
+  run_id: string;
+  status: AgentRunStatus;
+  /** 結果が記録されているか。未完了・古い run では false */
+  recorded: boolean;
+  /** 順位順。**3 件に満たないことがある** */
+  selected: Opportunity[];
+  /** 3 件に満たなかった理由 */
+  shortfall_reason: string | null;
 };

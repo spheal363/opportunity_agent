@@ -34,6 +34,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null);
+  // 最後に実行した run。結果画面を直接開いたときの既定にする。
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
   const [opportunitiesError, setOpportunitiesError] = useState<string | null>(null);
 
   /**
@@ -94,6 +96,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const startRun = useCallback(async () => {
     const run = await startAgentRun();
+    setLastRunId(run.run_id);
     return run.run_id;
   }, []);
 
@@ -102,6 +105,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const saved = await fetchProfile().catch(() => null);
     if (saved) setProfile(saved);
     const run = await startAgentRun();
+    setLastRunId(run.run_id);
     return run.run_id;
   }, []);
 
@@ -150,6 +154,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const value: AppState = {
     profile,
     profileError,
+    lastRunId,
     opportunities,
     opportunitiesError,
     refreshOpportunities,

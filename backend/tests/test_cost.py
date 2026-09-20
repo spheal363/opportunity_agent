@@ -5,6 +5,7 @@
 """
 
 import threading
+import time
 
 import pytest
 
@@ -68,7 +69,7 @@ def test_accumulates_within_track():
         cost.record(_usage())
         cost.record(_usage())
 
-    assert t.calls == 2
+    assert t.usage_records == 2
     assert t.total_tokens == 3000
     assert t.reasoning_tokens == 400
     assert t.jpy > 0
@@ -92,7 +93,7 @@ def test_tracks_are_isolated():
         cost.record(_usage())
         cost.record(_usage())
 
-    assert (a.calls, b.calls) == (1, 2)
+    assert (a.usage_records, b.usage_records) == (1, 2)
 
 
 # --- 並列（ここが落とし穴）------------------------------------------------
@@ -107,15 +108,20 @@ def test_records_from_worker_threads():
     with cost.track() as t:
         map_parallel(range(8), lambda _n: cost.record(_usage()))
 
-    assert t.calls == 8
+    assert t.usage_records == 8
 
 
 def test_concurrent_records_do_not_race():
     """同時に書かれても数を取りこぼさない。"""
     with cost.track() as t:
-        map_parallel(range(50), lambda _n: cost.record(_usage(total_tokens=1)), workers=8)
+        map_parallel(
+            range(50),
+            lambda _n: cost.record(_usage(prompt_tokens=1, completion_tokens=0)),
+            workers=8,
+        )
 
-    assert t.calls == 50
+    assert t.usage_records == 50
+    # total_tokens は prompt + completion から数える（provider の total は使わない）
     assert t.total_tokens == 50
 
 
@@ -158,7 +164,7 @@ def test_cost_tracker_still_propagates():
     """限定しても本来の目的は果たす。"""
     with cost.track() as t:
         map_parallel(range(4), lambda _n: cost.record(_usage()))
-    assert t.calls == 4
+    assert t.usage_records == 4
 
 
 # --- スキーマの制約（レビュー指摘 Low）------------------------------------
@@ -179,3 +185,126 @@ def test_negative_cost_is_rejected_by_the_schema(field):
     AgentRunState(**base, **{field: 0})  # 0 は通る
     with pytest.raises(ValidationError):
         AgentRunState(**base, **{field: -1})
+
+
+# --- 工程別の集計（#65）---------------------------------------------------
+
+
+def test_records_are_attributed_to_the_step():
+    with cost.track() as t:
+        with cost.step("extraction"):
+            cost.record(_usage())
+        with cost.step("evaluation"):
+            cost.record(_usage())
+            cost.record(_usage())
+
+    assert t.by_step["extraction"].usage_records == 1
+    assert t.by_step["evaluation"].usage_records == 2
+
+
+def test_steps_do_not_mix_across_parallel_workers():
+    """**並列ワーカーでも工程が混ざらない。**"""
+    with cost.track() as t:
+        with cost.step("extraction"):
+            map_parallel(range(6), lambda _n: cost.record(_usage()))
+        with cost.step("evaluation"):
+            map_parallel(range(4), lambda _n: cost.record(_usage()))
+
+    assert t.by_step["extraction"].usage_records == 6
+    assert t.by_step["evaluation"].usage_records == 4
+
+
+def test_steps_do_not_mix_across_runs():
+    """run を跨いで混ざらない。"""
+    with cost.track() as a:
+        with cost.step("extraction"):
+            cost.record(_usage())
+    with cost.track() as b:
+        with cost.step("extraction"):
+            cost.record(_usage())
+            cost.record(_usage())
+
+    assert (a.by_step["extraction"].usage_records, b.by_step["extraction"].usage_records) == (1, 2)
+
+
+def test_elapsed_is_wall_clock_not_the_sum_of_parallel_calls():
+    """**並列呼び出しの時間の合計ではない。** 工程に入ってから出るまで。"""
+    with cost.track() as t:
+        with cost.step("extraction"):
+            map_parallel(range(4), lambda _n: time.sleep(0.05), workers=4)
+
+    elapsed = t.by_step["extraction"].elapsed_ms
+    # 4 並列なので合計 200ms ではなく 1 回分に近い
+    assert 30 <= elapsed < 180
+
+
+# --- 数の意味を混ぜない ---------------------------------------------------
+
+
+def test_logical_calls_and_attempts_are_separate():
+    with cost.track() as t:
+        with cost.step("extraction"):
+            cost.record_logical_call()
+            cost.record_attempt(got_usage=True)
+            cost.record(_usage())
+            # 同じ論理呼び出しの中で Retry
+            cost.record_retry()
+            cost.record_attempt(got_usage=True)
+            cost.record(_usage())
+
+    u = t.by_step["extraction"]
+    assert u.logical_calls == 1
+    assert u.request_attempts == 2
+    assert u.usage_records == 2
+    assert u.retries == 1
+
+
+def test_attempts_without_usage_are_counted():
+    """**使用量が取れない失敗を費用ゼロと断定しない。**
+
+    timeout / 接続失敗は usage が付かないが、投げたことは起きている。
+    """
+    with cost.track() as t:
+        with cost.step("extraction"):
+            cost.record_attempt(got_usage=False)
+            cost.record_attempt(got_usage=True)
+            cost.record(_usage())
+
+    u = t.by_step["extraction"]
+    assert u.request_attempts == 2
+    assert u.attempts_without_usage == 1
+    assert u.usage_records == 1
+
+
+def test_search_and_extract_are_counted_separately():
+    """**料金は未確認**なので回数だけ持つ。"""
+    with cost.track() as t:
+        cost.record_search()
+        cost.record_search()
+        cost.record_extract(3)
+
+    assert (t.search_calls, t.extract_calls) == (2, 3)
+
+
+def test_dropped_reasons_are_counted():
+    with cost.track() as t:
+        cost.record_dropped("closed_by_date", 2)
+        cost.record_dropped("dismissed")
+        cost.record_dropped("closed_by_date")
+
+    assert t.dropped == {"closed_by_date": 3, "dismissed": 1}
+
+
+def test_to_dict_is_serialisable():
+    import json
+
+    with cost.track() as t:
+        with cost.step("extraction"):
+            cost.record(_usage())
+        cost.record_search()
+        cost.record_final_availability(["open", "unknown", "open"])
+
+    d = t.to_dict()
+    json.dumps(d)  # DB へ JSON で入るので落ちないこと
+    assert d["by_step"]["extraction"]["usage_records"] == 1
+    assert d["final_availability"] == {"open": 2, "unknown": 1}

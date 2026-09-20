@@ -27,7 +27,12 @@ class AgentState(BaseModel):
 
     # 発見済み Opportunity（評価前も含む）の opportunity_id
     discovered_ids: list[str] = Field(default_factory=list)
+    # 評価で順位付けした全候補（上位から）。検証と繰り上げはここから取る。
+    ranked_ids: list[str] = Field(default_factory=list)
+    # 最終的に推薦する候補。**3 件に満たないことがある。**
     selected_ids: list[str] = Field(default_factory=list)
+    # 3 件に満たなかった理由。run に保存して後からも同じ内容を返す。
+    shortfall_reason: str | None = None
 
     # 探索の繰り返し回数。上限を超えたら打ち切る。
     iteration: int = 0

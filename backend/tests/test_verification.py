@@ -1,23 +1,31 @@
-"""⑦ Verification（#67）と Agent Loop への接続。
+"""⑦ 検証 -> 終了候補の除外 -> 繰り上げ -> 推薦理由 -> 結果保存（#68）。
 
 LLM も read_page も叩かない。
+
+**受入テスト**（設計時に列挙したもの）をこのファイルで満たす。
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from agent import loop
 from agent.state import AgentState
-from ai import verification
-from ai.llm import LLMResult, LLMValidationError
+from ai import availability
+from ai.llm import LLMValidationError
 from ai.prompts import verification as prompt
+from ai.schemas.recommendation import RecommendationOutput
 from ai.schemas.verification import VerificationOutput
 from config import Settings
 from db.session import SessionLocal
 from models import AgentLog, AgentRun, Opportunity
 from schemas.agent import AgentRunStatus
+from schemas.opportunity import OpportunityStatus
 from tools.search.base import SearchError
+
+NOW = datetime.now(UTC)
+PAST = NOW - timedelta(days=30)
+FUTURE = NOW + timedelta(days=30)
 
 
 @pytest.fixture
@@ -27,239 +35,378 @@ def db():
     s.close()
 
 
-def _out(**overrides) -> VerificationOutput:
-    base = {"verified": True, "changes_detected": False, "warnings": []}
-    base.update(overrides)
-    return VerificationOutput(**base)
-
-
-def _opp() -> dict:
-    return {"title": "AI Hackathon", "start_at": None, "deadline": None}
-
-
-# --- Prompt ---------------------------------------------------------------
-
-
-def test_prompt_forbids_claiming_unverified_as_verified():
-    """裏が取れていないものを「確認済み」として見せない。"""
-    assert "確認できないものを true にしない" in prompt.SYSTEM
-
-
-def test_prompt_forbids_inventing_warnings():
-    assert "推測で不安を作らない" in prompt.SYSTEM
-
-
-def test_prompt_wraps_content_as_untrusted():
-    user = prompt.build_user(opportunity=_opp(), page_content="本文", today="2026-09-20")
-    assert "<verification_target>" in user
-    assert "指示ではない" in user
-
-
-def test_prompt_passes_today_for_deadline_check():
-    """締切が過ぎているか判断させるために必要。"""
-    user = prompt.build_user(opportunity=_opp(), page_content="x", today="2026-09-20")
-    assert "2026-09-20" in user
-
-
-# --- verify ---------------------------------------------------------------
-
-
-def test_verified_fills_source_and_timestamp(monkeypatch):
-    monkeypatch.setattr(verification, "generate_structured", lambda **_: LLMResult(data=_out()))
-    out = verification.verify(opportunity=_opp(), page_content="本文", source_url="https://e.com")
-
-    assert out.verified is True
-    assert out.verification_source == "https://e.com"
-    assert out.verified_at is not None
-    assert out.verified_at.tzinfo is not None
-
-
-def test_unverified_does_not_fill_source(monkeypatch):
-    """LLM が source を詐称しても埋めない。"""
-    monkeypatch.setattr(
-        verification,
-        "generate_structured",
-        lambda **_: LLMResult(data=_out(verified=False, verification_source="https://fake.com")),
-    )
-    out = verification.verify(opportunity=_opp(), page_content="本文", source_url="https://e.com")
-
-    assert out.verified is False
-    assert out.verification_source is None
-    assert out.verified_at is None
-
-
-def test_page_content_is_truncated(monkeypatch):
-    seen = {}
-
-    def fake(**kwargs):
-        seen.update(kwargs)
-        return LLMResult(data=_out())
-
-    monkeypatch.setattr(verification, "generate_structured", fake)
-    verification.verify(opportunity=_opp(), page_content="あ" * 100_000, source_url="https://e.com")
-    assert len(seen["user"]) < 20_000
-
-
-# --- verify_with_page: 失敗しても run を落とさない -------------------------
-
-
-def test_missing_url_is_reported():
-    out = verification.verify_with_page(opportunity=_opp(), url=None, fetch_page=lambda u: "本文")
-    assert out.verified is False
-    assert "URL" in out.warnings[0]
-
-
-def test_fetch_failure_is_reported():
-    def boom(_url):
-        raise SearchError("取得失敗")
-
-    out = verification.verify_with_page(opportunity=_opp(), url="https://e.com", fetch_page=boom)
-    assert out.verified is False
-    assert "取得できません" in out.warnings[0]
-
-
-def test_empty_page_is_reported():
-    out = verification.verify_with_page(
-        opportunity=_opp(), url="https://e.com", fetch_page=lambda u: None
-    )
-    assert out.verified is False
-    assert "読み取れません" in out.warnings[0]
-
-
-def test_llm_failure_is_reported(monkeypatch):
-    monkeypatch.setattr(
-        verification,
-        "generate_structured",
-        lambda **_: (_ for _ in ()).throw(LLMValidationError("x")),
-    )
-    out = verification.verify_with_page(
-        opportunity=_opp(), url="https://e.com", fetch_page=lambda u: "本文"
-    )
-    assert out.verified is False
-    assert out.warnings
-
-
-def test_warnings_pass_through(monkeypatch):
-    monkeypatch.setattr(
-        verification,
-        "generate_structured",
-        lambda **_: LLMResult(
-            data=_out(changes_detected=True, warnings=["申込の締切が過ぎています"])
-        ),
-    )
-    out = verification.verify_with_page(
-        opportunity=_opp(),
-        url="https://e.com",
-        fetch_page=lambda u: "本文",
-        today=date(2026, 9, 20),
-    )
-    assert out.changes_detected is True
-    assert out.warnings == ["申込の締切が過ぎています"]
-
-
-# --- Agent Loop への接続 ---------------------------------------------------
-
-
 @pytest.fixture
 def state(db) -> AgentState:
     db.add(AgentRun(run_id="run_v", user_id="user_001", status=AgentRunStatus.RUNNING))
-    db.add(
-        Opportunity(
-            opportunity_id="opp_a",
-            user_id="user_001",
-            type="hackathon",
-            title="AI Hackathon",
-            url="https://e.com/a",
-        )
-    )
     db.commit()
-    s = AgentState(run_id="run_v", user_id="user_001")
-    s.selected_ids = ["opp_a"]
-    return s
+    return AgentState(run_id="run_v", user_id="user_001")
+
+
+@pytest.fixture
+def real_mode(monkeypatch):
+    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+    monkeypatch.setattr(loop, "recommend", lambda **k: RecommendationOutput(reason="r"))
+
+
+def _add(db, oid: str, **kw) -> str:
+    base = {
+        "opportunity_id": oid,
+        "user_id": "user_001",
+        "type": "hackathon",
+        "title": oid,
+        "url": f"https://e.com/{oid}",
+        "score": 50,
+    }
+    base.update(kw)
+    db.add(Opportunity(**base))
+    db.commit()
+    return oid
+
+
+def _out(**kw) -> VerificationOutput:
+    base = {"verified": True, "availability": "unknown"}
+    base.update(kw)
+    return VerificationOutput(**base)
 
 
 def _logs(db) -> list[str]:
     return [r.message for r in db.query(AgentLog).all()]
 
 
-def test_stub_mode_still_works(db, state):
-    loop._verify(db, state)
-    assert db.get(Opportunity, "opp_a").verified is True
+def _result(db) -> AgentRun:
+    return db.get(AgentRun, "run_v")
 
 
-def test_real_mode_writes_result(db, state, monkeypatch):
+# --- Prompt ---------------------------------------------------------------
+
+
+def test_prompt_separates_verified_from_availability():
+    assert "availability は verified とは別の軸である" in prompt.SYSTEM
+
+
+def test_prompt_forbids_assuming_open_from_a_future_deadline():
+    """締切が未来というだけで受付中とは限らない（満員かもしれない）。"""
+    assert "締切が未来というだけで open にしない" in prompt.SYSTEM
+
+
+# --- 受入 1: 抽出時点で期限切れ -------------------------------------------
+
+
+def test_expired_candidate_is_dropped_before_evaluation(db, state, monkeypatch):
+    """**評価対象にしない。** LLM を無駄に使わない。"""
+    _add(db, "expired", deadline=PAST)
+    _add(db, "alive", deadline=FUTURE)
+    seen = {}
+
     monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
     monkeypatch.setattr(
         loop,
-        "verify_with_page",
-        lambda **k: VerificationOutput(
-            verified=True,
-            verified_at=datetime(2026, 9, 20, tzinfo=UTC),
-            verification_source="https://e.com/a",
-        ),
+        "evaluate_many",
+        lambda **k: seen.update(k)
+        or ([(o["opportunity_id"], _eval()) for o in k["opportunities"]], []),
     )
-    loop._verify(db, state)
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: [i for i, _ in ev])
 
-    row = db.get(Opportunity, "opp_a")
-    assert row.verified is True
-    assert row.verification_source == "https://e.com/a"
-    assert any("確認しました" in m for m in _logs(db))
+    state.goal_analysis = _goal()
+    loop._evaluate_and_select(db, state, ["expired", "alive"])
+
+    evaluated_ids = [o["opportunity_id"] for o in seen["opportunities"]]
+    assert evaluated_ids == ["alive"]
+    assert db.get(Opportunity, "expired").availability == availability.Availability.CLOSED
+    assert any("期限切れ" in m for m in _logs(db))
 
 
-def test_real_mode_reports_failure_without_crashing(db, state, monkeypatch):
-    """確認できなかったことを隠さない。run も落とさない。"""
+def test_unknown_dates_are_not_dropped(db, state, monkeypatch):
+    """**deadline が null は受付終了ではない。** 落とさない。"""
+    _add(db, "unknown_date", deadline=None, start_at=None)
+    seen = {}
     monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
     monkeypatch.setattr(
         loop,
-        "verify_with_page",
-        lambda **k: VerificationOutput(
-            verified=False, warnings=["公式ページを取得できませんでした"]
-        ),
+        "evaluate_many",
+        lambda **k: seen.update(k) or ([("unknown_date", _eval())], []),
     )
-    loop._verify(db, state)
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: [i for i, _ in ev])
 
-    row = db.get(Opportunity, "opp_a")
+    state.goal_analysis = _goal()
+    loop._evaluate_and_select(db, state, ["unknown_date"])
+
+    assert [o["opportunity_id"] for o in seen["opportunities"]] == ["unknown_date"]
+
+
+def test_dismissed_is_dropped_before_evaluation(db, state, monkeypatch):
+    """ユーザーが外したものを再び推薦しない。"""
+    _add(db, "dismissed", status=OpportunityStatus.DISMISSED)
+    _add(db, "alive")
+    seen = {}
+    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+    monkeypatch.setattr(
+        loop,
+        "evaluate_many",
+        lambda **k: seen.update(k)
+        or ([(o["opportunity_id"], _eval()) for o in k["opportunities"]], []),
+    )
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: [i for i, _ in ev])
+
+    state.goal_analysis = _goal()
+    loop._evaluate_and_select(db, state, ["dismissed", "alive"])
+
+    assert [o["opportunity_id"] for o in seen["opportunities"]] == ["alive"]
+
+
+# --- 受入 4: 開始済みだが継続中 -------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "opportunity_type,end_at,expected",
+    [
+        ("community", None, availability.Availability.UNKNOWN),  # 開始済みでも参加できる
+        ("job", None, availability.Availability.UNKNOWN),
+        ("hackathon", None, availability.Availability.UNKNOWN),  # 終了日が不明
+        ("hackathon", PAST, availability.Availability.CLOSED),  # 開催終了
+        ("hackathon", FUTURE, availability.Availability.UNKNOWN),  # 開催中
+    ],
+)
+def test_started_but_ongoing_is_not_closed(opportunity_type, end_at, expected):
+    """**start_at が過去でも無条件に除外しない。** 種類ごとに判断する。"""
+    status, _ = availability.from_dates(
+        opportunity_type=opportunity_type, deadline=None, end_at=end_at
+    )
+    assert status == expected
+
+
+def test_naive_datetime_from_sqlite_is_treated_as_utc():
+    """**SQLite は tz を保持しない。** 読み出した naive な値を UTC とみなす。"""
+    naive_past = PAST.replace(tzinfo=None)
+    status, _ = availability.from_dates(
+        opportunity_type="hackathon", deadline=naive_past, end_at=None
+    )
+    assert status == availability.Availability.CLOSED
+
+
+# --- 受入 2: 本文検証で初めて受付終了が判明 -------------------------------
+
+
+def test_closed_found_by_verification_is_promoted_over(db, state, real_mode, monkeypatch):
+    """**期限切れで 3 件を埋めない。** 次順位を繰り上げる。"""
+    for oid in ("a", "b", "c", "d"):
+        _add(db, oid)
+    state.ranked_ids = ["a", "b", "c", "d"]
+
+    def verify(**kw):
+        closed = kw["opportunity"]["title"] == "a"
+        return _out(availability="closed" if closed else "open")
+
+    monkeypatch.setattr(loop, "verify_with_page", verify)
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["b", "c", "d"]
+    assert db.get(Opportunity, "a").availability == availability.Availability.CLOSED
+    assert any("受付終了" in m for m in _logs(db))
+
+
+def test_promotion_is_capped(db, state, real_mode, monkeypatch):
+    """繰り上げは最大 2 件。無限に掘らない。"""
+    for oid in ("a", "b", "c", "d", "e", "f"):
+        _add(db, oid)
+    state.ranked_ids = ["a", "b", "c", "d", "e", "f"]
+
+    checked: list[str] = []
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: checked.append(k["opportunity"]["title"]) or _out(availability="closed"),
+    )
+
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == []
+    # TOP3 + 繰り上げ 2 = 5 件まで。6 件目は見に行かない
+    assert len(checked) == loop.MAX_VERIFY
+    assert "f" not in checked
+
+
+# --- 受入 3: unknown は closed と混同しない -------------------------------
+
+
+def test_unknown_stays_in_the_result(db, state, real_mode, monkeypatch):
+    """**確認できていないだけで、終わったとは限らない。** 要確認として残す。"""
+    _add(db, "a")
+    state.ranked_ids = ["a"]
+    monkeypatch.setattr(
+        loop, "verify_with_page", lambda **k: _out(verified=False, availability="unknown")
+    )
+
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["a"]
+    row = db.get(Opportunity, "a")
     assert row.verified is False
-    assert row.verified_at is None
-    messages = _logs(db)
-    assert any("確認できませんでした" in m for m in messages)
+    assert row.availability == availability.Availability.UNKNOWN
 
 
-def test_warnings_reach_the_agent_log(db, state, monkeypatch):
-    """締切切れなどをユーザーに伝える。"""
-    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+def test_failed_verification_does_not_keep_an_old_open(db, state, real_mode, monkeypatch):
+    """**再確認に失敗したら、古い open を今回の結果として返さない。**"""
+    _add(db, "a", availability="open", availability_checked_at=PAST)
+    state.ranked_ids = ["a"]
+    from ai.verification import unverified
+
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: unverified("取得できませんでした"))
+
+    loop._verify_and_finalize(db, state)
+
+    row = db.get(Opportunity, "a")
+    assert row.availability == availability.Availability.UNKNOWN
+    # SQLite は tz を保持しないため、比較前に UTC を付ける
+    assert availability.as_utc(row.availability_checked_at) > PAST
+
+
+# --- 受入 5: 有効候補が 3 件未満 -------------------------------------------
+
+
+def test_returns_fewer_than_three_with_a_reason(db, state, real_mode, monkeypatch):
+    """**3 件を無理に埋めない。** 不足理由を返す。"""
+    _add(db, "a")
+    _add(db, "b")
+    state.ranked_ids = ["a", "b"]
+
     monkeypatch.setattr(
         loop,
         "verify_with_page",
-        lambda **k: VerificationOutput(
-            verified=True, changes_detected=True, warnings=["申込の締切が過ぎています"]
+        lambda **k: _out(availability="closed" if k["opportunity"]["title"] == "a" else "open"),
+    )
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["b"]
+    assert state.shortfall_reason is not None
+    assert _result(db).shortfall_reason == state.shortfall_reason
+
+
+def test_all_closed_returns_zero_with_a_reason(db, state, real_mode, monkeypatch):
+    _add(db, "a")
+    state.ranked_ids = ["a"]
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out(availability="closed"))
+
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == []
+    assert "受付を終了" in state.shortfall_reason
+
+
+def test_fetch_failure_is_explained(db, state, real_mode, monkeypatch):
+    """取得失敗も説明できる。"""
+    _add(db, "a")
+    state.ranked_ids = ["a"]
+
+    def boom(**kw):
+        raise SearchError("取得できません")
+
+    from ai.verification import verify_with_page as real
+
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: real(
+            opportunity=k["opportunity"],
+            url=k["url"],
+            fetch_page=lambda u: (_ for _ in ()).throw(SearchError("x")),
         ),
     )
-    loop._verify(db, state)
+    loop._verify_and_finalize(db, state)
 
-    assert any("申込の締切が過ぎています" in m for m in _logs(db))
+    assert state.selected_ids == ["a"]  # 取得失敗は unknown。落とさない
+    assert any("確認できませんでした" in m for m in _logs(db))
 
 
-def test_only_selected_are_verified(db, state, monkeypatch):
-    """TOP3 だけ。全件の公式ページを取りに行かない。"""
-    db.add(
-        Opportunity(
-            opportunity_id="opp_b",
-            user_id="user_001",
-            type="event",
-            title="B",
-            url="https://e.com/b",
-        )
-    )
-    db.commit()
+# --- 受入 6 / 7: 結果の記録 -----------------------------------------------
+
+
+def test_selected_ids_and_order_are_saved(db, state, real_mode, monkeypatch):
+    """**画面と Agent の選定を一致させる。**"""
+    for oid in ("a", "b", "c"):
+        _add(db, oid)
+    state.ranked_ids = ["c", "a", "b"]
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out(availability="open"))
+
+    loop._verify_and_finalize(db, state)
+
+    assert _result(db).selected_ids == ["c", "a", "b"]
+
+
+def test_reasons_are_written_only_for_the_final(db, state, real_mode, monkeypatch):
+    """**最終候補にだけ**推薦理由を書く。落ちた候補には書かない。"""
+    _add(db, "a")
+    _add(db, "b")
+    state.ranked_ids = ["a", "b"]
     called = []
-    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+
+    def rec(**kw):
+        called.append(kw["opportunity"]["opportunity_id"])
+        return RecommendationOutput(reason="r")
+
+    monkeypatch.setattr(loop, "recommend", rec)
     monkeypatch.setattr(
         loop,
         "verify_with_page",
-        lambda **k: called.append(k["url"]) or VerificationOutput(verified=True),
+        lambda **k: _out(availability="closed" if k["opportunity"]["title"] == "a" else "open"),
     )
-    loop._verify(db, state)
+    loop._verify_and_finalize(db, state)
 
-    assert called == ["https://e.com/a"]
-    assert db.get(Opportunity, "opp_b").verified is False
+    assert called == ["b"]
+    assert db.get(Opportunity, "a").reason is None
+
+
+def test_recommendation_failure_does_not_fail_the_run(db, state, real_mode, monkeypatch):
+    _add(db, "a")
+    state.ranked_ids = ["a"]
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out(availability="open"))
+    monkeypatch.setattr(
+        loop, "recommend", lambda **k: (_ for _ in ()).throw(LLMValidationError("x"))
+    )
+
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["a"]
+    assert db.get(Opportunity, "a").status == OpportunityStatus.RECOMMENDED
+
+
+def test_user_decided_status_is_kept(db, state, real_mode, monkeypatch):
+    _add(db, "a", status=OpportunityStatus.INTERESTED)
+    state.ranked_ids = ["a"]
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out(availability="open"))
+
+    loop._verify_and_finalize(db, state)
+
+    assert db.get(Opportunity, "a").status == OpportunityStatus.INTERESTED
+
+
+# --- Stub 経路 -------------------------------------------------------------
+
+
+def test_stub_mode_still_works(db, state):
+    for oid in ("a", "b", "c"):
+        _add(db, oid)
+    state.ranked_ids = ["a", "b", "c"]
+
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["a", "b", "c"]
+    assert db.get(Opportunity, "a").verified is True
+    assert _result(db).selected_ids == ["a", "b", "c"]
+
+
+# --- ヘルパ ---------------------------------------------------------------
+
+
+def _eval(**kw):
+    from ai.schemas.evaluation import EvaluationOutput
+
+    base = {"score": 80, "serendipity_score": 50, "match_reasons": ["AI"], "concerns": []}
+    base.update(kw)
+    return EvaluationOutput(**base)
+
+
+def _goal():
+    from ai.schemas.goal_analysis import GoalAnalysisOutput
+
+    return GoalAnalysisOutput(goal_summary="g", goal_directions=["d"], interest_connections=["c"])

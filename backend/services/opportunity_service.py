@@ -24,18 +24,23 @@ _VISIBLE = (
 
 
 def list_recommended(
-    db: Session, user_id: str = DEFAULT_USER_ID, limit: int = TOP_N
+    db: Session, user_id: str = DEFAULT_USER_ID, limit: int | None = None
 ) -> list[OpportunitySummary]:
-    rows = (
+    """ユーザーに提示済みの候補。**保存一覧・次の一歩の母集合。**
+
+    **件数を絞らない。** 絞ると、保存した候補が 4 件目以降にあるときに
+    保存一覧から消える。今回の選定は
+    `GET /api/agent/runs/{run_id}/result` が別に返す。
+    """
+    query = (
         db.query(Opportunity)
         .filter(
             Opportunity.user_id == user_id,
             Opportunity.status.in_([s.value for s in _VISIBLE]),
         )
         .order_by(Opportunity.score.desc())
-        .limit(limit)
-        .all()
     )
+    rows = (query.limit(limit) if limit else query).all()
     return [OpportunitySummary.model_validate(r, from_attributes=True) for r in rows]
 
 

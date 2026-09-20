@@ -35,6 +35,25 @@ class Opportunity(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     match_reasons: Mapped[list] = mapped_column(JSON, default=list)
 
+    # --- 受付状況（verified とは別軸）---
+    #
+    # **verified は「情報を確認できたか」、availability は「今応募・参加できるか」。**
+    # 確認できたうえで受付終了、ということがある。
+    #
+    # open   受付中を**確認できた**。参加資格や空き枠まで保証するものではない
+    # closed 受付終了・開催終了を**確認できた**
+    # unknown どちらとも確認できていない。締切が未来というだけでは open にしない
+    #
+    # **最新の確認結果のみを持つ。** 再確認に失敗したときに古い open を
+    # 今回の結果として返さないよう、checked_at と必ず対で読む。
+    availability: Mapped[str] = mapped_column(String, default="unknown")
+    availability_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    availability_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # 何を見て判定したか（URL）。verification_source と同じとは限らない
+    availability_source: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # --- 検証情報 ---
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
