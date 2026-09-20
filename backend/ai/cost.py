@@ -86,6 +86,26 @@ def track() -> Iterator[CostTracker]:
         _current.reset(token)
 
 
+def snapshot() -> CostTracker | None:
+    """ワーカースレッドへ引き継ぐ値。
+
+    **引き継ぐものをここで決める。** `map_parallel` が context 全体を
+    複製すると、将来ここ以外の ContextVar（認証情報やトレース ID など）まで
+    気づかれずにワーカーへ流れる。渡してよいものを明示する。
+    """
+    return _current.get()
+
+
+@contextmanager
+def restore(tracker: CostTracker | None) -> Iterator[None]:
+    """`snapshot()` の値をこのスレッドへ復元する。"""
+    token = _current.set(tracker)
+    try:
+        yield
+    finally:
+        _current.reset(token)
+
+
 def current() -> CostTracker | None:
     """いま集計中の tracker。`track()` の外なら None。"""
     return _current.get()

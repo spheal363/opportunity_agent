@@ -37,6 +37,12 @@ class AgentRunState(BaseModel):
     progress: int = Field(default=0, ge=0, le=100)
     error: str | None = None
 
+    # この探索にかかった見積もり額と、高性能モデルを使った回数。
+    # **見積もりであって請求額ではない**（ai/cost.py の単価表を参照）。
+    # 「全件を高性能モデルへ投げていない」ことを示すために出す。
+    cost_jpy: float = 0.0
+    expensive_model_calls: int = 0
+
 
 class AgentLogEntry(BaseModel):
     """GET /api/agent/runs/{run_id}/logs。"""

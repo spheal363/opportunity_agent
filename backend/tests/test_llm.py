@@ -6,6 +6,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field
 
+from ai import cost
 from ai.llm import (
     UNTRUSTED_DATA_RULE,
     LLMResult,
@@ -491,3 +492,77 @@ def test_usages_survive_across_fallback():
     # standard で 2 回消費している
     assert len(exc.value.usages) == 2
     assert sum(u.total_tokens for u in exc.value.usages) == 6
+
+
+# --- コスト記録との統合（レビュー指摘 Major）------------------------------
+#
+# 二重計上は ai/cost.py の単体テストでは捕まらない。**記録が実際に差し込まれて
+# いる generate_structured の Retry / Fallback を通して**検証する。
+
+
+def test_cost_is_recorded_once_per_call_on_retry():
+    """Retry で二重計上しない。"""
+    c, sent = _client_returning('{"bad": 1}', '{"goal_summary": "AI", "score": 5}')
+
+    with cost.track() as t:
+        res = generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
+
+    assert len(sent) == 2
+    assert t.calls == 2
+    assert t.calls == len(res.usages)
+    assert t.total_tokens == sum(u.total_tokens for u in res.usages)
+
+
+def test_cost_is_recorded_once_per_call_across_fallback():
+    """**Fallback を跨いでも二重計上しない。**
+
+    usages はリストへ積みつつ例外にも載せるため、同じ回を 2 度記録する
+    経路が無いかを確かめる。
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        ok = body["model"] == "powerful/model"
+        content = '{"goal_summary": "AI", "score": 5}' if ok else '{"bad": 1}'
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": content}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    with cost.track() as t:
+        res = generate_structured(
+            schema=Sample, system="s", user="u", client=_client(handler), max_attempts=2
+        )
+
+    # standard 2 回 + powerful 1 回
+    assert t.calls_by_tier == {"standard": 2, "powerful": 1}
+    assert t.calls == len(res.usages) == 3
+    assert t.expensive_calls == 1
+
+
+def test_cost_is_recorded_even_when_it_finally_fails():
+    """**失敗した run のコストが 0 として扱われないようにする。**"""
+    c, _ = _client_returning('{"bad": 1}', '{"bad": 2}')
+
+    with cost.track() as t:
+        with pytest.raises(LLMValidationError) as exc:
+            generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=2)
+
+    # standard 2 回 + powerful 2 回
+    assert t.calls == 4
+    assert t.calls == len(exc.value.usages)
+    assert t.jpy > 0
+
+
+def test_empty_response_usages_are_recorded_once():
+    """応答は返っているが例外になった回（空応答）も記録する。二重にしない。"""
+    c, _ = _empty_response_client()
+
+    with cost.track() as t:
+        with pytest.raises(EmptyResponseError) as exc:
+            generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
+
+    assert t.calls == len(exc.value.usages)

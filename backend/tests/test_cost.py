@@ -132,3 +132,30 @@ def test_worker_threads_do_not_leak_into_each_other():
         map_parallel(range(4), one)
 
     assert set(seen) == {id(t)}
+
+
+# --- 伝播対象の限定（レビュー指摘 Medium）--------------------------------
+
+
+def test_only_the_cost_tracker_is_propagated():
+    """**context 全体を複製しない。**
+
+    将来ここ以外の ContextVar（認証情報やトレース ID など）を持たせたとき、
+    それらまで気づかれずにワーカーへ流れないようにする。
+    """
+    from contextvars import ContextVar
+
+    unrelated = ContextVar("unrelated", default=None)
+    unrelated.set("auth-token-should-not-leak")
+
+    with cost.track():
+        seen = map_parallel(range(3), lambda _n: unrelated.get())
+
+    assert seen == [None, None, None]
+
+
+def test_cost_tracker_still_propagates():
+    """限定しても本来の目的は果たす。"""
+    with cost.track() as t:
+        map_parallel(range(4), lambda _n: cost.record(_usage()))
+    assert t.calls == 4
