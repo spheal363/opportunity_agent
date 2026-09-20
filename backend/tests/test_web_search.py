@@ -542,3 +542,150 @@ def test_page_reader_truncates_huge_content(monkeypatch):
     out = registry.invoke("read_page", url="https://e.com")
 
     assert len(out.data["pages"][0].content) == MAX_CONTENT_CHARS
+
+
+# --- ホスト検証（レビュー指摘 Medium）-------------------------------------
+
+
+@pytest.mark.parametrize(
+    "blocked",
+    [
+        "http://169.254.169.254/latest/meta-data/",  # クラウドのメタデータ
+        "http://127.0.0.1:8000/admin",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "http://localhost:8000/",
+        "http://metadata.google.internal/",
+        "http://[::1]/",
+    ],
+)
+def test_page_reader_rejects_internal_hosts(monkeypatch, blocked):
+    """LLM が読み取った URL を Agent が自動で踏む経路があるため手前で塞ぐ。"""
+    called = []
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            called.append(urls)
+            return [], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.com", blocked])
+
+    assert called == [["https://ok.com"]]
+    assert out.data["failed"] == [blocked]
+
+
+def test_page_reader_allows_normal_hosts(monkeypatch):
+    from tools.search.base import PageContent
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://connpass.com/e", "http://example.com/x"])
+
+    assert len(out.data["pages"]) == 2
+    assert out.data["failed"] == []
+
+
+@pytest.mark.parametrize(
+    "obfuscated",
+    [
+        "http://2130706433/admin",  # 10 進の 127.0.0.1
+        "http://0x7f000001/admin",  # 16 進
+        "http://017700000001/admin",  # 8 進
+        "http://127.1/admin",  # 省略表記
+        "http://0177.0.0.1/admin",  # 先頭ゼロ
+        "http://127.0x0.0.1/admin",  # ラベル単位の 16 進
+        "http://0x7f.0.0.1/admin",  # 先頭ラベルだけ 16 進
+        "http://127.0.0.0x1/admin",  # 末尾ラベルだけ 16 進
+        "http://192.168.0x1/admin",  # 3 パート混在
+        "http://1.0x2/admin",  # 2 パート短縮
+        "http://a.0x7f000001/admin",  # 末尾ラベルが数値
+        "http://intranet/admin",  # 単一ラベル（内部ホスト名）
+        "http://%31%32%37%2e%30%2e%30%2e%31/",  # percent-encoded の 127.0.0.1
+        "http://[::ffff:127.0.0.1]./admin",  # urlparse が ValueError を投げる
+    ],
+)
+def test_page_reader_rejects_obfuscated_ips(monkeypatch, obfuscated):
+    """ipaddress は解釈しないが OS の resolver は解釈する表記。
+
+    素通しすると内部アドレスへの経路になる。
+    """
+    called = []
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            called.append(urls)
+            return [], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.com", obfuscated])
+
+    assert called == [["https://ok.com"]]
+    assert out.data["failed"] == [obfuscated]
+
+
+@pytest.mark.parametrize(
+    "ok",
+    [
+        "https://8.8.8.8/",  # 正規の IP 表記。公開アドレスなら通す
+        "https://a1.example.com/",  # 数字を含むラベル
+        "http://example.com/x",
+        "https://example.co.jp/e",
+        "https://xn--fsq.com/x",  # punycode のラベル（TLD は com）
+        "https://example.xn--p1ai/x",  # TLD 自体が punycode（.рф）
+        "https://example.xn--fiqs8s/x",  # 同（.中国）
+        "https://example.みんな/x",  # Unicode 表記の TLD
+        "https://sub.domain.example.org/p",
+    ],
+)
+def test_page_reader_allows_public_hosts(monkeypatch, ok):
+    """数値を含む正常なホストを誤って弾かない。"""
+    from tools.search.base import PageContent
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=ok)
+    assert len(out.data["pages"]) == 1
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    [
+        ("example.com", True),
+        ("example.co", True),  # 2 文字の国別 TLD
+        ("example.c", False),  # 1 文字の TLD は実在しない
+        ("example.travel", True),  # 長い gTLD
+        ("example.com123", False),  # 数字混じりの TLD
+        ("example.99", False),
+        ("example.xn--p1ai", True),  # punycode の TLD
+        ("example.xn--", False),  # prefix だけ
+        ("a.xn--a", True),  # 最短
+        ("example", False),  # 単一ラベル
+        ("", False),
+        (".", False),
+        ("a.", False),
+    ],
+)
+def test_has_valid_tld_boundaries(host, expected):
+    """許可リストの境界。**厳しすぎると正常なサイトを弾いて Verification が壊れる。**"""
+    from tools.page_reader import _has_valid_tld
+
+    assert _has_valid_tld(host) is expected

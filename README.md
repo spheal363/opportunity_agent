@@ -85,11 +85,16 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | | 状態 |
 | --- | --- |
 | Profile API | 実装済み |
-| Agent Run / Log API | 実装済み（Loop は Stub） |
+| Agent Run / Log API | 実装済み |
 | Opportunity API | 実装済み |
 | Feedback API | 実装済み（Reflection 未接続） |
 | Tool 権限制御 | 枠組みのみ（`backend/tools/`） |
-| Verification | 未実装（`interest` で公式情報を再確認していない） |
+| Agent Loop: Web 探索 | 実装済み（検索 → 抽出 → 保存。重複は URL で除去） |
+| Agent Loop: Goal 分析 | 実装済み（プロフィール → 目標・興味の交差点） |
+| Agent Loop: 探索計画 | 実装済み（Serendipity 方向を最低 1 つ確保） |
+| Agent Loop: 評価 / TOP3選定 / 推薦理由 | 実装済み（選定は LLM 不使用。意外性を重みづけ） |
+| Agent Loop: Verification | 実装済み（TOP3 の公式ページを再確認。警告を Log に出す） |
+| `interest` 時の再確認 | 未実装（探索時には検証済み。押した時点では再確認しない） |
 | 再探索・終了条件 | 未実装（1 周で終わる） |
 | Reflection / Agent Memory | 未実装（テーブルのみ） |
 | コスト記録 | 未実装（列と同期はあるが加算処理が無く常に 0） |
@@ -98,7 +103,7 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | OrcaRouter / LLM | 実装済み（接続・Schema Validation・Retry。Fallback とコスト記録は未実装） |
 | Web Search | 実装済み（Tavily。provider 差し替え可能） |
 | ページ取得 | 実装済み（Tavily extract。一部失敗しても残りを返す） |
-| Opportunity 構造化 | 未実装 |
+| Opportunity 構造化 | 実装済み（LLM 抽出。日時は tz 必須、不明な項目は null） |
 | Prompt Injection 対策 | 未実装（外部データを囲む仕組みのみ。cheap モデルは突破される。#27 で対応） |
 | Retry / Fallback | 未実装 |
 

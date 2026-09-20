@@ -177,9 +177,12 @@ def test_extract_many_partial_failure_keeps_rest(monkeypatch):
     ]
     extracted, failed = extraction.extract_many(sources)
 
-    assert len(extracted) == 2
+    # 取得元 URL と抽出結果が対で返る
+    assert [url for url, _ in extracted] == ["https://ok.com", "https://ok2.com"]
     assert failed == ["https://ng.com"]
     assert len(calls) == 3
+    # 要求した URL は必ずどちらかに現れる
+    assert {s.url for s in sources} == {u for u, _ in extracted} | set(failed)
 
 
 def test_extract_many_skips_sources_without_content(monkeypatch):
@@ -190,7 +193,7 @@ def test_extract_many_skips_sources_without_content(monkeypatch):
     ]
     extracted, failed = extraction.extract_many(sources)
 
-    assert len(extracted) == 1
+    assert [url for url, _ in extracted] == ["https://ok.com"]
     assert failed == ["https://empty.com"]
 
 
@@ -200,7 +203,7 @@ def test_extract_many_accepts_page_content(monkeypatch):
     pages = [PageContent(url="https://e.com", title="t", content="本文")]
     extracted, failed = extraction.extract_many(pages)
 
-    assert len(extracted) == 1
+    assert [url for url, _ in extracted] == ["https://e.com"]
     assert failed == []
 
 
@@ -258,3 +261,28 @@ def test_extract_raises_default_max_tokens(monkeypatch):
 
     assert seen["max_tokens"] == extraction.EXTRACTION_MAX_TOKENS
     assert seen["max_tokens"] >= 8192
+
+
+def test_extract_many_pairs_each_result_with_its_own_source(monkeypatch):
+    """結果と取得元がずれないこと。
+
+    ExtractedOpportunity.url は LLM が読み取った申込先で、返らないことがある。
+    そのとき保存側が別の結果の URL を使ってしまうと、取り違えになる。
+    """
+
+    def fake(**kwargs):
+        # どのページを読んだかに応じて別の title を返す
+        mark = "A" if "a.com" in kwargs["user"] else "B"
+        return _Result(_extracted(title=mark))
+
+    monkeypatch.setattr(extraction, "generate_structured", fake)
+    sources = [
+        SearchResult(title="", url="https://a.com", snippet="s", content="本文"),
+        SearchResult(title="", url="https://b.com", snippet="s", content="本文"),
+    ]
+    extracted, _ = extraction.extract_many(sources)
+
+    assert [(u, o.title) for u, o in extracted] == [
+        ("https://a.com", "A"),
+        ("https://b.com", "B"),
+    ]
