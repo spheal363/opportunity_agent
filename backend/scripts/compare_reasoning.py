@@ -62,7 +62,18 @@ def main() -> int:
     ap.add_argument("directory")
     ap.add_argument("--step", default="extraction")
     ap.add_argument("--limit", type=int, default=8)
+    ap.add_argument(
+        "--index",
+        default="",
+        help="保存呼び出しの番号をカンマ区切りで指定（--limit より優先）",
+    )
     ap.add_argument("--efforts", default=",".join(DEFAULT_EFFORTS))
+    ap.add_argument(
+        "--max-attempts",
+        type=int,
+        default=_MAX_ATTEMPTS,
+        help="1 件あたりの試行回数。予備実験では 1（自動 Retry なし）",
+    )
     ap.add_argument("--confirm", action="store_true", help="実 API を呼ぶ")
     args = ap.parse_args()
 
@@ -70,12 +81,17 @@ def main() -> int:
     run = json.loads((directory / "run.json").read_text())
     efforts = [e.strip() for e in args.efforts.split(",") if e.strip()]
 
-    calls = [c for c in run["llm_calls"] if c["step"] == args.step][: args.limit]
+    all_calls = [c for c in run["llm_calls"] if c["step"] == args.step]
+    if args.index:
+        wanted = [int(x) for x in args.index.split(",") if x.strip()]
+        calls = [all_calls[i] for i in wanted]
+    else:
+        calls = all_calls[: args.limit]
     if not calls:
         print(f"{args.step} の保存呼び出しがありません。")
         return 1
 
-    _plan(calls, efforts, args.step)
+    _plan(calls, efforts, args.step, args.max_attempts)
     if not args.confirm:
         print("実行するには --confirm を付けてください。**まだ API を呼んでいません。**")
         return 0
@@ -87,7 +103,7 @@ def main() -> int:
 
     client = OrcaRouterClient()
     try:
-        results = _run_all(client, calls, efforts)
+        results = _run_all(client, calls, efforts, max_attempts=args.max_attempts)
     finally:
         client.close()
 
@@ -96,31 +112,50 @@ def main() -> int:
     return 0
 
 
-def _plan(calls: list[dict], efforts: list[str], step: str) -> None:
+def _plan(calls: list[dict], efforts: list[str], step: str, max_attempts: int) -> None:
     n = len(calls) * len(efforts)
     jpy = n * _MEASURED_JPY_PER_EXTRACTION_CALL
+    per = _MEASURED_JPY_PER_EXTRACTION_CALL
     print("=== 実行計画（**予算見積もり。実測ではない**）===")
     print(f"  工程          {step}")
     print(f"  対象          {len(calls)} 件 x {len(efforts)} 設定 = {n} 呼び出し")
-    print(f"  最大試行回数  {n} x {_MAX_ATTEMPTS} = {n * _MAX_ATTEMPTS}（Retry 上限込み）")
-    per = _MEASURED_JPY_PER_EXTRACTION_CALL
+    print(f"  試行上限      1 件あたり {max_attempts} 回 -> 最大 {n * max_attempts} リクエスト")
+    if max_attempts == 1:
+        print("                **自動 Retry なし。失敗も結果として記録する。**")
     print(f"  費用見積もり  約 ¥{jpy:.0f}（A の実測 ¥{per:.2f}/回 x {n}）")
-    print(f"                最悪値（全件 Retry 上限）約 ¥{jpy * _MAX_ATTEMPTS:.0f}")
+    print("  **これは平均単価からの参考額で、厳密な最大費用ではない。**")
+    print("  出力長は入力ごとに変わる。上位 tier へ落ちれば単価が 50 倍になる")
+    print("  （POWERFUL = claude-opus-4.7、¥2,250/¥11,250 per 1M）。")
+    print("  この予備実験では **Fallback を使わない**（tier を固定して直接呼ぶ）。")
     print("  **思考量を下げた側はこれより安くなるはず。下がらなければ効いていない。**")
     print("  max_tokens は変えない。検索・本文取得はやり直さない。")
     print()
 
 
-def _run_all(client: OrcaRouterClient, calls: list[dict], efforts: list[str]) -> list[dict]:
+def _run_all(
+    client: OrcaRouterClient,
+    calls: list[dict],
+    efforts: list[str],
+    *,
+    max_attempts: int = _MAX_ATTEMPTS,
+) -> list[dict]:
+    """**上位 tier へは落とさない。** tier を固定して直接呼ぶ。
+
+    未対応パラメータのエラーが出たら、**別の設定で自動的にやり直さず止める。**
+    「この設定では駄目だった」ことを、別の設定の結果で覆い隠さないため。
+    """
     out: list[dict] = []
     for index, call in enumerate(calls, 1):
         title = _title_of(call)
         print(f"  [{index}/{len(calls)}] {title[:44]}")
         for effort in efforts:
-            out.append(_one(client, call, effort, index))
+            out.append(_one(client, call, effort, index, max_attempts=max_attempts))
             r = out[-1]
             if "error" in r:
                 print(f"      {effort:9} **失敗** {r['error']}")
+                if r.get("fatal"):
+                    print("      **停止する。** 別の設定で自動的にやり直さない。")
+                    return out
             else:
                 print(
                     f"      {effort:9} reasoning {r['reasoning_tokens']:5}  "
@@ -130,15 +165,26 @@ def _run_all(client: OrcaRouterClient, calls: list[dict], efforts: list[str]) ->
     return out
 
 
-def _one(client: OrcaRouterClient, call: dict, effort: str, index: int) -> dict:
-    """1 件 1 設定。**Retry 込みで測る。**"""
+def _one(
+    client: OrcaRouterClient,
+    call: dict,
+    effort: str,
+    index: int,
+    *,
+    max_attempts: int = _MAX_ATTEMPTS,
+) -> dict:
+    """1 件 1 設定。**Retry 込みで測る。**
+
+    `max_attempts=1` なら自動 Retry なし。失敗も結果として残す。
+    """
     messages = call["messages"]
     max_tokens = call["max_tokens"]
     attempts = 0
     started = time.perf_counter()
     last: Exception | None = None
+    fatal = False
 
-    while attempts < _MAX_ATTEMPTS:
+    while attempts < max_attempts:
         attempts += 1
         try:
             res = client.chat(
@@ -152,6 +198,9 @@ def _one(client: OrcaRouterClient, call: dict, effort: str, index: int) -> dict:
             )
         except LLMRequestError as exc:
             last = exc
+            # **未対応パラメータは 400 で返る想定。** 再試行しても同じなので、
+            # 実験そのものを止める材料として上へ伝える。
+            fatal = exc.status_code in (400, 404, 422)
             if not exc.retryable:
                 break
             continue
@@ -179,6 +228,8 @@ def _one(client: OrcaRouterClient, call: dict, effort: str, index: int) -> dict:
         "attempts": attempts,
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
         "error": str(last),
+        "status": getattr(last, "status_code", None),
+        "fatal": fatal,
     }
 
 
@@ -239,7 +290,11 @@ def _report(calls: list[dict], efforts: list[str], results: list[dict]) -> None:
         missing = sum(1 for r in ok if r["cost_usd"] is None)
         att = sum(r["attempts"] for r in rows)
         totals[e] = (rt, at, ms, usd, att, len(ok))
-        note = f"  （実費未取得 {missing} 件）" if missing else ""
+        note = (
+            f"  （**実費取得不可** {missing} 件。確定額を引くには追加照会 {missing} 回）"
+            if missing
+            else ""
+        )
         print(f"  {e:10} {rt:12} {at:8} {ms / 1000:10.1f} ${usd:11.6f} {att:5}{note}")
     base = totals.get(CURRENT)
     if base:

@@ -134,7 +134,9 @@ def test_missing_actual_cost_is_not_counted_as_zero(capsys):
     cr._report(calls, [cr.CURRENT], results)
 
     assert results[0]["cost_usd"] is None
-    assert "実費未取得 1 件" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "**実費取得不可** 1 件" in out
+    assert "追加照会 1 回" in out
 
 
 def test_broken_json_is_recorded_as_invalid_not_as_empty(capsys):
@@ -190,7 +192,55 @@ def test_null_transitions_are_named(a, b, expected, capsys):
 
 def test_plan_does_not_call_the_api(capsys):
     """計画の表示だけでは API を呼ばない。**--confirm が要る。**"""
-    cr._plan([_saved_call(), _saved_call()], [cr.CURRENT, "low"], "extraction")
+    cr._plan([_saved_call(), _saved_call()], [cr.CURRENT, "low"], "extraction", 3)
     out = capsys.readouterr().out
     assert "4 呼び出し" in out
-    assert "最大試行回数  4 x 3 = 12" in out
+    assert "最大 12 リクエスト" in out
+
+
+def test_plan_says_the_estimate_is_not_a_hard_maximum(capsys):
+    """**平均単価からの参考額**であって、厳密な最大費用ではない。
+
+    出力長は入力ごとに変わり、上位 tier へ落ちれば単価が 50 倍になる。
+    """
+    cr._plan([_saved_call()], [cr.CURRENT], "extraction", 1)
+    out = capsys.readouterr().out
+    assert "厳密な最大費用ではない" in out
+    assert "自動 Retry なし" in out
+
+
+def test_unsupported_parameter_stops_the_run(capsys):
+    """**別の設定で自動的にやり直さない。**
+
+    「この設定では駄目だった」ことを、別の設定の結果で覆い隠さないため。
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        import json as _json
+
+        if _json.loads(request.content).get("reasoning_effort"):
+            return httpx.Response(400, json={"error": "unsupported parameter"})
+        return httpx.Response(200, json=_body(reasoning=900))
+
+    calls = [_saved_call(), _saved_call("https://e.jp/b")]
+    results = cr._run_all(_client(handler), calls, [cr.CURRENT, "low"], max_attempts=1)
+
+    assert results[-1]["fatal"] is True
+    # 2 件目には進んでいない
+    assert {r["index"] for r in results} == {1}
+    assert "停止する" in capsys.readouterr().out
+
+
+def test_no_automatic_retry_when_attempts_is_one():
+    """予備実験では失敗も結果として残す。**やり直さない。**"""
+    state = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["n"] += 1
+        return httpx.Response(429)
+
+    [result] = cr._run_all(_client(handler), [_saved_call()], [cr.CURRENT], max_attempts=1)
+
+    assert state["n"] == 1
+    assert result["attempts"] == 1
+    assert "error" in result
