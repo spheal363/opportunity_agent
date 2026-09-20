@@ -37,6 +37,13 @@ def _settings() -> Settings:
     )
 
 
+def _client(handler) -> OrcaRouterClient:
+    """任意の handler でクライアントを組み立てる。"""
+    return OrcaRouterClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+
 def _client_returning(*payloads: object, status: int = 200) -> tuple[OrcaRouterClient, list]:
     """呼び出しごとに payloads を順に返すクライアント。送信内容も記録する。"""
     sent: list = []
@@ -134,14 +141,18 @@ def test_raises_after_exhausting_attempts():
         generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
 
     assert "Sample" in str(exc.value)
-    assert len(sent) == 3
+    # max_attempts は tier ごと。Validation 失敗は Fallback の対象なので
+    # STANDARD で 3 回 -> POWERFUL で 3 回。
+    assert len(sent) == 6
+    assert sent[0]["model"] == "standard/model"
+    assert sent[3]["model"] == "powerful/model"
 
 
 def test_max_attempts_is_respected():
     c, sent = _client_returning('{"bad": 1}', '{"bad": 2}', '{"bad": 3}')
     with pytest.raises(LLMValidationError):
         generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=2)
-    assert len(sent) == 2
+    assert len(sent) == 4  # 2 回 × 2 tier
 
 
 # --- リクエストエラー -----------------------------------------------------
@@ -254,7 +265,8 @@ def test_empty_response_retry_raises_the_limit():
     c, seen = _empty_response_client()
     with pytest.raises(EmptyResponseError):
         generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
-    assert seen == [2048, 4096, 8192]
+    # tier ごとに 2048 から数え直す（別のモデルは reasoning の使い方が違う）
+    assert seen == [2048, 4096, 8192, 2048, 4096, 8192]
 
 
 def test_empty_response_recovers_when_limit_is_enough():
@@ -289,8 +301,9 @@ def test_validation_failure_keeps_usages_on_the_exception():
     with pytest.raises(LLMValidationError) as exc:
         generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
 
-    assert len(exc.value.usages) == 3
-    assert sum(u.total_tokens for u in exc.value.usages) == 9
+    # Fallback 先の消費も取りこぼさない
+    assert len(exc.value.usages) == 6
+    assert sum(u.total_tokens for u in exc.value.usages) == 18
 
 
 def test_empty_response_error_keeps_usages():
@@ -299,8 +312,10 @@ def test_empty_response_error_keeps_usages():
     with pytest.raises(EmptyResponseError) as exc:
         generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
 
-    assert len(exc.value.usages) == 3
-    assert sum(u.total_tokens for u in exc.value.usages) == (10 + 2048) + (10 + 4096) + (10 + 8192)
+    # 空応答は Fallback の対象。max_tokens は tier ごとに 2048 から数え直す。
+    assert len(exc.value.usages) == 6
+    per_tier = (10 + 2048) + (10 + 4096) + (10 + 8192)
+    assert sum(u.total_tokens for u in exc.value.usages) == per_tier * 2
 
 
 def test_non_retryable_error_keeps_usages():
@@ -308,3 +323,149 @@ def test_non_retryable_error_keeps_usages():
     with pytest.raises(LLMRequestError) as exc:
         generate_structured(schema=Sample, system="s", user="u", client=c)
     assert len(exc.value.usages) == 1
+
+
+# --- #24 JSON が途中で切れたときも枠を広げる -------------------------------
+
+
+def test_truncated_json_raises_the_limit():
+    """途中で切れた出力は、同じ上限で投げ直しても同じ所で切れる。
+
+    空応答と原因が同じ（枠不足）なので、対処も同じにする。
+    reasoning を多く使うモデルでは出力の分が残らず、これが起きる。
+    """
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body["max_tokens"])
+        # 閉じ括弧が無い = 途中で切れた出力
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"goal_summary": "AI'}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    c = _client(handler)
+    with pytest.raises(LLMValidationError):
+        generate_structured(
+            schema=Sample, system="s", user="u", client=c, max_attempts=3, max_tokens=2048
+        )
+
+    assert seen[:3] == [2048, 4096, 8192]
+
+
+def test_non_truncated_bad_json_does_not_raise_the_limit():
+    """JSON ですらない文章は、枠を広げても直らない。無駄に広げない。"""
+    seen: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content)["max_tokens"])
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "すみません、お答えできません。"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    c = _client(handler)
+    with pytest.raises(LLMValidationError):
+        generate_structured(
+            schema=Sample, system="s", user="u", client=c, max_attempts=3, max_tokens=2048
+        )
+
+    assert seen[:3] == [2048, 2048, 2048]
+
+
+# --- #25 モデル Fallback ---------------------------------------------------
+
+
+def test_falls_back_to_powerful_on_validation_failure():
+    """何度問い直しても形式を満たせないのはモデルの能力の問題。上の tier を試す。"""
+    sent: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        sent.append(body["model"])
+        ok = body["model"] == "powerful/model"
+        content = '{"goal_summary": "AI", "score": 5}' if ok else '{"bad": 1}'
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": content}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    c = _client(handler)
+    res = generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=2)
+
+    assert res.data.score == 5
+    assert sent[:2] == ["standard/model", "standard/model"]
+    assert sent[2] == "powerful/model"
+    # Fallback 先までの消費を取りこぼさない
+    assert len(res.usages) == 3
+
+
+def test_does_not_fall_back_on_non_retryable_error():
+    """401 は同じキーで投げ直すので、別モデルでも同じ結果になる。"""
+    c, sent = _client_returning(401, 401, 401)
+    with pytest.raises(LLMRequestError):
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
+
+    assert len(sent) == 1
+    assert sent[0]["model"] == "standard/model"
+
+
+def test_powerful_has_no_fallback():
+    """一番上の tier からは落とす先が無い。"""
+    c, sent = _client_returning('{"bad": 1}', '{"bad": 2}')
+    with pytest.raises(LLMValidationError):
+        generate_structured(
+            schema=Sample, system="s", user="u", tier=ModelTier.POWERFUL, client=c, max_attempts=2
+        )
+
+    assert len(sent) == 2
+    assert all(s["model"] == "powerful/model" for s in sent)
+
+
+def test_cheap_falls_back_upward_not_downward():
+    """上位から cheap へは落とさない。
+
+    Untrusted Data を読ませるステップは cheap を避ける前提で設計している
+    （cheap は Prompt Injection に 1/2 で突破される実測がある）。
+    障害時に黙って cheap へ落ちると前提が崩れる。
+    """
+    c, sent = _client_returning('{"bad": 1}', '{"bad": 2}', '{"bad": 3}', '{"bad": 4}')
+    with pytest.raises(LLMValidationError):
+        generate_structured(
+            schema=Sample, system="s", user="u", tier=ModelTier.CHEAP, client=c, max_attempts=2
+        )
+
+    models = [s["model"] for s in sent]
+    assert models == ["cheap/model", "cheap/model", "standard/model", "standard/model"]
+
+
+@pytest.mark.parametrize(
+    "status,expected_models",
+    [
+        (404, ["standard/model", "powerful/model"]),  # モデルが存在しない
+        (403, ["standard/model", "powerful/model"]),  # アクセス権が無い
+        (422, ["standard/model", "powerful/model"]),  # そのモデルが受け付けない
+        (401, ["standard/model"]),  # 認証エラー。別モデルでも同じ
+        (400, ["standard/model"]),  # 組み立ての誤り。別モデルでも同じ
+    ],
+)
+def test_fallback_depends_on_whether_the_model_is_the_problem(status, expected_models):
+    """**一番起きやすいのは 404（モデルが存在しない）。**
+
+    ここで落とせないと Fallback の意味がない。
+    """
+    c, sent = _client_returning(status, status, status, status)
+    with pytest.raises(LLMRequestError):
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=1)
+
+    assert [s["model"] for s in sent] == expected_models
