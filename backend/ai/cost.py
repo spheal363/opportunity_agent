@@ -46,6 +46,40 @@ def estimate_jpy(usage: LLMUsage) -> float:
     return (usage.prompt_tokens * rate_in + usage.completion_tokens * rate_out) / 1_000_000
 
 
+# Jev（TypeSafe System One）の公式単価。
+# https://docs.typesafe.ai/models — $42 / 1B tokens = $0.042 / MTok、出力は無料。
+#
+# **円に換算しない。** 為替レートを勝手に置くと、公式単価という確かな値に
+# 推測を混ぜることになる。LLM 側の円見積もりとは別の欄で持つ。
+_JEV_USD_PER_1M_INPUT_TOKENS = 0.042
+
+
+@dataclass
+class JevUsage:
+    """Jev の使用量。**LLM と混ぜない。**
+
+    同じ「評価」という工程でも、呼び先も課金体系も違う。合算すると
+    A/B 比較（評価を LLM から Jev へ替えたときの差）が読めなくなる。
+
+    usd は**公式単価と実トークン数の積**であって、請求額ではない。
+    無料枠が適用されればこの額は請求されない。
+    """
+
+    logical_calls: int = 0
+    request_attempts: int = 0
+    usage_records: int = 0
+    attempts_without_usage: int = 0
+    retries: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    usd: float = 0.0
+    # confidence が閾値を下回り、既存 LLM へ回した回数。
+    # **その費用は LLM 側の欄に乗る。** Jev に替えた分だけ安くなる、とは限らない。
+    low_confidence_fallbacks: int = 0
+    # 実際に応答を返したモデルのバージョン。alias（jev-latest）は解決後の値が返る。
+    models: dict[str, int] = field(default_factory=dict)
+
+
 @dataclass
 class StepUsage:
     """1 工程ぶんの使用量。**数の意味を混ぜない。**
@@ -71,6 +105,18 @@ class StepUsage:
     # 工程全体の経過時間。**並列呼び出しの時間の合計ではない。**
     elapsed_ms: int = 0
     calls_by_tier: dict[str, int] = field(default_factory=dict)
+    # Jev の分。**LLM の数には足さない。**
+    jev: JevUsage = field(default_factory=JevUsage)
+
+    def to_dict(self) -> dict:
+        """DB へ保存する形。入れ子の dataclass も展開する。
+
+        `vars()` をそのまま使うと `jev` が dataclass のまま残り、
+        JSON 化で落ちる。
+        """
+        out = {k: v for k, v in vars(self).items() if k != "jev"}
+        out["jev"] = vars(self.jev)
+        return out
 
 
 @dataclass
@@ -86,6 +132,14 @@ class CostTracker:
     dropped: dict[str, int] = field(default_factory=dict)
     # 最終結果の受付状況の内訳
     final_availability: dict[str, int] = field(default_factory=dict)
+    # どの評価器が結果を出したか（"llm" / "jev"）と、実際のモデルバージョン。
+    # **比較結果をどの構成で得たか、後から言えるようにする。**
+    evaluator: str | None = None
+    evaluator_model: str | None = None
+    # どの構成で走ったか。**比較の記録に構成が無いと、後から読めない。**
+    search_provider: str | None = None
+    page_fetcher: str | None = None
+    search_pipeline: str | None = None
 
     # --- 工程を跨いだ合計（既存の互換用）-----------------------------------
 
@@ -112,6 +166,15 @@ class CostTracker:
             for tier, n in u.calls_by_tier.items():
                 merged[tier] = merged.get(tier, 0) + n
         return merged
+
+    @property
+    def jev_usd(self) -> float:
+        """Jev の見積もり額（ドル）。**円の見積もりとは別。**"""
+        return sum(u.jev.usd for u in self.by_step.values())
+
+    @property
+    def jev_request_attempts(self) -> int:
+        return sum(u.jev.request_attempts for u in self.by_step.values())
 
     @property
     def expensive_calls(self) -> int:
@@ -158,6 +221,40 @@ class CostTracker:
         with self._lock:
             self._slot(current_step()).fallbacks += 1
 
+    # --- Jev ----------------------------------------------------------------
+    #
+    # **LLM と同じ意味の数を、別の欄に持つ。** 記録の仕方は揃える
+    # （試行は成否によらず数える／使用量が取れない失敗も費用ゼロとしない）。
+
+    def record_jev_logical_call(self) -> None:
+        with self._lock:
+            self._slot(current_step()).jev.logical_calls += 1
+
+    def record_jev_attempt(self, *, got_usage: bool) -> None:
+        with self._lock:
+            j = self._slot(current_step()).jev
+            j.request_attempts += 1
+            if not got_usage:
+                j.attempts_without_usage += 1
+
+    def record_jev_retry(self) -> None:
+        with self._lock:
+            self._slot(current_step()).jev.retries += 1
+
+    def record_jev_usage(self, *, model: str, input_tokens: int, output_tokens: int) -> None:
+        with self._lock:
+            j = self._slot(current_step()).jev
+            j.usage_records += 1
+            j.input_tokens += input_tokens
+            j.output_tokens += output_tokens
+            # 出力は無料。入力ぶんだけを積む。
+            j.usd += input_tokens * _JEV_USD_PER_1M_INPUT_TOKENS / 1_000_000
+            j.models[model] = j.models.get(model, 0) + 1
+
+    def record_jev_low_confidence(self) -> None:
+        with self._lock:
+            self._slot(current_step()).jev.low_confidence_fallbacks += 1
+
     def record_elapsed(self, step: str, ms: int) -> None:
         with self._lock:
             self._slot(step).elapsed_ms += ms
@@ -174,6 +271,11 @@ class CostTracker:
         with self._lock:
             self.dropped[reason] = self.dropped.get(reason, 0) + n
 
+    def record_evaluator(self, evaluator: str, model: str | None) -> None:
+        with self._lock:
+            self.evaluator = evaluator
+            self.evaluator_model = model
+
     def record_final_availability(self, values: list[str]) -> None:
         with self._lock:
             for v in values:
@@ -183,11 +285,16 @@ class CostTracker:
         """DB へ保存する形。"""
         with self._lock:
             return {
-                "by_step": {k: vars(v) for k, v in self.by_step.items()},
+                "by_step": {k: v.to_dict() for k, v in self.by_step.items()},
                 "search_calls": self.search_calls,
                 "extract_calls": self.extract_calls,
                 "dropped": dict(self.dropped),
                 "final_availability": dict(self.final_availability),
+                "evaluator": self.evaluator,
+                "evaluator_model": self.evaluator_model,
+                "search_provider": self.search_provider,
+                "page_fetcher": self.page_fetcher,
+                "search_pipeline": self.search_pipeline,
             }
 
 
@@ -221,8 +328,19 @@ def step(name: str) -> Iterator[None]:
 
 @contextmanager
 def track() -> Iterator[CostTracker]:
-    """この中で起きた LLM 呼び出しの消費量を集める。"""
-    tracker = CostTracker()
+    """この中で起きた LLM 呼び出しの消費量を集める。
+
+    **どの構成で走ったかも一緒に残す。** 比較（#65）の記録に構成が無いと、
+    後から「これはどの組み合わせの数字か」が言えなくなる。
+    """
+    from config import get_settings  # 循環 import を避けるためここで読む
+
+    settings = get_settings()
+    tracker = CostTracker(
+        search_provider=settings.search_provider,
+        page_fetcher=settings.page_fetcher,
+        search_pipeline=settings.search_pipeline,
+    )
     token = _current.set(tracker)
     try:
         yield tracker
@@ -309,3 +427,32 @@ def record_dropped(reason: str, n: int = 1) -> None:
 
 def record_final_availability(values: list[str]) -> None:
     _to_tracker("record_final_availability", values)
+
+
+def record_jev_logical_call() -> None:
+    _to_tracker("record_jev_logical_call")
+
+
+def record_jev_attempt(*, got_usage: bool) -> None:
+    _to_tracker("record_jev_attempt", got_usage=got_usage)
+
+
+def record_jev_retry() -> None:
+    _to_tracker("record_jev_retry")
+
+
+def record_jev_usage(*, model: str, input_tokens: int, output_tokens: int) -> None:
+    _to_tracker(
+        "record_jev_usage",
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
+
+
+def record_jev_low_confidence() -> None:
+    _to_tracker("record_jev_low_confidence")
+
+
+def record_evaluator(evaluator: str, model: str | None = None) -> None:
+    _to_tracker("record_evaluator", evaluator, model)

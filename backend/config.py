@@ -22,7 +22,42 @@ class Settings(BaseSettings):
     llm_model_standard: str | None = None
     llm_model_powerful: str | None = None
 
-    search_api_key: str | None = None
+    # --- 検索と本文取得 ------------------------------------------------
+    # **別々に選ぶ。** Serper は検索だけで本文を返さないため、検索 provider を
+    # 変えただけでは抽出の入力が痩せる（#65）。
+    #
+    # 既定値は比較で採用が決まるまで**現行構成のまま**にする。
+    search_provider: str = "tavily"  # tavily | serper
+    page_fetcher: str = "tavily"  # tavily | jina
+
+    search_api_key: str | None = None  # Tavily
+    serper_api_key: str | None = None
+    # 日本語のイベントを探す用途に合わせる。英語圏の既定のままだと比較が用途とずれる。
+    serper_gl: str = "jp"
+    serper_hl: str = "ja"
+    # Jina Reader は**キー無しでも動く**（20 RPM）。キーがあると 500 RPM。
+    jina_api_key: str | None = None
+
+    # --- 評価器 ----------------------------------------------------------
+    # EVALUATOR=llm   既定・現行。自由文の match_reasons も出る
+    # EVALUATOR=jev   分類・採点のみ。**自由文は作れない**（#65 の A/B 比較）
+    evaluator: str = "llm"
+    typesafe_api_key: str | None = None
+    typesafe_base_url: str = "https://api.typesafe.ai/v1"
+    jev_model: str = "jev-latest"
+    # これを下回る confidence は既存 LLM へ回す。
+    # **confidence は正解率ではない**（公式が明記）。分布の尖り具合でしかない
+    # ので、閾値は「迷っているものを人手/LLM に回す」ための運用値として扱う。
+    jev_min_confidence: float = 0.5
+
+    # --- 探索の構成 ------------------------------------------------------
+    # SEARCH_PIPELINE=full       既定・現行。見つけた候補を全件抽出して評価
+    # SEARCH_PIPELINE=prefilter  抽出前に読む優先順位を付ける（構成 C）
+    search_pipeline: str = "full"
+    # 本文を読む候補の数。**仮説であって正解ではない。** 比較で決める。
+    prefilter_read_limit: int = 8
+    # 不足したときに追加で読む上限。無制限には増やさない。
+    prefilter_extra_reads: int = 4
 
     google_client_id: str | None = None
     google_client_secret: str | None = None

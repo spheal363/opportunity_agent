@@ -93,6 +93,7 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Agent Loop: Goal 分析 | 実装済み（プロフィール → 目標・興味の交差点） |
 | Agent Loop: 探索計画 | 実装済み（Serendipity 方向を最低 1 つ確保） |
 | Agent Loop: 評価 / 順位付け | 実装済み（選定は LLM 不使用。意外性を重みづけ） |
+| Search / Page Fetch / 評価器の差し替え | 実装済み（既定は現行のまま。比較は [#65](docs/experiments/65-search-comparison.md)） |
 | 受付状況の判定 | 実装済み（`verified` とは別軸。期限切れを推薦から外す） |
 | Agent Loop: Verification | 実装済み（TOP3 の公式ページを再確認。警告を Log に出す） |
 | `interest` 時の再確認 | 未実装（探索時には検証済み。押した時点では再確認しない） |

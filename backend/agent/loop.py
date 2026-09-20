@@ -27,6 +27,7 @@ from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
 from ai.extraction import extract_many
 from ai.goal_analysis import analyze_goal
+from ai.jev.prefilter import rank_for_reading
 from ai.llm import LLMError
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.evaluation import EvaluationOutput
@@ -41,7 +42,7 @@ from models import AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import AgentRunStatus, AgentStep
 from schemas.opportunity import OpportunityStatus
 from tools import registry
-from tools.search.base import SearchError
+from tools.search.base import PageContent, SearchError, SearchResult
 
 logger = get_logger(__name__)
 
@@ -210,11 +211,32 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         state.discovered_ids = []
         return []
 
-    # --- ② 全候補をまとめて抽出する -----------------------------------------
+    # --- ② 読む候補を決める --------------------------------------------------
+    # 構成 A（既定）は全件読む。構成 C は読む前に優先順位を付ける。
+    candidates, deferred = _choose_what_to_read(db, state, candidates)
+
+    # --- ③ 本文が無い候補は取りに行く ---------------------------------------
+    # **Serper は snippet しか返さない。** 検索 provider を替えただけでは
+    # 抽出の入力が痩せるため、本文取得を別に走らせる。
+    sources = _with_bodies([r for _, r in candidates])
+
+    # --- ④ 全候補をまとめて抽出する -----------------------------------------
     # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
     # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
     with cost.step("extraction"):
-        extracted, failed = extract_many([r for _, r in candidates])
+        extracted, failed = extract_many(sources)
+
+    # 読んだ結果、候補がほとんど残らなかったときは後回しにした分から足す。
+    # **上限を設ける。無制限には増やさない。**
+    if deferred and len(extracted) < TOP_N:
+        extra = deferred[: get_settings().prefilter_extra_reads]
+        _log(db, state, AgentStep.SEARCHING, f"候補が足りないため{len(extra)}件を追加で読みます")
+        with cost.step("extraction"):
+            more, more_failed = extract_many(_with_bodies([r for _, r in extra]))
+        extracted = [*extracted, *more]
+        failed = [*failed, *more_failed]
+        candidates = [*candidates, *extra]
+        cost.record_dropped("prefilter_extra_reads", len(extra))
 
     # クエリ文字列ではなく**方向の位置**を鍵にする。LLM が同じ query を持つ方向を
     # 2 つ返すことがあり、文字列で集計すると件数が合算されて二重に表示される。
@@ -226,7 +248,11 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     for source_url, item in extracted:
         row = _save_extracted(db, state, item, source_url)
         ids.append(row.opportunity_id)
-        index = by_url[source_url]
+        # 本文取得で URL が変わることは無いが、追加読み込み分が by_url に
+        # 無い可能性はある。**KeyError で run を落とさない。**
+        index = by_url.get(source_url)
+        if index is None:
+            continue
         per_direction[index] = per_direction.get(index, 0) + 1
 
     # --- ③ 探索方向ごとに結果を伝える（画面に出る単位を保つ）-----------------
@@ -245,6 +271,73 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
 
     state.discovered_ids = ids
     return ids
+
+
+def _choose_what_to_read(db: Session, state: AgentState, candidates: list) -> tuple[list, list]:
+    """読む候補と、後回しにする候補に分ける。
+
+    既定（`SEARCH_PIPELINE=full`）は**全件読む。現行の挙動を変えない。**
+
+    `prefilter` のときは Jev に粗い見立てをさせ、上位だけを読む。
+    **後回しにした分も順に並べて返す。** 読んだ結果 3 件に満たなかったとき、
+    先頭から追加で読めるようにするため。
+    """
+    settings = get_settings()
+    if settings.search_pipeline.strip().lower() != "prefilter":
+        return candidates, []
+
+    limit = max(1, settings.prefilter_read_limit)
+    if len(candidates) <= limit:
+        return candidates, []
+
+    goal = state.goal_analysis
+    with cost.step("prefilter"):
+        selected, rest = rank_for_reading(
+            [r for _, r in candidates],
+            goal_summary=goal.goal_summary if goal else "",
+            interest_connections=goal.interest_connections if goal else [],
+            limit=limit,
+        )
+
+    _log(
+        db,
+        state,
+        AgentStep.SEARCHING,
+        f"{len(candidates)}件の候補から{len(selected)}件を詳しく読みます",
+    )
+    cost.record_dropped("prefilter_deferred", len(rest))
+    return [candidates[i] for i in selected], [candidates[i] for i in rest]
+
+
+def _with_bodies(results: list[SearchResult]) -> list[SearchResult | PageContent]:
+    """本文が無い候補だけ取りに行く。
+
+    Tavily の検索は 800〜1500 文字の本文抜粋を返すので、そのまま使える。
+    **Serper は snippet しか返さない。** 検索 provider を替えただけでは
+    抽出の入力が痩せるため、ここで本文取得（`tools/fetch/`）を挟む。
+
+    **取得できなかった候補は捨てない。** snippet だけでも抽出は試せる。
+    全文が取れたことと、期限を確認できたことは別（申込先の別ページにしか
+    締切が無いことがある）なので、取得成功を確認済みとは扱わない。
+    """
+    need = [r for r in results if not r.content]
+    if not need:
+        return list(results)
+
+    with cost.step("fetch"):
+        try:
+            out = registry.invoke("read_page", url=[r.url for r in need]).data
+        except SearchError as exc:
+            # 本文が取れなくても snippet で続ける。探索全体は止めない。
+            logger.warning("fetch.failed reason=%s", exc)
+            return list(results)
+
+    pages = {p.url: p for p in out["pages"]}
+    merged: list[SearchResult | PageContent] = []
+    for r in results:
+        page = pages.get(r.url)
+        merged.append(page if page is not None else r)
+    return merged
 
 
 def _save_extracted(
@@ -423,8 +516,20 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
         row = rows[opportunity_id]
         row.score = out.score
         row.serendipity_score = out.serendipity_score
-        row.match_reasons = out.match_reasons
+        # **None は「この評価器は語句を作らない」という意味。**
+        # Jev は文字列を生成しないので、埋めるものが無い。当たり障りのない語で
+        # 埋めると LLM が挙げた根拠と見分けがつかなくなるため、空のまま残す。
+        # どちらの評価器だったかは run の usage に残る（evaluator）。
+        if out.match_reasons is None:
+            row.match_reasons = []
+            cost.record_dropped("reasons_not_generated")
+        else:
+            row.match_reasons = out.match_reasons
     db.commit()
+
+    # 比較（#65）で結果の出どころを追えるようにする。
+    if evaluated:
+        cost.record_evaluator(evaluated[0][1].evaluator, evaluated[0][1].evaluator_model)
 
     if failed:
         # 評価できなかった事実を隠さない。
