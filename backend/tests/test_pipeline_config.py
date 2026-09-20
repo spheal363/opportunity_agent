@@ -215,3 +215,166 @@ def test_jev_usage_survives_serialization():
 def test_fixture_covers_the_cases_we_compare_on(url):
     """固定データに、比較で見たい状態が揃っていること。"""
     assert any(r.url == url for r in fx.TAVILY_RESULTS)
+
+
+# --- 構成 C を Loop まで通す --------------------------------------------------
+
+
+@pytest.fixture
+def db():
+    from db.session import SessionLocal
+
+    s = SessionLocal()
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def state(db):
+    from agent.state import AgentState
+    from models import AgentRun
+    from schemas.agent import AgentRunStatus
+
+    db.add(AgentRun(run_id="run_c", user_id="user_001", status=AgentRunStatus.RUNNING))
+    db.commit()
+    st = AgentState(run_id="run_c", user_id="user_001")
+    from ai.schemas import SearchDirection
+
+    st.search_directions = [SearchDirection(category="hackathon", query="q", reason="r")]
+    return st
+
+
+def _fake_registry(results):
+    """search_web と read_page を tool 名で振り分ける。
+
+    ひとつの返り値で両方をまかなうと、本文取得が呼ばれたことに気づけない。
+    """
+    from tools.base import ToolResult
+
+    def invoke(name, **kwargs):
+        if name == "read_page":
+            wanted = kwargs["url"]
+            return ToolResult(
+                {
+                    "pages": [fx.FETCHED_PAGES[u] for u in wanted if u in fx.FETCHED_PAGES],
+                    "failed": [u for u in wanted if u not in fx.FETCHED_PAGES],
+                },
+                external=True,
+            )
+        return ToolResult(list(results), external=True)
+
+    return invoke
+
+
+def _extracted(url: str):
+    from ai.schemas.extraction import ExtractedOpportunity
+
+    return (url, ExtractedOpportunity(title=f"T {url}", type="hackathon"))
+
+
+def test_prefilter_limits_what_gets_extracted(db, state, monkeypatch):
+    """**全件を高コストな LLM へ投げる前に絞る。**
+
+    絞った分だけ抽出の入力が減っていること。
+    """
+    from agent import loop
+
+    monkeypatch.setattr(
+        loop,
+        "get_settings",
+        lambda: Settings(
+            agent_stub_mode=False,
+            search_api_key="k",
+            search_pipeline="prefilter",
+            prefilter_read_limit=3,
+        ),
+    )
+    monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
+    # 見立ては固定。先頭 3 件を読む。
+    monkeypatch.setattr(
+        loop,
+        "rank_for_reading",
+        lambda results, **kw: ([0, 1, 2], list(range(3, len(results)))),
+    )
+
+    seen = {}
+
+    def fake_extract(sources, **_):
+        seen["n"] = len(sources)
+        return [_extracted(s.url) for s in sources], []
+
+    monkeypatch.setattr(loop, "extract_many", fake_extract)
+
+    ids = loop._search_and_extract(db, state)
+
+    assert seen["n"] == 3
+    assert len(ids) == 3
+
+
+def test_full_pipeline_reads_everything(db, state, monkeypatch):
+    """既定（構成 A）は全件読む。**現行の挙動を変えない。**"""
+    from agent import loop
+
+    monkeypatch.setattr(
+        loop,
+        "get_settings",
+        lambda: Settings(agent_stub_mode=False, search_api_key="k"),
+    )
+    monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
+
+    def boom(*a, **k):  # pragma: no cover
+        raise AssertionError("既定で見立てが呼ばれている")
+
+    monkeypatch.setattr(loop, "rank_for_reading", boom)
+
+    seen = {}
+
+    def fake_extract(sources, **_):
+        seen["n"] = len(sources)
+        return [_extracted(s.url) for s in sources], []
+
+    monkeypatch.setattr(loop, "extract_many", fake_extract)
+    loop._search_and_extract(db, state)
+
+    assert seen["n"] == len(fx.TAVILY_RESULTS)
+
+
+def test_shortfall_reads_more_from_the_deferred_pile(db, state, monkeypatch):
+    """読んだ結果 3 件に満たなければ、後回しにした分から追加で読む。
+
+    **上限つき。無制限には増やさない。**
+    """
+    from agent import loop
+
+    monkeypatch.setattr(
+        loop,
+        "get_settings",
+        lambda: Settings(
+            agent_stub_mode=False,
+            search_api_key="k",
+            search_pipeline="prefilter",
+            prefilter_read_limit=2,
+            prefilter_extra_reads=2,
+        ),
+    )
+    monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
+    monkeypatch.setattr(
+        loop,
+        "rank_for_reading",
+        lambda results, **kw: ([0, 1], list(range(2, len(results)))),
+    )
+
+    batches = []
+
+    def fake_extract(sources, **_):
+        batches.append(len(sources))
+        # 1 回目は 1 件しか抽出できず、TOP3 に届かない
+        if len(batches) == 1:
+            return [_extracted(sources[0].url)], [sources[1].url]
+        return [_extracted(s.url) for s in sources], []
+
+    monkeypatch.setattr(loop, "extract_many", fake_extract)
+    ids = loop._search_and_extract(db, state)
+
+    assert batches == [2, 2]  # 上限どおり 2 件だけ追加
+    assert len(ids) == 3
