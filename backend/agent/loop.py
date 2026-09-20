@@ -28,6 +28,7 @@ from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.extraction import ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
 from ai.search_plan import plan_search
+from ai.verification import verify_with_page
 from config import get_settings
 from db.session import SessionLocal
 from logging_config import get_logger
@@ -333,18 +334,48 @@ def _as_dict(row: Opportunity) -> dict:
 
 
 def _verify(db: Session, state: AgentState) -> None:
-    """⑦ Verification"""
-    if not get_settings().agent_stub_mode:
-        raise NotImplementedError("verification is not implemented yet")
+    """⑦ Verification。TOP3 の公式ページを見に行き、抽出済みの内容と突き合わせる。
 
-    now = datetime.now(UTC)
+    **TOP3 だけに限る。** 全件の公式ページを取りに行くと read_page も LLM も
+    一気に増える。推薦する 3 件だけ裏を取る。
+    """
+    if get_settings().agent_stub_mode:
+        now = datetime.now(UTC)
+        for opportunity_id in state.selected_ids:
+            row = db.get(Opportunity, opportunity_id)
+            if row is not None:
+                row.verified = True
+                row.verified_at = now
+                row.verification_source = row.url
+        db.commit()
+        return
+
     for opportunity_id in state.selected_ids:
         row = db.get(Opportunity, opportunity_id)
-        if row is not None:
-            row.verified = True
-            row.verified_at = now
-            row.verification_source = row.url
+        if row is None:
+            continue
+
+        out = verify_with_page(opportunity=_as_dict(row), url=row.url, fetch_page=_fetch_page)
+        row.verified = out.verified
+        row.verified_at = out.verified_at
+        row.verification_source = out.verification_source
+
+        # 確認できなかったことも、食い違いも隠さない。
+        if out.verified:
+            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」を公式ページで確認しました")
+        else:
+            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」は確認できませんでした")
+        for warning in out.warnings:
+            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {warning}")
+
     db.commit()
+
+
+def _fetch_page(url: str) -> str | None:
+    """公式ページの本文を取る。取れなければ None。"""
+    result = registry.invoke("read_page", url=url)
+    pages = result.data["pages"]
+    return pages[0].content if pages else None
 
 
 # --------------------------------------------------------------------------
