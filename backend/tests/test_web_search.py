@@ -172,6 +172,27 @@ def test_non_dict_items_are_skipped_not_raised(broken):
     assert len(results) == 1
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"results": 5, "failed_results": []},
+        {"results": [], "failed_results": 5},
+        {"results": {"a": 1}, "failed_results": []},
+        {"results": "text", "failed_results": []},
+    ],
+)
+def test_extract_malformed_container_is_retryable(body):
+    """search() 側と対称にする。
+
+    コンテナ自体が list でないと for 文が TypeError を投げ、
+    provider の失敗を SearchError に寄せる設計を迂回する。
+    """
+    p = _provider(lambda r: httpx.Response(200, json=body))
+    with pytest.raises(SearchError) as exc:
+        p.extract(["https://a.com"])
+    assert exc.value.retryable is True
+
+
 @pytest.mark.parametrize("broken", [None, 42, "text"])
 def test_extract_non_dict_items_are_skipped(broken):
     p = _provider(

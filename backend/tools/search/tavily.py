@@ -192,10 +192,17 @@ class TavilyProvider(SearchProvider):
                 "ページ取得 API のレスポンス形式が想定と違います", retryable=True
             ) from exc
 
+        raw_results = body.get("results") or []
+        raw_failed = body.get("failed_results") or []
+        # search() 側と同じガード。コンテナ自体が list でないと for 文が
+        # TypeError を投げ、SearchError に寄せる設計を迂回する。
+        if not isinstance(raw_results, list) or not isinstance(raw_failed, list):
+            raise SearchError("ページ取得 API のレスポンス形式が想定と違います", retryable=True)
+
         pages: list[PageContent] = []
         failed: list[str] = []
 
-        for item in body.get("results") or []:
+        for item in raw_results:
             if not isinstance(item, dict):
                 continue
             url = item.get("url")
@@ -209,7 +216,7 @@ class TavilyProvider(SearchProvider):
                 continue
             pages.append(PageContent(url=url, title=item.get("title") or "", content=content))
 
-        for item in body.get("failed_results") or []:
+        for item in raw_failed:
             if isinstance(item, dict) and item.get("url"):
                 failed.append(item["url"])
 
