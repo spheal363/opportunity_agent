@@ -643,7 +643,10 @@ def test_page_reader_rejects_obfuscated_ips(monkeypatch, obfuscated):
         "https://a1.example.com/",  # 数字を含むラベル
         "http://example.com/x",
         "https://example.co.jp/e",
-        "https://xn--fsq.com/x",  # punycode
+        "https://xn--fsq.com/x",  # punycode のラベル（TLD は com）
+        "https://example.xn--p1ai/x",  # TLD 自体が punycode（.рф）
+        "https://example.xn--fiqs8s/x",  # 同（.中国）
+        "https://example.みんな/x",  # Unicode 表記の TLD
         "https://sub.domain.example.org/p",
     ],
 )
@@ -661,3 +664,28 @@ def test_page_reader_allows_public_hosts(monkeypatch, ok):
     monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
     out = registry.invoke("read_page", url=ok)
     assert len(out.data["pages"]) == 1
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    [
+        ("example.com", True),
+        ("example.co", True),  # 2 文字の国別 TLD
+        ("example.c", False),  # 1 文字の TLD は実在しない
+        ("example.travel", True),  # 長い gTLD
+        ("example.com123", False),  # 数字混じりの TLD
+        ("example.99", False),
+        ("example.xn--p1ai", True),  # punycode の TLD
+        ("example.xn--", False),  # prefix だけ
+        ("a.xn--a", True),  # 最短
+        ("example", False),  # 単一ラベル
+        ("", False),
+        (".", False),
+        ("a.", False),
+    ],
+)
+def test_has_valid_tld_boundaries(host, expected):
+    """許可リストの境界。**厳しすぎると正常なサイトを弾いて Verification が壊れる。**"""
+    from tools.page_reader import _has_valid_tld
+
+    assert _has_valid_tld(host) is expected
