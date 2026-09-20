@@ -24,7 +24,13 @@ export type OpportunityStatus =
   | 'attended'
   | 'dismissed';
 
-/** GET /api/opportunities（TOP3 一覧） */
+/**
+ * `GET /api/opportunities`。ユーザーへ提示済みの候補**すべて**。
+ *
+ * **今回の探索が選んだ 3 件ではない。** 選定結果は
+ * `GET /api/agent/runs/{run_id}/result` で取る。こちらは保存一覧・次の一歩の
+ * 母集合なので、件数を絞らない。
+ */
 export type Opportunity = {
   opportunity_id: string;
   type: OpportunityType;

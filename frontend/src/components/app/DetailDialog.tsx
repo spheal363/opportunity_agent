@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchOpportunity } from '../../api';
-import { categoryLabel, costLabel, isStep, safeHttpUrl } from '../../utils/display';
+import { availabilityLabel, categoryLabel, costLabel, isStep, safeHttpUrl } from '../../utils/display';
 import { POSE_SLOTS } from '../../utils/poses';
 import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
@@ -123,6 +123,14 @@ export function DetailDialog() {
             <dt className="text-muted">公式情報</dt>
             <dd className="m-0">
               {item.verified ? `確認済み（${formatDateTime(item.verified_at)}）` : '未確認'}
+            </dd>
+            {/* 「情報を確認できたか」と「いま申し込めるか」は別。両方を出す。 */}
+            <dt className="text-muted">受付状況</dt>
+            <dd className="m-0">
+              {availabilityLabel(item)}
+              {item.availability_reason ? (
+                <span className="block text-muted text-[13px]">{item.availability_reason}</span>
+              ) : null}
             </dd>
           </dl>
 

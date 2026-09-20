@@ -4,7 +4,7 @@
  * ここで作るのは「見せ方」だけ。Web 上の事実（日時・場所・費用）は API が
  * 返した値をそのまま出し、取得できていない項目は推測せず「未定」と書く。
  */
-import type { Opportunity, OpportunityStatus, OpportunityType } from '../types';
+import type { Availability, Opportunity, OpportunityStatus, OpportunityType } from '../types';
 import { formatDateTime } from '../utils/date';
 
 /** カード表紙の大きな英字。type ごとに固定の装飾文言で、事実ではない。 */
@@ -83,6 +83,37 @@ export function costLabel(cost: number | null | undefined): string {
 
 export function deadlineLabel(opportunity: Opportunity): string {
   return formatDateTime(opportunity.deadline);
+}
+
+/**
+ * 受付状況の見せ方。**`verified`（情報を確認できたか）とは別の軸。**
+ *
+ * open は「受付中を**確認できた**」であって、参加できることの保証ではない。
+ * 参加資格や空き枠までは分からない。
+ *
+ * **確認できていない状態を「受付中」とは書かない。** 締切が未来というだけで
+ * 申し込めるとは限らず、日時が取れていない候補も多い。
+ */
+const AVAILABILITY_VIEW: Record<Availability, { mark: string; label: string; tone: string }> = {
+  open: { mark: '✓', label: '受付中を確認', tone: 'text-[#4b6c58]' },
+  closed: { mark: '✕', label: '受付終了を確認', tone: 'text-[#9a5c4c]' },
+  unknown: { mark: '?', label: '受付状況は要確認', tone: 'text-[#707b73]' },
+};
+
+export function availabilityView(availability: Availability) {
+  return AVAILABILITY_VIEW[availability] ?? AVAILABILITY_VIEW.unknown;
+}
+
+/**
+ * いつ時点の確認かを必ず添える。
+ *
+ * **古い結果を今の状態として読ませないため。** 確認時刻が無いということは
+ * 一度も確認していないということで、そのときは時刻を書かない。
+ */
+export function availabilityLabel(opportunity: Opportunity): string {
+  const { label } = availabilityView(opportunity.availability);
+  const at = opportunity.availability_checked_at;
+  return at ? `${label}（${formatDateTime(at)} 時点）` : label;
 }
 
 /** サイドバーの「気になる」に入る状態。 */
