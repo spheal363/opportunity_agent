@@ -12,20 +12,32 @@ LLM / Web Search を実装する後続タスクで、各 _step_* の中身を差
 from __future__ import annotations
 
 import time
+import uuid
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
+from ai.extraction import extract_many
 from ai.schemas import GoalAnalysisOutput, SearchDirection
+from ai.schemas.extraction import ExtractedOpportunity
 from config import get_settings
 from db.session import SessionLocal
 from logging_config import get_logger
 from models import AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import AgentRunStatus, AgentStep
+from schemas.opportunity import OpportunityStatus
+from tools import registry
+from tools.search.base import SearchError
 
 logger = get_logger(__name__)
+
+# 1 つの探索方向あたりに取る検索結果の件数。
+# 増やすほど候補は増えるが、1 件ごとに LLM 抽出が走るので時間とコストが伸びる。
+# 削減は Search Cost Optimization（P2）の範囲。
+MAX_RESULTS_PER_DIRECTION = 5
 
 # ステップごとの進捗（Frontend の探索中画面用）
 _PROGRESS = {
@@ -108,16 +120,104 @@ def _plan_search(state: AgentState) -> list[SearchDirection]:
 
 def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     """Web Search Tool + ③ Opportunity Extraction。発見した opportunity_id を返す。"""
-    if not get_settings().agent_stub_mode:
-        raise NotImplementedError("web search / extraction is not implemented yet")
+    if get_settings().agent_stub_mode:
+        ids: list[str] = []
+        for raw in stub_data.STUB_OPPORTUNITIES:
+            row = _upsert_opportunity(db, state, raw)
+            ids.append(row.opportunity_id)
+            time.sleep(0.4)  # 探索中画面が見えるように少しずつ進める
+        state.discovered_ids = ids
+        return ids
 
-    ids: list[str] = []
-    for raw in stub_data.STUB_OPPORTUNITIES:
-        row = _upsert_opportunity(db, state, raw)
-        ids.append(row.opportunity_id)
-        time.sleep(0.4)  # 探索中画面が見えるように少しずつ進める
+    ids = []
+    seen: set[str] = set()
+
+    for direction in state.search_directions:
+        try:
+            found = registry.invoke(
+                "search_web", query=direction.query, limit=MAX_RESULTS_PER_DIRECTION
+            ).data
+        except SearchError as exc:
+            # 1 方向の失敗で探索全体を止めない。他の方向はまだ試せる。
+            _log(db, state, AgentStep.SEARCHING, f"「{direction.query}」の検索に失敗しました")
+            logger.warning("search.failed query_len=%d reason=%s", len(direction.query), exc)
+            continue
+
+        # 同じ催しが複数の方向から見つかる。URL で重複を除く。
+        fresh = [r for r in found if r.url not in seen]
+        seen.update(r.url for r in fresh)
+        if not fresh:
+            _log(db, state, AgentStep.SEARCHING, f"「{direction.query}」は既出のみでした")
+            continue
+
+        extracted, failed = extract_many(fresh)
+        for source_url, item in extracted:
+            row = _save_extracted(db, state, item, source_url)
+            ids.append(row.opportunity_id)
+
+        message = f"「{direction.query}」から{len(extracted)}件を読み取りました"
+        if failed:
+            # 取れなかった事実は隠さない。
+            message += f"（{len(failed)}件は読み取れず）"
+        _log(db, state, AgentStep.SEARCHING, message)
+
     state.discovered_ids = ids
     return ids
+
+
+def _save_extracted(
+    db: Session,
+    state: AgentState,
+    item: ExtractedOpportunity,
+    source_url: str,
+) -> Opportunity:
+    """抽出結果を Opportunity として保存する。
+
+    同じ URL を過去の run でも拾っている場合は、その行を使い回す。
+    run のたびに同じ催しが増えないようにするため。
+    """
+    # LLM が申込先を読み取れなかったときは取得元のページを使う。
+    url = item.url or source_url
+    row = None
+    if url:
+        row = (
+            db.query(Opportunity)
+            .filter(Opportunity.user_id == state.user_id, Opportunity.url == url)
+            .first()
+        )
+    if row is None:
+        row = Opportunity(opportunity_id=f"opp_{uuid.uuid4().hex[:12]}")
+        db.add(row)
+
+    # ① Web から取得した事実。取れなかった項目は null のまま入れる。
+    row.user_id = state.user_id
+    row.run_id = state.run_id
+    row.type = item.type
+    row.title = item.title
+    row.description = item.description
+    row.url = url
+    row.source = _domain_of(url)
+    row.start_at = item.start_at
+    row.end_at = item.end_at
+    row.deadline = item.deadline
+    row.location = item.location
+    row.format = item.format
+    row.eligibility = item.eligibility
+    row.cost = item.cost
+
+    # ② AI の評価はこの時点では付けない（④ Evaluation の責務）。
+    if row.status is None:
+        row.status = OpportunityStatus.DISCOVERED
+
+    db.commit()
+    return row
+
+
+def _domain_of(url: str | None) -> str | None:
+    """発見元の表示用。例: connpass.com"""
+    if not url:
+        return None
+    return urlparse(url).netloc or None
 
 
 def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list[str]:

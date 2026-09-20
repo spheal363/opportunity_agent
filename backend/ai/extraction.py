@@ -62,13 +62,20 @@ def extract_many(
     *,
     today: date | None = None,
     tier: ModelTier = ModelTier.STANDARD,
-) -> tuple[list[ExtractedOpportunity], list[str]]:
-    """複数ページから抽出する。戻り値は (抽出できたもの, 失敗した URL)。
+) -> tuple[list[tuple[str, ExtractedOpportunity]], list[str]]:
+    """複数ページから抽出する。
+
+    戻り値は `([(取得元 URL, 抽出結果)], 失敗した URL)`。
+
+    **取得元の URL を結果と対で返す。** `ExtractedOpportunity.url` は LLM が
+    ページ本文から読み取った申込先で、返らないこともある。そのとき「どの
+    ページから抽出したか」が分からないと、保存側が別の結果の URL を
+    取り違える。
 
     **1 件の失敗で全体を捨てない。** 10 件中 2 件が壊れたページでも、
     残り 8 件は Opportunity として使えるため。
     """
-    extracted: list[ExtractedOpportunity] = []
+    extracted: list[tuple[str, ExtractedOpportunity]] = []
     failed: list[str] = []
 
     for src in sources:
@@ -77,11 +84,13 @@ def extract_many(
             failed.append(src.url)
             continue
         try:
-            extracted.append(extract_opportunity(src.url, content, today=today, tier=tier))
+            item = extract_opportunity(src.url, content, today=today, tier=tier)
         except LLMError as exc:
             # 例外メッセージにページ本文を載せない（_safe_reason 済みのものだけ）
             logger.warning("extraction.failed url=%s reason=%s", src.url, exc)
             failed.append(src.url)
+            continue
+        extracted.append((src.url, item))
 
     logger.info("extraction.done ok=%d failed=%d", len(extracted), len(failed))
     return extracted, failed
