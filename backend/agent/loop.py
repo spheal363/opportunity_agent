@@ -21,8 +21,10 @@ from sqlalchemy.orm import Session
 from agent import stub_data
 from agent.state import AgentState
 from ai.extraction import extract_many
+from ai.goal_analysis import analyze_goal
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.extraction import ExtractedOpportunity
+from ai.schemas.goal_analysis import GoalAnalysisInput
 from config import get_settings
 from db.session import SessionLocal
 from logging_config import get_logger
@@ -108,7 +110,16 @@ def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
     """① Goal Analysis"""
     if get_settings().agent_stub_mode:
         return GoalAnalysisOutput(**stub_data.STUB_GOAL_ANALYSIS)
-    raise NotImplementedError("goal analysis is not implemented yet")
+
+    return analyze_goal(
+        GoalAnalysisInput(
+            occupation=profile.occupation,
+            skills=profile.skills or [],
+            interests=profile.interests or [],
+            goals=profile.goals or [],
+            about=profile.about,
+        )
+    )
 
 
 def _plan_search(state: AgentState) -> list[SearchDirection]:
