@@ -16,8 +16,7 @@ SYSTEM = (
     '  "score": int,                 // 0-100。目標への近さ\n'
     '  "serendipity_score": int,     // 0-100。自分では見つけられなさ\n'
     '  "match_reasons": [str],       // 1-4 個。合致した要素（短い語）\n'
-    '  "concerns": [str],            // 0-3 個。懸念。無ければ空\n'
-    '  "evaluation_summary": str     // 1 文\n'
+    '  "concerns": [str]             // 0-3 個。懸念。無ければ空\n'
     "}\n"
     "\n"
     "**score と serendipity_score は別の軸である。混同しない。**\n"

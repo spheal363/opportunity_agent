@@ -255,3 +255,72 @@ def test_logs_are_human_readable(db, state, real_mode, monkeypatch):
     loop._search_and_extract(db, state)
 
     assert _logs(db) == ["「AI hackathon Tokyo」から1件を読み取りました"]
+
+
+# --- 申込先 URL の信頼の起点（レビュー指摘 High）--------------------------
+
+
+def test_extracted_url_is_used_when_same_site(db, state, real_mode, monkeypatch):
+    """同じドメインなら LLM が読み取った申込先を使う。"""
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/event/1")], external=True),
+        extract=lambda src, **k: (
+            [("https://connpass.com/event/1", _item(url="https://connpass.com/event/1/join"))],
+            [],
+        ),
+    )
+    ids = loop._search_and_extract(db, state)
+    assert db.get(Opportunity, ids[0]).url == "https://connpass.com/event/1/join"
+
+
+def test_subdomain_is_treated_as_same_site(db, state, real_mode, monkeypatch):
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/event/1")], external=True),
+        extract=lambda src, **k: (
+            [("https://connpass.com/event/1", _item(url="https://events.connpass.com/x"))],
+            [],
+        ),
+    )
+    ids = loop._search_and_extract(db, state)
+    assert db.get(Opportunity, ids[0]).url == "https://events.connpass.com/x"
+
+
+def test_cross_domain_url_falls_back_to_source(db, state, real_mode, monkeypatch):
+    """ページの書き手が申込先を自由に書けるため、別ドメインは採用しない。
+
+    採用すると、⑦ Verification が「公式ページ」として読みに行く先まで
+    書き手に握られ、検証が成立しない。
+    """
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/event/1")], external=True),
+        extract=lambda src, **k: (
+            [("https://connpass.com/event/1", _item(url="https://attacker.example/fake"))],
+            [],
+        ),
+    )
+    ids = loop._search_and_extract(db, state)
+
+    assert db.get(Opportunity, ids[0]).url == "https://connpass.com/event/1"
+    # 黙って捨てない
+    assert any("別ドメイン" in m for m in _logs(db))
+
+
+def test_metadata_ip_is_not_adopted(db, state, real_mode, monkeypatch):
+    """内部アドレスを Agent に踏ませない。"""
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/e")], external=True),
+        extract=lambda src, **k: (
+            [("https://connpass.com/e", _item(url="http://169.254.169.254/latest/meta-data/"))],
+            [],
+        ),
+    )
+    ids = loop._search_and_extract(db, state)
+    assert db.get(Opportunity, ids[0]).url == "https://connpass.com/e"

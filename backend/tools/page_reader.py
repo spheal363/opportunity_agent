@@ -12,6 +12,7 @@ Tavily の検索は 800〜1500 文字の本文抜粋を返すため、多くの�
 取得した本文は **Untrusted Data**。`ToolResult(external=True)` で返す。
 """
 
+import ipaddress
 from typing import Any
 from urllib.parse import urlparse
 
@@ -21,6 +22,9 @@ from tools.search.base import PageContent, SearchError
 
 # http / https 以外は取りに行かない。file: や data: を Agent に踏ませない。
 ALLOWED_SCHEMES = frozenset({"http", "https"})
+
+# 取りに行かないホスト名。IP は ipaddress で別途判定する。
+_BLOCKED_HOSTS = frozenset({"localhost", "localhost.localdomain", "metadata.google.internal"})
 
 # 1 ページあたりの本文上限。実測で 43,910 文字のページがあった。
 # これは安全側の歯止めで、LLM へ渡す量ではない（そちらは
@@ -61,13 +65,48 @@ registry.register(PageReaderTool())
 
 
 def _split_by_scheme(urls: list[str]) -> tuple[list[str], list[str]]:
-    """http / https のものと、それ以外に分ける。"""
+    """取りに行ってよい URL と、それ以外に分ける。"""
     allowed: list[str] = []
     rejected: list[str] = []
     for u in urls:
-        scheme = urlparse(u).scheme.lower()
-        (allowed if scheme in ALLOWED_SCHEMES else rejected).append(u)
+        (allowed if _is_fetchable(u) else rejected).append(u)
     return allowed, rejected
+
+
+def _is_fetchable(url: str) -> bool:
+    """取りに行ってよい URL か。
+
+    Agent は LLM が読み取った URL を渡してくることがあり、その中身は
+    ページの書き手が決められる。**内部アドレスを踏ませない。**
+
+    現在の provider は取得を外部サービス側で行うためこのプロセスからの
+    SSRF にはならないが、provider を自前の HTTP クライアントへ差し替えた
+    時点で成立する。差し替えの可能性があるうちは手前で塞いでおく。
+
+    **名前解決はしない。** 内部 IP へ解決されるホスト名は通る。
+    完全な対策にはならず、明らかなものを落とすだけ。
+    """
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in ALLOWED_SCHEMES:
+        return False
+
+    host = parsed.hostname
+    if not host or host.lower() in _BLOCKED_HOSTS:
+        return False
+
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return True  # ホスト名。名前解決はしない
+
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local  # 169.254.169.254（クラウドのメタデータ）
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
 
 
 def _truncate(page: PageContent) -> PageContent:

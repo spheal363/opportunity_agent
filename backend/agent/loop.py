@@ -45,6 +45,17 @@ logger = get_logger(__name__)
 # 削減は Search Cost Optimization（P2）の範囲。
 MAX_RESULTS_PER_DIRECTION = 5
 
+# ユーザーが自分で決めた状態。Agent が再探索で上書きしない。
+# status は「ユーザー操作」由来の列（.claude/rules/architecture.md）。
+_USER_DECIDED = frozenset(
+    {
+        OpportunityStatus.INTERESTED,
+        OpportunityStatus.REGISTERED,
+        OpportunityStatus.ATTENDED,
+        OpportunityStatus.DISMISSED,
+    }
+)
+
 # ステップごとの進捗（Frontend の探索中画面用）
 _PROGRESS = {
     AgentStep.ANALYZING_PROFILE: 15,
@@ -201,8 +212,7 @@ def _save_extracted(
     同じ URL を過去の run でも拾っている場合は、その行を使い回す。
     run のたびに同じ催しが増えないようにするため。
     """
-    # LLM が申込先を読み取れなかったときは取得元のページを使う。
-    url = item.url or source_url
+    url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
     row = None
     if url:
         row = (
@@ -238,6 +248,46 @@ def _save_extracted(
     return row
 
 
+def _trusted_url(
+    extracted: str | None,
+    source_url: str,
+    *,
+    db: Session,
+    state: AgentState,
+    title: str,
+) -> str:
+    """保存する URL を決める。**信頼の起点は検索でヒットした URL。**
+
+    `extracted` は LLM がページ本文から読み取った申込先で、**ページの書き手が
+    自由に決められる**。これをそのまま採用すると、⑦ Verification が
+    「公式ページ」として読みに行く先まで書き手に握られ、検証が成立しない。
+
+    同じドメインのときだけ採用し、違えば取得元を使う。告知ページと申込先が
+    別ドメインという正当なケースは拾えなくなるが、**検証できない URL を
+    公式として見せるより、確認できたページへ誘導するほうが安全**と判断した。
+    """
+    if not extracted or _same_site(extracted, source_url):
+        return extracted or source_url
+
+    # 黙って捨てない。食い違ったという事実を残す。
+    _log(
+        db,
+        state,
+        AgentStep.SEARCHING,
+        f"「{title}」の申込先が検索結果と別ドメインのため、取得元のページを使います",
+    )
+    return source_url
+
+
+def _same_site(a: str, b: str) -> bool:
+    """同じサイトとみなせるか。サブドメインの違いは許す。"""
+    host_a = urlparse(a).netloc.lower().split(":")[0]
+    host_b = urlparse(b).netloc.lower().split(":")[0]
+    if not host_a or not host_b:
+        return False
+    return host_a == host_b or host_a.endswith(f".{host_b}") or host_b.endswith(f".{host_a}")
+
+
 def _domain_of(url: str | None) -> str | None:
     """発見元の表示用。例: connpass.com"""
     if not url:
@@ -256,7 +306,8 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
             .all()
         )
         for row in rows:
-            row.status = OpportunityStatus.RECOMMENDED
+            if row.status not in _USER_DECIDED:
+                row.status = OpportunityStatus.RECOMMENDED
         db.commit()
         return [r.opportunity_id for r in rows]
 
@@ -295,7 +346,9 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
     for opportunity_id in selected:
         row = rows[opportunity_id]
         out = dict(evaluated)[opportunity_id]
-        row.status = OpportunityStatus.RECOMMENDED
+        # ユーザーが「興味なし」にしたものを再探索で推薦へ戻さない。
+        if row.status not in _USER_DECIDED:
+            row.status = OpportunityStatus.RECOMMENDED
         try:
             rec = recommend(
                 goals=state.goal_analysis.goal_directions,

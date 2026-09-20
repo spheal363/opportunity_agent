@@ -277,3 +277,66 @@ def test_real_mode_requires_goal_analysis(db, monkeypatch):
 def test_real_mode_with_no_candidates(db, state, monkeypatch):
     monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
     assert loop._evaluate_and_select(db, state, []) == []
+
+
+# --- ユーザー操作由来の status を守る（レビュー指摘 High）-----------------
+
+
+@pytest.mark.parametrize(
+    "decided",
+    [
+        OpportunityStatus.INTERESTED,
+        OpportunityStatus.REGISTERED,
+        OpportunityStatus.ATTENDED,
+        OpportunityStatus.DISMISSED,
+    ],
+)
+def test_user_decided_status_is_not_overwritten(db, state, monkeypatch, decided):
+    """再探索でユーザーの意思表示を巻き戻さない。
+
+    status は「ユーザー操作」由来の列（.claude/rules/architecture.md）。
+    同一 URL の行は run をまたいで再利用されるため、ここで守らないと
+    「興味なし」にした催しが推薦へ戻る。
+    """
+    db.add(
+        Opportunity(
+            opportunity_id="opp_a",
+            user_id="user_001",
+            type="event",
+            title="T",
+            status=decided,
+        )
+    )
+    db.commit()
+
+    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+    monkeypatch.setattr(loop, "evaluate_many", lambda **k: ([("opp_a", _eval())], []))
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a"])
+    monkeypatch.setattr(loop, "recommend", lambda **k: RecommendationOutput(reason="r"))
+
+    loop._evaluate_and_select(db, state, ["opp_a"])
+
+    assert db.get(Opportunity, "opp_a").status == decided
+
+
+def test_discovered_status_is_promoted(db, state, monkeypatch):
+    """ユーザーが触っていないものは推薦にする。"""
+    db.add(
+        Opportunity(
+            opportunity_id="opp_a",
+            user_id="user_001",
+            type="event",
+            title="T",
+            status=OpportunityStatus.DISCOVERED,
+        )
+    )
+    db.commit()
+
+    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+    monkeypatch.setattr(loop, "evaluate_many", lambda **k: ([("opp_a", _eval())], []))
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a"])
+    monkeypatch.setattr(loop, "recommend", lambda **k: RecommendationOutput(reason="r"))
+
+    loop._evaluate_and_select(db, state, ["opp_a"])
+
+    assert db.get(Opportunity, "opp_a").status == OpportunityStatus.RECOMMENDED

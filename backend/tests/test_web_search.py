@@ -542,3 +542,54 @@ def test_page_reader_truncates_huge_content(monkeypatch):
     out = registry.invoke("read_page", url="https://e.com")
 
     assert len(out.data["pages"][0].content) == MAX_CONTENT_CHARS
+
+
+# --- ホスト検証（レビュー指摘 Medium）-------------------------------------
+
+
+@pytest.mark.parametrize(
+    "blocked",
+    [
+        "http://169.254.169.254/latest/meta-data/",  # クラウドのメタデータ
+        "http://127.0.0.1:8000/admin",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "http://localhost:8000/",
+        "http://metadata.google.internal/",
+        "http://[::1]/",
+    ],
+)
+def test_page_reader_rejects_internal_hosts(monkeypatch, blocked):
+    """LLM が読み取った URL を Agent が自動で踏む経路があるため手前で塞ぐ。"""
+    called = []
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            called.append(urls)
+            return [], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.com", blocked])
+
+    assert called == [["https://ok.com"]]
+    assert out.data["failed"] == [blocked]
+
+
+def test_page_reader_allows_normal_hosts(monkeypatch):
+    from tools.search.base import PageContent
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://connpass.com/e", "http://example.com/x"])
+
+    assert len(out.data["pages"]) == 2
+    assert out.data["failed"] == []
