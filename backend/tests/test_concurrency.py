@@ -10,7 +10,8 @@ import time
 
 import pytest
 
-from ai.concurrency import DEFAULT_WORKERS, map_parallel
+from ai import concurrency
+from ai.concurrency import map_parallel
 
 
 def test_preserves_input_order_even_when_completion_order_reverses():
@@ -66,19 +67,25 @@ def test_empty_input():
     assert map_parallel([], lambda x: x) == []
 
 
-def test_workers_are_capped_by_item_count():
-    """要素より多いワーカーを立てない。"""
-    names: set[str] = set()
-    lock = threading.Lock()
+def test_workers_are_capped_by_item_count(monkeypatch):
+    """要素より多いワーカーを立てない。
 
-    def record(n: int) -> int:
-        time.sleep(0.02)
-        with lock:
-            names.add(threading.current_thread().name)
-        return n
+    **実際に動くスレッド数を数えても検知できない。** ThreadPoolExecutor は
+    要素数までしかスレッドを起こさないため、キャップを外したままでも
+    「2 要素なら 2 スレッド」になって通ってしまう。
+    Executor に渡した max_workers を直接見る。
+    """
+    seen: list[int] = []
+    real = concurrency.ThreadPoolExecutor
 
-    map_parallel([1, 2], record, workers=DEFAULT_WORKERS)
-    assert len(names) <= 2
+    def spy(max_workers=None, **kwargs):
+        seen.append(max_workers)
+        return real(max_workers=max_workers, **kwargs)
+
+    monkeypatch.setattr(concurrency, "ThreadPoolExecutor", spy)
+    map_parallel([1, 2], lambda n: n, workers=100)
+
+    assert seen == [2]
 
 
 def test_accepts_any_iterable():

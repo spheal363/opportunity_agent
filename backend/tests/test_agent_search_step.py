@@ -393,3 +393,33 @@ def test_stub_search_step_still_fills_other_fields(db, state):
 )
 def test_same_site_boundaries(extracted, source, expected):
     assert loop._same_site(extracted, source) is expected
+
+
+def test_duplicate_queries_do_not_merge_their_counts(db, state, real_mode, monkeypatch):
+    """同じ query を持つ探索方向が 2 つ返っても件数を合算しない。
+
+    `plan_search()` の出力にユニーク性の保証は無い。クエリ文字列で集計すると
+    2 方向分が合算され、その方向の数だけ合算値が繰り返し表示される。
+    """
+    # 同じ query・別オブジェクト
+    state.search_directions = [_direction("AI hackathon"), _direction("AI hackathon")]
+
+    calls = {"n": 0}
+
+    def search(_name, **kwargs):
+        calls["n"] += 1
+        url = f"https://e{calls['n']}.com"
+        return ToolResult([_hit(url)], external=True)
+
+    _patch(
+        monkeypatch,
+        search=search,
+        extract=lambda src, **k: ([(s.url, _item()) for s in src], []),
+    )
+    loop._search_and_extract(db, state)
+
+    counted = [m for m in _logs(db) if "読み取りました" in m]
+    assert counted == [
+        "「AI hackathon」から1件を読み取りました",
+        "「AI hackathon」から1件を読み取りました",
+    ]
