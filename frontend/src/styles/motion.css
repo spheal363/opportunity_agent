@@ -1,0 +1,181 @@
+/* Tailwind のユーティリティで書けない演出だけをここに置く。 */
+
+@layer components {
+  /* --- ホームページ --- */
+
+  /* 見出しを1文字ずつ表示する。 */
+  .reveal-char {
+    display: inline-block;
+    animation: letter-arrive 0.38s ease both;
+    animation-delay: calc(var(--i) * 0.075s + 0.15s);
+  }
+
+  /* 上部のマスコット2体のゆるやかな浮遊。 */
+  .opo-cloud {
+    animation: opo-float 6s ease-in-out infinite;
+  }
+
+  /* 2枚目のフレームを切り絵に見せるための白い下地。 */
+  .cloud-found .frame-portrait::before {
+    content: '';
+    position: absolute;
+    inset: 16%;
+    border-radius: 50%;
+    background: #fff;
+    z-index: 0;
+  }
+
+  .flow-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* --- アプリ本体 --- */
+
+  /* 探索の道のりをつなぐ破線。 */
+  .process-step:not(:last-child)::before {
+    position: absolute;
+    content: '';
+    left: 29px;
+    top: 50px;
+    bottom: -18px;
+    border-left: 1px dashed #d2d9c8;
+  }
+
+  @media (max-width: 620px) {
+    .process-step:not(:last-child)::before {
+      left: 21px;
+    }
+  }
+
+  .checklist-item::before {
+    content: '✓';
+    color: var(--color-green);
+    margin-right: 10px;
+  }
+
+  .is-running .spark {
+    animation: starTwinkle 2.4s ease-in-out infinite;
+  }
+
+  .is-running .spark-2 {
+    animation-delay: 0.7s;
+  }
+
+  .is-running .path-dot {
+    animation: footstep 2s infinite;
+  }
+
+  .is-running .path-dot-2 {
+    animation-delay: 0.3s;
+  }
+
+  .is-running .path-dot-3 {
+    animation-delay: 0.6s;
+  }
+
+  .celebrate-art .spark {
+    animation: starTwinkle 3s infinite;
+  }
+
+  .soft-enter {
+    animation: softEnter 0.6s ease;
+  }
+
+  .evidence-enter {
+    animation: softEnter 0.4s ease;
+  }
+
+  /* 結果カードが順に現れる。 */
+  .result-card {
+    animation: softEnter 0.6s both;
+    animation-delay: calc(var(--card-index) * 0.14s);
+  }
+
+  .gentle-welcome {
+    animation: gentleWelcome 1s ease-out;
+  }
+}
+
+@keyframes letter-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes opo-float {
+  0%,
+  100% {
+    translate: 0 0;
+    rotate: -2deg;
+  }
+  50% {
+    translate: 0 -16px;
+    rotate: 2deg;
+  }
+}
+
+@keyframes starTwinkle {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85) rotate(-10deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12) rotate(10deg);
+  }
+}
+
+@keyframes footstep {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  40%,
+  60% {
+    opacity: 0.65;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes softEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gentleWelcome {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * 動きだけを止める。マスコットの静止した傾きは元のデザイン通り残す。
+   */
+  .reveal-char,
+  .opo-cloud {
+    animation: none;
+    opacity: 1;
+    filter: none;
+  }
+}

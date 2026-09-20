@@ -1,9 +1,167 @@
-@import 'tailwindcss';
+/*
+ * Tailwind without Preflight.
+ *
+ * The design this UI is ported from leans on browser defaults for spacing —
+ * paragraph margins, heading sizes, list indents. Preflight erases those and
+ * quietly changes every screen, so only the reset the design actually assumes
+ * is reproduced here.
+ */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@import './styles/character.css';
+@import './styles/motion.css';
+
+/*
+ * Breakpoints are `max-width` queries (inclusive of the exact width). Tailwind's
+ * built-in `max-*` variant compiles to `not all and (min-width: X)`, which
+ * excludes it, so the widths are declared verbatim.
+ * Declaration order is emission order: widest first, so narrower wins.
+ */
+@custom-variant lte1250 (@media (max-width: 1250px));
+@custom-variant lte1180 (@media (max-width: 1180px));
+@custom-variant lte1150 (@media (max-width: 1150px));
+@custom-variant lte900 (@media (max-width: 900px));
+@custom-variant lte850 (@media (max-width: 850px));
+@custom-variant lte640 (@media (max-width: 640px));
+@custom-variant lte620 (@media (max-width: 620px));
+@custom-variant gte1450 (@media (min-width: 1450px));
 
 @theme {
-  --font-sans: system-ui, -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  --font-ja: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+  --font-en: 'Rubik', 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+  --font-pop:
+    'Mochiy Pop One', 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+
+  /* アプリ本体のパレット */
+  --color-bg: #fbfaf7;
+  --color-ink: #303b35;
+  --color-muted: #6d756e;
+  --color-green: #4e665a;
+  --color-line: #e5e6de;
+  --color-terra: #ac6249;
+
+  /* ホームページのパレット */
+  --color-home-paper: #fcfbf7;
+  --color-home-ink: #303e34;
+  --color-home-green: #50694f;
+  --color-home-line: #e2e5da;
 }
 
-body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  /* Tailwind's border utilities only set a width, so supply the style here. */
+  *,
+  ::before,
+  ::after {
+    border-width: 0;
+    border-style: solid;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-ja);
+    font-weight: 400;
+    font-size: 16px;
+    letter-spacing: 0.02em;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'palt' 1;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    line-height: 1.7;
+  }
+
+  /* 2つの画面群で下地の色と行間が違うため、ページ側から切り替える。 */
+  body[data-page='welcome'] {
+    background: var(--color-home-paper);
+    color: var(--color-home-ink);
+    line-height: 1.85;
+  }
+
+  html:has(body[data-page='welcome']) {
+    scroll-behavior: smooth;
+    scroll-padding-top: 40px;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  /* Declared after `font: inherit`, which would otherwise reset the weight. */
+  button {
+    cursor: pointer;
+    color: inherit;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 3px solid #bd8d55;
+    outline-offset: 4px;
+  }
+
+  body[data-page='welcome'] a:focus-visible,
+  body[data-page='welcome'] button:focus-visible {
+    outline-color: #bd875b;
+    outline-offset: 5px;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  /* Native <dialog> needs `auto` to centre itself. */
+  dialog {
+    margin: auto;
+  }
+
+  dialog::backdrop {
+    background: #27362c66;
+    backdrop-filter: blur(4px);
+  }
+
+  body[data-page='welcome'] dialog::backdrop {
+    background: #35423066;
+  }
+}
+
+@layer utilities {
+  /* OS の「視差効果を減らす」設定に従う。 */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
 }

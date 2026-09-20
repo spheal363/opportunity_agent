@@ -1,0 +1,98 @@
+/*
+ * Sprite sheets and frame-by-frame playback.
+ * Sizing is done with Tailwind utilities at each call site; only the atlas
+ * geometry and the keyframes live here.
+ */
+@layer components {
+  /* Nine unique drawings in a 3×3 grid of 418px cells (1254×1254 atlas). */
+  .still-pose {
+    display: block;
+    aspect-ratio: 1;
+    background-image: url('/assets/poses-new.png');
+    background-size: 418% 418%;
+    background-position: var(--art-x) var(--art-y);
+    background-repeat: no-repeat;
+    flex-shrink: 0;
+  }
+
+  /* Three drawings side by side (2172×724 atlas), one per result card. */
+  .card-new-pose {
+    display: block;
+    aspect-ratio: 1;
+    background-image: url('/assets/cards-new.png');
+    background-size: 300% 100%;
+    background-position: var(--card-x) 0;
+    background-repeat: no-repeat;
+  }
+
+  /* Six sequential frames in a 3×2 grid (1536×1024 atlas). */
+  .sprite-pose {
+    display: block;
+    aspect-ratio: 1;
+    background-size: 300% 200%;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+  }
+
+  .sprite-walk {
+    background-image: url('/assets/motion-walk.png');
+  }
+
+  .sprite-sniff {
+    background-image: url('/assets/motion-sniff.png');
+  }
+
+  .sprite-look {
+    background-image: url('/assets/motion-look.png');
+  }
+
+  .sprite-map {
+    background-image: url('/assets/motion-map.png');
+  }
+
+  /* `steps(1,end)` holds each drawn frame instead of cross-fading between them. */
+  .sprite-pose.playing {
+    animation: drawnFrames 1.2s steps(1, end) infinite;
+  }
+
+  .sprite-look.playing {
+    animation-duration: 2.1s;
+  }
+
+  .sprite-sniff.playing {
+    animation-duration: 1.5s;
+  }
+
+  .sprite-map.playing {
+    animation-duration: 2.4s;
+  }
+}
+
+@keyframes drawnFrames {
+  0%,
+  100% {
+    background-position: 0% 0%;
+  }
+  16.666% {
+    background-position: 50% 0%;
+  }
+  33.333% {
+    background-position: 100% 0%;
+  }
+  50% {
+    background-position: 0% 100%;
+  }
+  66.666% {
+    background-position: 50% 100%;
+  }
+  83.333% {
+    background-position: 100% 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sprite-pose.playing {
+    animation: none !important;
+    background-position: 0 0;
+  }
+}
