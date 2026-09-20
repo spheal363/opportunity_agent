@@ -248,3 +248,6 @@ frontend/dist/
 # 正当なファイル名が "... 2.md" の場合は git add -f で追加する
 * 2
 * 2.*
+
+# 実験の生データ（取得した本文を含む。公開しない）
+backend/experiments/
