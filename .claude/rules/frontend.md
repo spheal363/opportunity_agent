@@ -23,8 +23,20 @@ paths:
 
 ## スタイル
 
-Tailwind のユーティリティクラスを直接書く。CSS ファイルを増やさない。
-新しい UI ライブラリを導入しない。
+Tailwind のユーティリティクラスを直接書く。新しい UI ライブラリを導入しない。
+
+CSS ファイルは増やさない。ただし **Tailwind のユーティリティでは書けないもの**に限り
+`src/styles/` に置いてよい。
+
+- スプライトシートの切り出し（`background-size` と CSS 変数による位置指定）
+- `@keyframes` と、コマ送りの `steps()`
+- 擬似要素（`::before` / `::after` / `::backdrop`）
+
+ユーティリティで書けるものをここに書かない。書いた CSS は `src/index.css` から import する。
+
+**Tailwind の Preflight は読み込んでいない。** 画面のデザインは段落の余白と見出しの
+文字サイズをブラウザ既定値のまま使っており、Preflight はそれを消してしまう。
+同じ役割のリセットは `src/index.css` にある。戻さない。
 
 ## 変更後
 
