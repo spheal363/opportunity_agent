@@ -223,7 +223,7 @@ def test_extraction_failures_are_reported_not_hidden(db, state, real_mode, monke
     )
     loop._search_and_extract(db, state)
 
-    assert any("1件は読み取れず" in m for m in _logs(db))
+    assert any("1件は読み取れませんでした" in m for m in _logs(db))
 
 
 def test_search_failure_log_does_not_leak_query(db, state, real_mode, monkeypatch, caplog):

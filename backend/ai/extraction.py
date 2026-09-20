@@ -10,6 +10,7 @@ CHEAP を使わない**。
 
 from datetime import date
 
+from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import extraction as prompt
@@ -75,22 +76,23 @@ def extract_many(
     **1 件の失敗で全体を捨てない。** 10 件中 2 件が壊れたページでも、
     残り 8 件は Opportunity として使えるため。
     """
-    extracted: list[tuple[str, ExtractedOpportunity]] = []
-    failed: list[str] = []
 
-    for src in sources:
+    def one(src: SearchResult | PageContent) -> tuple[str, ExtractedOpportunity | None]:
         content = _content_of(src)
         if not content:
-            failed.append(src.url)
-            continue
+            return src.url, None
         try:
-            item = extract_opportunity(src.url, content, today=today, tier=tier)
+            return src.url, extract_opportunity(src.url, content, today=today, tier=tier)
         except LLMError as exc:
             # 例外メッセージにページ本文を載せない（_safe_reason 済みのものだけ）
             logger.warning("extraction.failed url=%s reason=%s", src.url, exc)
-            failed.append(src.url)
-            continue
-        extracted.append((src.url, item))
+            return src.url, None
+
+    # 1 件ずつ独立した呼び出し。直列にすると待ち時間がそのまま積み上がる。
+    results = map_parallel(sources, one)
+
+    extracted = [(url, item) for url, item in results if item is not None]
+    failed = [url for url, item in results if item is None]
 
     logger.info("extraction.done ok=%d failed=%d", len(extracted), len(failed))
     return extracted, failed

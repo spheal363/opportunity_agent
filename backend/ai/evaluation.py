@@ -12,6 +12,7 @@
 そこから決められる。全件に推薦理由を書かせるのも無駄なので TOP3 に絞る。
 """
 
+from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import evaluation as eval_prompt
@@ -64,13 +65,11 @@ def evaluate_many(
 
     **1 件の失敗で全体を捨てない。** 抽出（#18）と同じ方針。
     """
-    done: list[tuple[str, EvaluationOutput]] = []
-    failed: list[str] = []
 
-    for opportunity in opportunities:
+    def one(opportunity: dict) -> tuple[str, EvaluationOutput | None]:
         opportunity_id = opportunity["opportunity_id"]
         try:
-            out = evaluate(
+            return opportunity_id, evaluate(
                 goal_summary=goal_summary,
                 interest_connections=interest_connections,
                 opportunity=opportunity,
@@ -78,9 +77,13 @@ def evaluate_many(
             )
         except LLMError as exc:
             logger.warning("evaluation.failed id=%s reason=%s", opportunity_id, exc)
-            failed.append(opportunity_id)
-            continue
-        done.append((opportunity_id, out))
+            return opportunity_id, None
+
+    # 1 件ずつ独立した呼び出し。直列にすると待ち時間がそのまま積み上がる。
+    results = map_parallel(opportunities, one)
+
+    done = [(i, out) for i, out in results if out is not None]
+    failed = [i for i, out in results if out is None]
 
     logger.info("evaluation.done ok=%d failed=%d", len(done), len(failed))
     return done, failed

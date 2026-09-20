@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
+from ai.concurrency import map_parallel
 from ai.evaluation import evaluate_many, recommend, select_top
 from ai.extraction import extract_many
 from ai.goal_analysis import analyze_goal
@@ -165,9 +166,9 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         state.discovered_ids = ids
         return ids
 
-    ids = []
+    # --- ① まず全方向を検索する。検索は速いので方向ごとに回してよい ---------
     seen: set[str] = set()
-
+    candidates = []  # (探索方向, SearchResult)
     for direction in state.search_directions:
         try:
             found = registry.invoke(
@@ -185,17 +186,39 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         if not fresh:
             _log(db, state, AgentStep.SEARCHING, f"「{direction.query}」は既出のみでした")
             continue
+        candidates.extend((direction, r) for r in fresh)
 
-        extracted, failed = extract_many(fresh)
-        for source_url, item in extracted:
-            row = _save_extracted(db, state, item, source_url)
-            ids.append(row.opportunity_id)
+    if not candidates:
+        state.discovered_ids = []
+        return []
 
-        message = f"「{direction.query}」から{len(extracted)}件を読み取りました"
-        if failed:
-            # 取れなかった事実は隠さない。
-            message += f"（{len(failed)}件は読み取れず）"
-        _log(db, state, AgentStep.SEARCHING, message)
+    # --- ② 全候補をまとめて抽出する -----------------------------------------
+    # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
+    # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
+    extracted, failed = extract_many([r for _, r in candidates])
+
+    by_url = {r.url: direction for direction, r in candidates}
+    ids: list[str] = []
+    per_direction: dict[str, int] = {}
+    for source_url, item in extracted:
+        row = _save_extracted(db, state, item, source_url)
+        ids.append(row.opportunity_id)
+        query = by_url[source_url].query
+        per_direction[query] = per_direction.get(query, 0) + 1
+
+    # --- ③ 探索方向ごとに結果を伝える（画面に出る単位を保つ）-----------------
+    for direction in state.search_directions:
+        count = per_direction.get(direction.query, 0)
+        if count:
+            _log(
+                db,
+                state,
+                AgentStep.SEARCHING,
+                f"「{direction.query}」から{count}件を読み取りました",
+            )
+    if failed:
+        # 取れなかった事実は隠さない。
+        _log(db, state, AgentStep.SEARCHING, f"{len(failed)}件は読み取れませんでした")
 
     state.discovered_ids = ids
     return ids
@@ -365,23 +388,31 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
     # ⑤ TOP3 を選ぶ（LLM を使わない）
     selected = select_top(evaluated)
 
-    # ⑥ 推薦理由は TOP3 にだけ書く
-    for opportunity_id in selected:
-        row = rows[opportunity_id]
-        out = dict(evaluated)[opportunity_id]
-        # ユーザーが「興味なし」にしたものを再探索で推薦へ戻さない。
-        if row.status not in _USER_DECIDED:
-            row.status = OpportunityStatus.RECOMMENDED
+    # ⑥ 推薦理由は TOP3 にだけ書く。3 件を直列にすると待ち時間が積み上がる。
+    by_id = dict(evaluated)
+    goals = state.goal_analysis.goal_directions
+
+    def one(opportunity_id: str) -> str | None:
         try:
-            rec = recommend(
-                goals=state.goal_analysis.goal_directions,
-                opportunity=_as_dict(row),
-                evaluation=out,
-            )
-            row.reason = rec.reason
+            return recommend(
+                goals=goals,
+                opportunity=_as_dict(rows[opportunity_id]),
+                evaluation=by_id[opportunity_id],
+            ).reason
         except LLMError as exc:
             # 理由が無くても推薦自体は成立する。run を落とさない。
             logger.warning("recommendation.failed id=%s reason=%s", opportunity_id, exc)
+            return None
+
+    reasons = map_parallel(selected, one)
+
+    for opportunity_id, reason in zip(selected, reasons, strict=True):
+        row = rows[opportunity_id]
+        # ユーザーが「興味なし」にしたものを再探索で推薦へ戻さない。
+        if row.status not in _USER_DECIDED:
+            row.status = OpportunityStatus.RECOMMENDED
+        if reason is not None:
+            row.reason = reason
         _log(
             db,
             state,
@@ -426,12 +457,20 @@ def _verify(db: Session, state: AgentState) -> None:
         db.commit()
         return
 
-    for opportunity_id in state.selected_ids:
-        row = db.get(Opportunity, opportunity_id)
-        if row is None:
-            continue
+    rows = [db.get(Opportunity, i) for i in state.selected_ids]
+    rows = [r for r in rows if r is not None]
+    if not rows:
+        return
 
-        out = verify_with_page(opportunity=_as_dict(row), url=row.url, fetch_page=_fetch_page)
+    # 3 件それぞれが「ページ取得 + LLM 呼び出し」で、直列だと待ち時間が積み上がる。
+    # DB への書き込みと Log はこのスレッドでまとめて行う（Session を共有しない）。
+    targets = [(_as_dict(r), r.url) for r in rows]
+    outs = map_parallel(
+        targets,
+        lambda t: verify_with_page(opportunity=t[0], url=t[1], fetch_page=_fetch_page),
+    )
+
+    for row, out in zip(rows, outs, strict=True):
         row.verified = out.verified
         row.verified_at = out.verified_at
         row.verification_source = out.verification_source
