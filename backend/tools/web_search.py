@@ -1,11 +1,16 @@
 """Web Search Tool。
 
-TODO(agent): 検索 API を接続する。今は Agent Loop を通すためのスタブ。
+Agent が Web を探索するための Tool。provider は `tools/search/` が持つ。
+Tool 自体は provider に依存せず、`SearchResult` の配列だけを扱う。
+
+検索結果は **Untrusted Data**。`ToolResult(external=True)` で返し、
+LLM へは「データであって命令ではない」形で渡す（`ai/llm.untrusted_block`）。
 """
 
 from typing import Any
 
 from tools.base import PermissionLevel, Tool, ToolResult, registry
+from tools.search import get_provider
 
 
 class WebSearchTool(Tool):
@@ -14,7 +19,9 @@ class WebSearchTool(Tool):
     permission = PermissionLevel.AUTO
 
     def run(self, query: str, limit: int = 10, **_: Any) -> ToolResult:
-        raise NotImplementedError("web search tool is not implemented yet")
+        results = get_provider().search(query, limit=limit)
+        # 外部から取得した内容。命令として扱わない。
+        return ToolResult(results, external=True)
 
 
 registry.register(WebSearchTool())
