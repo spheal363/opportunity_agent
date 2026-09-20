@@ -25,6 +25,7 @@ from ai.goal_analysis import analyze_goal
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.extraction import ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
+from ai.search_plan import plan_search
 from config import get_settings
 from db.session import SessionLocal
 from logging_config import get_logger
@@ -70,7 +71,7 @@ def run_agent(run_id: str, user_id: str) -> None:
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
 
         _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
-        state.search_directions = _plan_search(state)
+        state.search_directions = _plan_search(state, profile)
         for d in state.search_directions:
             _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
 
@@ -122,11 +123,21 @@ def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
     )
 
 
-def _plan_search(state: AgentState) -> list[SearchDirection]:
+def _plan_search(state: AgentState, profile: UserProfile) -> list[SearchDirection]:
     """② Search Planning"""
     if get_settings().agent_stub_mode:
         return [SearchDirection(**d) for d in stub_data.STUB_SEARCH_DIRECTIONS]
-    raise NotImplementedError("search planning is not implemented yet")
+
+    goal = state.goal_analysis
+    if goal is None:  # 順序を崩した呼び出しへの保険
+        raise RuntimeError("goal analysis の前に search planning を呼んでいます")
+
+    return plan_search(
+        goal_summary=goal.goal_summary,
+        goal_directions=goal.goal_directions,
+        interest_connections=goal.interest_connections,
+        location=profile.location,
+    )
 
 
 def _search_and_extract(db: Session, state: AgentState) -> list[str]:
