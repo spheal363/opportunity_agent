@@ -593,3 +593,54 @@ def test_page_reader_allows_normal_hosts(monkeypatch):
 
     assert len(out.data["pages"]) == 2
     assert out.data["failed"] == []
+
+
+@pytest.mark.parametrize(
+    "obfuscated",
+    [
+        "http://2130706433/admin",  # 10 進の 127.0.0.1
+        "http://0x7f000001/admin",  # 16 進
+        "http://017700000001/admin",  # 8 進
+        "http://127.1/admin",  # 省略表記
+        "http://0177.0.0.1/admin",  # 先頭ゼロ
+    ],
+)
+def test_page_reader_rejects_obfuscated_ips(monkeypatch, obfuscated):
+    """ipaddress は解釈しないが OS の resolver は解釈する表記。
+
+    素通しすると内部アドレスへの経路になる。
+    """
+    called = []
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            called.append(urls)
+            return [], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.com", obfuscated])
+
+    assert called == [["https://ok.com"]]
+    assert out.data["failed"] == [obfuscated]
+
+
+@pytest.mark.parametrize(
+    "ok", ["https://8.8.8.8/", "https://a1.example.com/", "http://example.com/x"]
+)
+def test_page_reader_allows_public_hosts(monkeypatch, ok):
+    """数値を含む正常なホストを誤って弾かない。"""
+    from tools.search.base import PageContent
+
+    class Fake:
+        name = "fake"
+        supports_extract = True
+
+        def extract(self, urls):
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    out = registry.invoke("read_page", url=ok)
+    assert len(out.data["pages"]) == 1

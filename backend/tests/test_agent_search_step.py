@@ -324,3 +324,72 @@ def test_metadata_ip_is_not_adopted(db, state, real_mode, monkeypatch):
     )
     ids = loop._search_and_extract(db, state)
     assert db.get(Opportunity, ids[0]).url == "https://connpass.com/e"
+
+
+def test_stub_search_step_keeps_user_decided_status(db, state):
+    """stub データで status を潰さない。
+
+    SEARCH は EVALUATE より前に走るため、ここで潰すと後段のガードが効かない。
+    stub_data.STUB_OPPORTUNITIES は全件 status=recommended 固定。
+    """
+    first = loop.stub_data.STUB_OPPORTUNITIES[0]
+    db.add(
+        Opportunity(
+            opportunity_id=first["opportunity_id"],
+            user_id="user_001",
+            type="event",
+            title="T",
+            status=OpportunityStatus.DISMISSED,
+        )
+    )
+    db.commit()
+
+    loop._search_and_extract(db, state)  # AGENT_STUB_MODE=true
+
+    assert db.get(Opportunity, first["opportunity_id"]).status == OpportunityStatus.DISMISSED
+
+
+def test_stub_search_step_still_fills_other_fields(db, state):
+    """status だけ守る。他の項目は stub の値で更新される。"""
+    first = loop.stub_data.STUB_OPPORTUNITIES[0]
+    db.add(
+        Opportunity(
+            opportunity_id=first["opportunity_id"],
+            user_id="user_001",
+            type="event",
+            title="古い",
+            status=OpportunityStatus.DISMISSED,
+        )
+    )
+    db.commit()
+
+    loop._search_and_extract(db, state)
+
+    row = db.get(Opportunity, first["opportunity_id"])
+    assert row.title == first["title"]
+    assert row.status == OpportunityStatus.DISMISSED
+
+
+# --- _same_site の境界（レビュー指摘 Medium）------------------------------
+
+
+@pytest.mark.parametrize(
+    "extracted,source,expected",
+    [
+        ("https://connpass.com/a", "https://connpass.com/b", True),
+        ("https://events.connpass.com/a", "https://connpass.com/b", True),
+        ("https://connpass.com/a", "https://events.connpass.com/b", True),
+        ("https://CONNPASS.com/a", "https://connpass.com/b", True),
+        ("https://connpass.com./a", "https://connpass.com/b", True),
+        ("https://connpass.com:443/a", "https://connpass.com/b", True),
+        ("https://attacker.example/x", "https://connpass.com/b", False),
+        ("https://evilconnpass.com/x", "https://connpass.com/b", False),
+        ("https://connpass.com.evil.example/x", "https://connpass.com/b", False),
+        # 裸の TLD を親ドメインとして扱わない
+        ("https://com/apply", "https://connpass.com/b", False),
+        ("https://x@evil.example/a", "https://connpass.com/b", False),
+        ("", "https://connpass.com/b", False),
+    ],
+)
+def test_same_site_boundaries(extracted, source, expected):
+    assert loop._same_site(extracted, source) is expected

@@ -93,6 +93,13 @@ def _is_fetchable(url: str) -> bool:
     host = parsed.hostname
     if not host or host.lower() in _BLOCKED_HOSTS:
         return False
+    host = host.rstrip(".")
+
+    # 10 進 / 8 進 / 16 進の IP 表記。ipaddress は解釈しないが OS の resolver は
+    # 解釈するため、素通しすると内部アドレスへの経路になる。
+    #   http://2130706433/  http://0x7f000001/  http://017700000001/  http://127.1/
+    if _looks_numeric_host(host):
+        return False
 
     try:
         ip = ipaddress.ip_address(host)
@@ -114,3 +121,19 @@ def _truncate(page: PageContent) -> PageContent:
     if len(page.content) <= MAX_CONTENT_CHARS:
         return page
     return PageContent(url=page.url, title=page.title, content=page.content[:MAX_CONTENT_CHARS])
+
+
+def _looks_numeric_host(host: str) -> bool:
+    """ドット区切り 4 オクテット以外の数値的なホストか。
+
+    `ipaddress` が解釈できる正規表記はここを通さず、後段の判定に任せる。
+    ここで落とすのは `2130706433` や `0x7f000001` のような省略・別基数の表記。
+    """
+    labels = host.split(".")
+    if len(labels) == 4 and all(
+        lb.isdigit() and (lb == "0" or not lb.startswith("0")) for lb in labels
+    ):
+        return False  # 正規の a.b.c.d 表記。ipaddress に任せる
+    if host.lower().startswith("0x"):
+        return True
+    return all(lb.isdigit() for lb in labels if lb)

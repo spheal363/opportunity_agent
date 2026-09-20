@@ -280,12 +280,35 @@ def _trusted_url(
 
 
 def _same_site(a: str, b: str) -> bool:
-    """同じサイトとみなせるか。サブドメインの違いは許す。"""
-    host_a = urlparse(a).netloc.lower().split(":")[0]
-    host_b = urlparse(b).netloc.lower().split(":")[0]
+    """同じサイトとみなせるか。
+
+    サブドメインの違いは許す（`events.connpass.com` と `connpass.com`）。
+
+    **裸の TLD を親ドメインとして扱わない。** `com` と `connpass.com` を
+    同一サイトと判定すると、LLM が `https://com/...` を返しただけで
+    どんな `*.com` とも一致してしまう。ラベルが 2 つ未満のホストは
+    親ドメインの側に立てない。
+
+    Public Suffix List は見ていないため `co.jp` のような 2 段の接尾辞は
+    ラベル数 2 として通る。`example.co.jp` が `co.jp` の子として扱われる
+    ケースは残る。厳密にやるなら PSL が要るが、依存を増やさない判断。
+    """
+    host_a = urlparse(a).hostname
+    host_b = urlparse(b).hostname
     if not host_a or not host_b:
         return False
-    return host_a == host_b or host_a.endswith(f".{host_b}") or host_b.endswith(f".{host_a}")
+    host_a = host_a.lower().rstrip(".")
+    host_b = host_b.lower().rstrip(".")
+    if host_a == host_b:
+        return True
+    # 親側になれるのはラベルを 2 つ以上持つホストだけ
+    if _labels(host_b) >= 2 and host_a.endswith(f".{host_b}"):
+        return True
+    return _labels(host_a) >= 2 and host_b.endswith(f".{host_a}")
+
+
+def _labels(host: str) -> int:
+    return len([x for x in host.split(".") if x])
 
 
 def _domain_of(url: str | None) -> str | None:
@@ -442,6 +465,10 @@ def _upsert_opportunity(db: Session, state: AgentState, raw: dict) -> Opportunit
         row = Opportunity(opportunity_id=raw["opportunity_id"])
         db.add(row)
     for key, value in raw.items():
+        # ユーザーが決めた状態を stub データで潰さない。
+        # SEARCH は EVALUATE より前に走るため、ここで潰すと後段のガードが効かない。
+        if key == "status" and row.status in _USER_DECIDED:
+            continue
         if key in ("start_at", "end_at", "deadline") and isinstance(value, str):
             value = datetime.fromisoformat(value)
         setattr(row, key, value)
