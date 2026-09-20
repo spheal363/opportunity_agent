@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchOpportunity } from '../../api';
-import { categoryLabel, costLabel, safeHttpUrl } from '../../utils/display';
+import { categoryLabel, costLabel, isStep, safeHttpUrl } from '../../utils/display';
 import { POSE_SLOTS } from '../../utils/poses';
 import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
@@ -58,7 +58,7 @@ export function DetailDialog() {
   const summary = opportunities?.find((o) => o.opportunity_id === detailId);
   /** 登録先は POST /interest の結果が最新。無ければ詳細の url に戻す。 */
   const officialUrl = item ? safeHttpUrl(registrationUrlOf(item.opportunity_id) ?? item.url) : null;
-  const inSteps = summary ? statusOf(summary) === 'registered' : false;
+  const inSteps = summary ? isStep(statusOf(summary)) : false;
 
   const openPrepare = () => {
     if (!item) return;

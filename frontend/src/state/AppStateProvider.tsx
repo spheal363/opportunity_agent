@@ -136,9 +136,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const sendReaction = useCallback(
     async (opportunityId: string, reaction: Reaction) => {
-      setReactions((prev) => ({ ...prev, [opportunityId]: reaction }));
       try {
         await sendFeedback(opportunityId, { reaction });
+        setReactions((prev) => ({ ...prev, [opportunityId]: reaction }));
         toast.show(reaction === 'like' ? '興味を記録しました' : 'フィードバックを記録しました');
       } catch (err) {
         toast.show(message(err, 'フィードバックを送れませんでした'));

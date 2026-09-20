@@ -4,6 +4,7 @@ import { fetchAgentLogs, fetchAgentRun } from '../api';
 import type { AgentLogEntry, AgentRun } from '../types';
 
 const POLL_INTERVAL_MS = 800;
+const MAX_RETRY_INTERVAL_MS = 10_000;
 
 export type WatchState = 'watching' | 'paused' | 'stopped';
 
@@ -34,6 +35,7 @@ export function useAgentRun(runId: string | null) {
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let consecutiveFailures = 0;
 
     const poll = async () => {
       try {
@@ -44,6 +46,8 @@ export function useAgentRun(runId: string | null) {
         if (cancelled) return;
         setRun(current);
         setLogs(currentLogs);
+        setError(null);
+        consecutiveFailures = 0;
 
         if (current.status === 'completed') {
           finishedRef.current = true;
@@ -58,6 +62,12 @@ export function useAgentRun(runId: string | null) {
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : '状態を取得できませんでした');
+        const retryInterval = Math.min(
+          POLL_INTERVAL_MS * 2 ** consecutiveFailures,
+          MAX_RETRY_INTERVAL_MS,
+        );
+        consecutiveFailures += 1;
+        timer = setTimeout(poll, retryInterval);
       }
     };
 
