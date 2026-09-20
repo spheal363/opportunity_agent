@@ -50,6 +50,23 @@ export function isSerendipity(opportunity: Opportunity): boolean {
   return opportunity.serendipity_score >= SERENDIPITY_THRESHOLD;
 }
 
+/**
+ * Web 由来の URL は http / https 以外を表示しない。
+ *
+ * url は Agent が Web から抽出した Untrusted Data で、Backend の Schema でも
+ * 形式は検証されていない。javascript: や data: をそのまま href に渡すと、
+ * クリックでアプリのオリジンでスクリプトが走り得る。
+ */
+export function safeHttpUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** 取得できなかった事実は推測で埋めない。 */
 export function scheduleLabel(opportunity: Opportunity): string {
   return formatDateTime(opportunity.start_at);

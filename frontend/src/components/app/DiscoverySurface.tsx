@@ -18,6 +18,17 @@ export function DiscoverySurface({
   onEditInterests,
   onGo,
 }: DiscoverySurfaceProps) {
+  /**
+   * 見出しの手がかりは、いま保存されている興味から作る。
+   * 固定文言にすると、Agent が見つけてもいない関連を見つけたように見えてしまう。
+   */
+  const hint =
+    interests.length >= 2
+      ? `「${interests[0]}」と「${interests[1]}」。興味の重なりや、少し意外な接点まで。`
+      : interests.length === 1
+        ? `「${interests[0]}」から広がる、少し意外な接点まで。`
+        : '興味の重なりや、少し意外な接点まで。';
+
   return (
     <section>
       <div className="bg-[#edf0e6] border border-[#e0e6d9] rounded-[14px] min-h-[284px] flex relative overflow-hidden gte1450:min-h-[300px] lte620:min-h-[345px]">
@@ -31,9 +42,9 @@ export function DiscoverySurface({
             つながるかもしれません。
           </h2>
           <p className="text-[16px] leading-[1.85] text-[#687363] m-0 mb-[19px] lte620:text-[14px] lte620:max-w-[68%]">
-            「AI」と「音楽」。ちょっと意外な組み合わせにも、
+            {hint}
             <br className="lte620:hidden" />
-            あなたらしい機会が隠れていました。
+            いつもの少し外側まで、Agent が探します。
           </p>
           <button
             type="button"

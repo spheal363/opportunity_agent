@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { fetchOpportunity } from '../../api';
-import { categoryLabel, costLabel } from '../../utils/display';
+import { categoryLabel, costLabel, safeHttpUrl } from '../../utils/display';
 import { POSE_SLOTS } from '../../utils/poses';
 import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
@@ -28,6 +28,8 @@ export function DetailDialog() {
     noteOf,
     setNote,
     profile,
+    registrationUrlOf,
+    showToast,
   } = useAppState();
 
   const [item, setItem] = useState<OpportunityDetail | null>(null);
@@ -54,6 +56,8 @@ export function DetailDialog() {
   }, [detailId]);
 
   const summary = opportunities?.find((o) => o.opportunity_id === detailId);
+  /** 登録先は POST /interest の結果が最新。無ければ詳細の url に戻す。 */
+  const officialUrl = item ? safeHttpUrl(registrationUrlOf(item.opportunity_id) ?? item.url) : null;
   const inSteps = summary ? statusOf(summary) === 'registered' : false;
 
   const openPrepare = () => {
@@ -77,6 +81,7 @@ export function DetailDialog() {
       open={Boolean(detailId)}
       onClose={closeDetail}
       className={`${DIALOG} w-[min(620px,calc(100%-28px))]`}
+      labelledBy="detail-dialog-title"
     >
       <button type="button" onClick={closeDetail} aria-label="閉じる" className={DIALOG_CLOSE}>
         ×
@@ -101,7 +106,9 @@ export function DetailDialog() {
             </span>
           </div>
           <span className="text-[12px] text-terra tracking-[.1em]">{categoryLabel(item.type)}</span>
-          <h2 className={DIALOG_H2}>{item.title}</h2>
+          <h2 id="detail-dialog-title" className={DIALOG_H2}>
+            {item.title}
+          </h2>
           {item.description ? <p className="text-[14px]">{item.description}</p> : null}
 
           <dl className="grid grid-cols-[80px_1fr] gap-[10px] text-[14px] bg-[#edf0e7] p-[18px] rounded-[7px] my-[22px]">
@@ -157,7 +164,9 @@ export function DetailDialog() {
       {item && step === 'prepare' ? (
         <>
           <span className={EYEBROW}>ONE SMALL STEP</span>
-          <h2 className={DIALOG_H2}>参加までの一歩を、整理しよう。</h2>
+          <h2 id="detail-dialog-title" className={DIALOG_H2}>
+            参加までの一歩を、整理しよう。
+          </h2>
           <p className="text-[14px]">{item.title}</p>
           <ul className="text-[14px] p-0 list-none my-[1em]">
             <li className="checklist-item border-b border-line py-[10px]">
@@ -171,11 +180,11 @@ export function DetailDialog() {
             </li>
           </ul>
 
-          {item.url ? (
+          {officialUrl ? (
             <p className="text-[14px]">
               公式ページ：
-              <a href={item.url} target="_blank" rel="noreferrer" className="underline">
-                {item.url}
+              <a href={officialUrl} target="_blank" rel="noreferrer" className="underline">
+                {officialUrl}
               </a>
             </p>
           ) : null}
@@ -196,7 +205,12 @@ export function DetailDialog() {
           <button
             type="button"
             onClick={() => {
-              if (summary) markAsStep(summary);
+              if (!summary) {
+                // 「次の一歩」は一覧を status で絞って出すため、一覧に無いものは表示先が無い。
+                showToast('この機会はいまのおすすめ一覧に無いため、次の一歩に追加できません');
+                return;
+              }
+              markAsStep(item.opportunity_id);
               setNote(item.opportunity_id, note);
               setStep('done');
             }}
@@ -210,7 +224,9 @@ export function DetailDialog() {
       {item && step === 'done' ? (
         <>
           <span className="block text-[38px] text-green mt-[15px]">✳</span>
-          <h2 className={DIALOG_H2}>次の一歩が、見えてきました。</h2>
+          <h2 id="detail-dialog-title" className={DIALOG_H2}>
+            次の一歩が、見えてきました。
+          </h2>
           <p className="text-[14px]">「{item.title}」を準備リストに追加しました。</p>
           <p className={MUTED}>
             「次の一歩」から、いつでも準備メモを確認できます。外部への応募は行っていません。

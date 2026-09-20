@@ -5,6 +5,9 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api
 /** VITE_USE_MOCK=true の間は Backend を呼ばず Mock Data を返す。 */
 export const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
+/** 画面のヘッダーに出すデータ元の表示。分岐を画面側に持ち込まないためここで決める。 */
+export const DATA_SOURCE_LABEL = USE_MOCK ? 'MOCK · サンプルデータ' : 'Backend 接続中';
+
 /** Backend が返したエラー封筒をそのまま持つ例外。 */
 export class ApiRequestError extends Error {
   readonly code: string;

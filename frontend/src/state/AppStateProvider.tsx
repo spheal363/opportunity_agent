@@ -22,6 +22,14 @@ import { AppStateContext, type AppState } from './context';
 
 const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 
+/**
+ * 解除する API が無いため、この画面でだけ「未保存」に戻すときの値。
+ *
+ * サーバーが最初から interested を返していた場合、元の status を書き戻すだけでは
+ * 実効状態が interested のままで解除にならない。
+ */
+const LOCALLY_CLEARED: OpportunityStatus = 'recommended';
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -38,6 +46,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
    */
   const [statusOverrides, setStatusOverrides] = useState<Record<string, OpportunityStatus>>({});
   const [reactions, setReactions] = useState<Record<string, Reaction>>({});
+  /** POST /interest が返す登録先。Verification 後の最新値なので url より優先する。 */
+  const [registrationUrls, setRegistrationUrls] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
 
   const [goalOpen, setGoalOpen] = useState(false);
@@ -99,14 +109,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     async (opportunity: Opportunity) => {
       const id = opportunity.opportunity_id;
       if (isSaved(statusOf(opportunity))) {
-        // 解除する API が無いので、この画面での表示だけ元の状態に戻す。
-        setStatusOverrides((prev) => ({ ...prev, [id]: opportunity.status }));
-        toast.show('「気になる」から外しました');
+        // 解除する API が無いので、この画面の表示だけ未保存に戻す。
+        setStatusOverrides((prev) => ({ ...prev, [id]: LOCALLY_CLEARED }));
+        toast.show('「気になる」から外しました（この画面でのみ。再読み込みで戻ります）');
         return;
       }
       try {
         const result = await markInterested(id);
         setStatusOverrides((prev) => ({ ...prev, [id]: result.status }));
+        // 登録先は interest の結果が正。url とズレることがある。
+        if (result.registration_url) {
+          setRegistrationUrls((prev) => ({ ...prev, [id]: result.registration_url as string }));
+        }
         toast.show('「気になる」に保存しました');
       } catch (err) {
         toast.show(message(err, '保存できませんでした'));
@@ -115,9 +129,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [statusOf, toast],
   );
 
-  const markAsStep = useCallback((opportunity: Opportunity) => {
+  const markAsStep = useCallback((opportunityId: string) => {
     // TODO: POST /api/opportunities/{id}/calendar 実装後はその結果を使う。
-    setStatusOverrides((prev) => ({ ...prev, [opportunity.opportunity_id]: 'registered' }));
+    setStatusOverrides((prev) => ({ ...prev, [opportunityId]: 'registered' }));
   }, []);
 
   const sendReaction = useCallback(
@@ -147,6 +161,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     toggleInterest,
     markAsStep,
     reactionOf: (id) => reactions[id],
+    registrationUrlOf: (id) => registrationUrls[id],
     sendReaction,
     noteOf: (id) => notes[id],
     setNote: (id, note) => setNotes((prev) => ({ ...prev, [id]: note })),

@@ -101,13 +101,15 @@ export function GoalDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} className={DIALOG}>
+    <Dialog open={open} onClose={onClose} className={DIALOG} labelledBy="goal-dialog-title">
       <form onSubmit={handleSubmit}>
         <button type="button" onClick={onClose} aria-label="閉じる" className={DIALOG_CLOSE}>
           ×
         </button>
         <span className={EYEBROW}>YOUR COMPASS</span>
-        <h2 className={DIALOG_H2}>どんな「次」を見つけたい？</h2>
+        <h2 id="goal-dialog-title" className={DIALOG_H2}>
+          どんな「次」を見つけたい？
+        </h2>
         <p className={MUTED}>まだ、ぼんやりしていても大丈夫。</p>
 
         <label className={LABEL} htmlFor="profile-name">

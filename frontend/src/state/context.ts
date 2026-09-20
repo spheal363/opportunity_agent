@@ -27,9 +27,11 @@ export interface AppState {
   startRun: () => Promise<string>;
 
   toggleInterest: (opportunity: Opportunity) => Promise<void>;
-  markAsStep: (opportunity: Opportunity) => void;
+  markAsStep: (opportunityId: string) => void;
 
   reactionOf: (opportunityId: string) => Reaction | undefined;
+  /** POST /interest が返した登録先。詳細の url より優先して使う。 */
+  registrationUrlOf: (opportunityId: string) => string | undefined;
   sendReaction: (opportunityId: string, reaction: Reaction) => Promise<void>;
 
   noteOf: (opportunityId: string) => string | undefined;

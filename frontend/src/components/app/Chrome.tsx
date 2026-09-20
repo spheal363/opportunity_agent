@@ -1,6 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 
-import { USE_MOCK } from '../../api';
+import { DATA_SOURCE_LABEL } from '../../api';
 import { POSE_SLOTS } from '../../utils/poses';
 import { useAppState } from '../../state/context';
 import { StillPose } from './Pose';
@@ -21,7 +21,7 @@ export function AppHeader() {
         <span className="text-[#bf8065]">.</span>
       </Link>
       <span className="ml-auto text-[12px] text-muted tracking-[.04em] border border-line rounded-[5px] px-[10px] py-[4px] lte620:px-[5px] lte620:py-[3px]">
-        {USE_MOCK ? 'MOCK · サンプルデータ' : 'Backend 接続中'}
+        {DATA_SOURCE_LABEL}
       </span>
       <button
         type="button"
