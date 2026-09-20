@@ -86,25 +86,35 @@ def _is_fetchable(url: str) -> bool:
     **名前解決はしない。** 内部 IP へ解決されるホスト名は通る。
     完全な対策にはならず、明らかなものを落とすだけ。
     """
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        # 壊れた IPv6 表記（"http://[::1]./x" など）で urlparse 自体が投げる。
+        # 1 件の壊れた URL で run 全体を落とさない。
+        return False
     if parsed.scheme.lower() not in ALLOWED_SCHEMES:
         return False
 
-    host = parsed.hostname
-    if not host or host.lower() in _BLOCKED_HOSTS:
+    try:
+        host = parsed.hostname
+    except ValueError:
         return False
-    host = host.rstrip(".")
-
-    # 10 進 / 8 進 / 16 進の IP 表記。ipaddress は解釈しないが OS の resolver は
-    # 解釈するため、素通しすると内部アドレスへの経路になる。
-    #   http://2130706433/  http://0x7f000001/  http://017700000001/  http://127.1/
-    if _looks_numeric_host(host):
+    if not host:
+        return False
+    host = host.rstrip(".").lower()
+    if host in _BLOCKED_HOSTS:
         return False
 
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
-        return True  # ホスト名。名前解決はしない
+        # IP として解釈できないもの。**許可する形を決めて、それ以外を落とす。**
+        #
+        # 難読化した IP 表記（2130706433 / 0x7f000001 / 127.0x0.0.1 / 127.1）は
+        # ipaddress では ValueError になるが OS の resolver は解釈する。
+        # 表記を 1 つずつ潰すと必ず変種が漏れるため、**まっとうなホスト名の形**
+        # だけを通す。実在する TLD は英字か punycode なので、末尾ラベルで判定できる。
+        return _has_valid_tld(host)
 
     return not (
         ip.is_private
@@ -123,17 +133,23 @@ def _truncate(page: PageContent) -> PageContent:
     return PageContent(url=page.url, title=page.title, content=page.content[:MAX_CONTENT_CHARS])
 
 
-def _looks_numeric_host(host: str) -> bool:
-    """ドット区切り 4 オクテット以外の数値的なホストか。
+def _has_valid_tld(host: str) -> bool:
+    """まっとうなホスト名の形か。
 
-    `ipaddress` が解釈できる正規表記はここを通さず、後段の判定に任せる。
-    ここで落とすのは `2130706433` や `0x7f000001` のような省略・別基数の表記。
+    末尾ラベルが英字 2 文字以上（`com` / `jp`）か punycode（`xn--...`）の
+    ときだけ通す。数字や `0x` を含む末尾ラベルは実在の TLD に無いため、
+    難読化した IP 表記をここでまとめて落とせる。
+
+      2130706433    -> 末尾 "2130706433"  落とす
+      0x7f000001    -> 末尾 "0x7f000001"  落とす
+      127.0x0.0.1   -> 末尾 "1"           落とす
+      127.1         -> 末尾 "1"           落とす
+      connpass.com  -> 末尾 "com"         通す
     """
-    labels = host.split(".")
-    if len(labels) == 4 and all(
-        lb.isdigit() and (lb == "0" or not lb.startswith("0")) for lb in labels
-    ):
-        return False  # 正規の a.b.c.d 表記。ipaddress に任せる
-    if host.lower().startswith("0x"):
-        return True
-    return all(lb.isdigit() for lb in labels if lb)
+    labels = [lb for lb in host.split(".") if lb]
+    if len(labels) < 2:
+        return False  # 単一ラベル。内部ホスト名の可能性がある
+    tld = labels[-1]
+    if tld.startswith("xn--"):
+        return len(tld) > 4
+    return len(tld) >= 2 and tld.isalpha()

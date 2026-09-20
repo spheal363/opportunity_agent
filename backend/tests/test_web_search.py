@@ -603,6 +603,15 @@ def test_page_reader_allows_normal_hosts(monkeypatch):
         "http://017700000001/admin",  # 8 進
         "http://127.1/admin",  # 省略表記
         "http://0177.0.0.1/admin",  # 先頭ゼロ
+        "http://127.0x0.0.1/admin",  # ラベル単位の 16 進
+        "http://0x7f.0.0.1/admin",  # 先頭ラベルだけ 16 進
+        "http://127.0.0.0x1/admin",  # 末尾ラベルだけ 16 進
+        "http://192.168.0x1/admin",  # 3 パート混在
+        "http://1.0x2/admin",  # 2 パート短縮
+        "http://a.0x7f000001/admin",  # 末尾ラベルが数値
+        "http://intranet/admin",  # 単一ラベル（内部ホスト名）
+        "http://%31%32%37%2e%30%2e%30%2e%31/",  # percent-encoded の 127.0.0.1
+        "http://[::ffff:127.0.0.1]./admin",  # urlparse が ValueError を投げる
     ],
 )
 def test_page_reader_rejects_obfuscated_ips(monkeypatch, obfuscated):
@@ -628,7 +637,15 @@ def test_page_reader_rejects_obfuscated_ips(monkeypatch, obfuscated):
 
 
 @pytest.mark.parametrize(
-    "ok", ["https://8.8.8.8/", "https://a1.example.com/", "http://example.com/x"]
+    "ok",
+    [
+        "https://8.8.8.8/",  # 正規の IP 表記。公開アドレスなら通す
+        "https://a1.example.com/",  # 数字を含むラベル
+        "http://example.com/x",
+        "https://example.co.jp/e",
+        "https://xn--fsq.com/x",  # punycode
+        "https://sub.domain.example.org/p",
+    ],
 )
 def test_page_reader_allows_public_hosts(monkeypatch, ok):
     """数値を含む正常なホストを誤って弾かない。"""
