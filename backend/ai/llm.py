@@ -27,6 +27,7 @@ from pydantic import BaseModel, ValidationError
 from ai.orcarouter import (
     DEFAULT_MAX_TOKENS,
     EmptyResponseError,
+    LLMConfigError,
     LLMError,
     LLMRequestError,
     LLMUsage,
@@ -45,6 +46,20 @@ _BACKOFF_SECONDS = (0.5, 1.5)
 # 同じ結果になるため、再試行のたびに上限を倍にする。
 _EMPTY_RESPONSE_GROWTH = 2
 _MAX_TOKENS_CEILING = 16384
+
+# tier が使えないときに落とす先。
+#
+# **上位から下位へは落とさない。** Untrusted Data を読ませるステップは
+# CHEAP を避ける前提で設計しており（cheap は Prompt Injection に 1/2 で
+# 突破される実測がある）、障害時に黙って cheap へ落ちると前提が崩れる。
+#
+# STANDARD が落ちたら POWERFUL へ上げる。遅く高くなるが、
+# 「動くが危ない」より「遅いが正しい」を選ぶ。
+_FALLBACK_TIERS = {
+    ModelTier.CHEAP: (ModelTier.STANDARD,),
+    ModelTier.STANDARD: (ModelTier.POWERFUL,),
+    ModelTier.POWERFUL: (),
+}
 
 # json_mode を付けていても稀にフェンスで包まれることがあるため防御的に剥がす。
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
@@ -137,7 +152,55 @@ def generate_structured[T: BaseModel](
     失敗して例外を上げる場合も、そこまでに消費した分を例外の `usages` に載せる。
     """
     llm = client or get_client()
+    tiers = (tier, *_FALLBACK_TIERS.get(tier, ()))
+    last: Exception | None = None
     usages: list[LLMUsage] = []
+
+    for index, current_tier in enumerate(tiers):
+        try:
+            return _attempt_with_tier(
+                llm=llm,
+                schema=schema,
+                system=system,
+                user=user,
+                tier=current_tier,
+                max_attempts=max_attempts,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                usages=usages,
+            )
+        except LLMError as exc:
+            last = exc
+            if index == len(tiers) - 1 or not _should_fallback(exc):
+                # **そこまでに消費した分を取りこぼさない。**
+                # Fallback 先が未設定などで落ちても、前の tier では課金されている。
+                # コスト記録（#26）がこれを使う。
+                exc.usages = list(usages)
+                raise
+            logger.warning(
+                "llm.fallback from=%s to=%s schema=%s reason=%s",
+                current_tier.value,
+                tiers[index + 1].value,
+                schema.__name__,
+                _safe_reason(exc),
+            )
+
+    raise last  # 到達しない（ループ内で必ず return か raise する）
+
+
+def _attempt_with_tier[T: BaseModel](
+    *,
+    llm: OrcaRouterClient,
+    schema: type[T],
+    system: str,
+    user: str,
+    tier: ModelTier,
+    max_attempts: int,
+    max_tokens: int,
+    temperature: float | None,
+    usages: list[LLMUsage],
+) -> LLMResult[T]:
+    """1 つの tier で Retry まで回しきる。Fallback の判断は呼び出し元。"""
     current_max_tokens = max_tokens
     messages = [
         {"role": "system", "content": system},
@@ -183,6 +246,13 @@ def generate_structured[T: BaseModel](
             payload = json.loads(raw)
         except json.JSONDecodeError as exc:
             last_error = exc
+            # **途中で切れた出力は、同じ上限で投げ直しても同じ所で切れる。**
+            # 空応答と原因が同じ（枠不足）なので、対処も同じにする。
+            # reasoning を多く使うモデルでは出力の分が残らず、これが起きる。
+            if _looks_truncated(raw):
+                current_max_tokens = min(
+                    current_max_tokens * _EMPTY_RESPONSE_GROWTH, _MAX_TOKENS_CEILING
+                )
             feedback = (
                 "前回の出力は JSON としてパースできなかった。JSON オブジェクトのみを返すこと。"
             )
@@ -220,6 +290,53 @@ def generate_structured[T: BaseModel](
     )
     error.usages = list(usages)
     raise error
+
+
+# そのモデル固有の問題を示すステータス。別のモデルなら通る可能性がある。
+#   404 モデルが存在しない
+#   403 そのモデルへのアクセス権が無い
+#   422 そのモデルが受け付けない指定（json_mode 非対応など）
+_MODEL_SPECIFIC_STATUS = {403, 404, 422}
+
+
+def _should_fallback(error: LLMError) -> bool:
+    """別のモデルへ切り替える価値があるか。
+
+    切り替える:
+      - そのモデルが設定されていない（LLMConfigError）
+      - **そのモデル固有の問題（404 / 403 / 422）**
+        -> 一番起きやすい障害。別のモデルなら通る
+      - 再試行しても駄目だった一時的な障害（429 / 5xx / timeout / 空応答）
+      - 何度問い直しても正しい形で返せない（LLMValidationError）
+        -> モデルの能力の問題なので、上の tier なら通ることがある
+
+    切り替えない:
+      - 認証エラー（401）や組み立ての誤り（400）
+        -> 同じキーと同じ組み立てで投げるので、別モデルでも同じ結果になる
+    """
+    if isinstance(error, LLMConfigError | LLMValidationError):
+        return True
+    if isinstance(error, LLMRequestError):
+        return error.retryable or error.status_code in _MODEL_SPECIFIC_STATUS
+    return False
+
+
+def _looks_truncated(raw: str) -> bool:
+    """出力が途中で切れたように見えるか。
+
+    枠不足で切れた場合と、そもそも JSON でない文章を返した場合を区別する。
+    前者は枠を広げれば直るが、後者は広げても無駄。
+
+    括弧が閉じていない、または引用符が奇数個なら切れたとみなす。
+    """
+    if not raw:
+        return False
+    # 主判定: 括弧が閉じていない
+    if raw.count("{") > raw.count("}") or raw.count("[") > raw.count("]"):
+        return True
+    # 補助: 文字列の途中で切れた場合。**括弧が閉じているのに引用符が奇数**なのは
+    # エスケープ漏れでも起こるため、末尾が閉じていないことも併せて見る。
+    return raw.count('"') % 2 == 1 and not raw.rstrip().endswith(("}", "]", '"'))
 
 
 def _safe_reason(error: Exception | None) -> str:

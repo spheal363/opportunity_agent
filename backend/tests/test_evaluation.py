@@ -340,3 +340,48 @@ def test_discovered_status_is_promoted(db, state, monkeypatch):
     loop._evaluate_and_select(db, state, ["opp_a"])
 
     assert db.get(Opportunity, "opp_a").status == OpportunityStatus.RECOMMENDED
+
+
+def test_recommendation_does_not_touch_orm_in_workers(db, state, monkeypatch):
+    """ORM をワーカースレッドへ渡さない。
+
+    lazy load がスレッドをまたぐと壊れる。_verify と同じく、メインスレッドで
+    dict にしてから渡す。
+    """
+    import threading
+
+    _seed(db, "opp_a", "opp_b", "opp_c")
+    main = threading.current_thread().name
+    seen_threads: list[str] = []
+
+    as_dict_threads: list[str] = []
+    original_as_dict = loop._as_dict
+
+    def tracked_as_dict(row):
+        as_dict_threads.append(threading.current_thread().name)
+        return original_as_dict(row)
+
+    def fake_recommend(**kwargs):
+        seen_threads.append(threading.current_thread().name)
+        assert isinstance(kwargs["opportunity"], dict)
+        return RecommendationOutput(reason="r")
+
+    monkeypatch.setattr(loop, "_as_dict", tracked_as_dict)
+    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
+    monkeypatch.setattr(
+        loop,
+        "evaluate_many",
+        lambda **k: ([(i, _eval()) for i in ("opp_a", "opp_b", "opp_c")], []),
+    )
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a", "opp_b", "opp_c"])
+    monkeypatch.setattr(loop, "recommend", fake_recommend)
+
+    loop._evaluate_and_select(db, state, ["opp_a", "opp_b", "opp_c"])
+
+    # 並列で走っている（メインスレッド以外が混ざる）
+    assert any(t != main for t in seen_threads)
+    # **ORM を読むのはメインスレッドだけ。** ワーカーからは触らない。
+    assert as_dict_threads, "_as_dict が呼ばれていない"
+    assert all(t == main for t in as_dict_threads), (
+        f"ワーカースレッドから ORM を読んでいる: {set(as_dict_threads)}"
+    )
