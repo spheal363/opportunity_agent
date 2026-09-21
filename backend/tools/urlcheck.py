@@ -27,7 +27,10 @@ BLOCKED_HOSTS = frozenset({"localhost", "localhost.localdomain", "metadata.googl
 #
 # URL は LLM がページ本文から読み取った値で、**ページの書き手が
 # 仕込める。** 取得経路が増えても効くよう、判定の側で落とす。
-_FORBIDDEN = frozenset({chr(c) for c in range(0x21)} | {chr(0x7F)})
+# **空白は入れない。** httpx が `%20` へ直して通すので、落とすと
+# 取得できたはずの候補を捨てることになる（実測で確認）。
+# 実際に壊れるのは制御文字だけ。
+_FORBIDDEN = frozenset({chr(c) for c in range(0x20)} | {chr(0x7F)})
 
 
 def is_fetchable(url: str) -> bool:

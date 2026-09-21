@@ -285,7 +285,6 @@ def test_page_reader_counts_attempts_and_successes(monkeypatch):
         "http://ok.jp/a\r\nX-Injected: 1",
         "http://ok.jp/a\nX",
         "http://ok.jp/a\tb",
-        "http://ok.jp/a b",
         "http://ok.jp/a\x00b",
         "http://ok.jp/a\x7fb",
     ],
@@ -293,6 +292,24 @@ def test_page_reader_counts_attempts_and_successes(monkeypatch):
 def test_a_url_with_control_characters_is_rejected(url):
     """**根本はここで落とす。** 取得経路が増えても効く。"""
     assert is_fetchable(url) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # **生の空白は落とさない。** httpx が %20 へ直して通すので、
+        # 落とすと取得できたはずの候補を捨てることになる。
+        "https://example.jp/my page.html",
+        "https://example.jp/a%20b",
+        "https://example.jp/日本語/ページ",
+        "https://example.jp/a?q=%E6%97%A5&x=1",
+        "https://user:pass@example.jp/a",
+        "https://example.jp:8443/a#frag",
+    ],
+)
+def test_a_fetchable_url_is_not_dropped(url):
+    """**落としすぎない。** 取得できるものを捨てると機会を失う。"""
+    assert is_fetchable(url) is True
 
 
 def test_one_malformed_url_does_not_take_the_others_down():
