@@ -77,25 +77,22 @@ def time_is_in_source(value: datetime | None, page_content: str) -> bool | None:
 # 区分の定義ではない。語が見つからないことは、区分が誤っている証拠では
 # なく、**根拠が示されていない**ということ。
 _KIND_MARKERS: dict[DeadlineKind, tuple[str, ...]] = {
-    # 「提出」は実測で落とした。ハッカソンの「提出締切」は応募の締切。
     # **「締切」単体は入れない。** 早割にも登壇募集にも付くので、
     # 入れると支持の検査がほぼ素通りになる。
-    DeadlineKind.APPLICATION: (
-        "応募",
-        "申込",
-        "申し込み",
-        "エントリー",
-        "募集締切",
-        "受付",
-        "提出",
-    ),
+    #
+    # **「提出」もここには入れない。** 提出締切は申込締切とは別物で、
+    # 一緒にすると「申込は締め切ったが提出はまだ」「提出は締めたが次回の
+    # 申込は開いている」を見分けられなくなる。SUBMISSION に分けてある。
+    DeadlineKind.APPLICATION: ("応募", "申込", "申し込み", "エントリー", "募集締切", "受付"),
     DeadlineKind.REGISTRATION: ("参加登録", "申込", "申し込み", "登録", "受付", "チケット"),
+    DeadlineKind.SUBMISSION: ("提出", "作品", "サブミット", "submission"),
     DeadlineKind.EARLY_BIRD: ("早割", "早期割引", "早期申込", "先行販売", "先行予約"),
     DeadlineKind.SPEAKER: ("登壇", "発表者", "スピーカー", "出展", "ピッチ", "講演"),
 }
 
 # **他の区分にしか出ない語。** claimed kind と食い違えば、分類を疑う。
 _EXCLUSIVE_MARKERS: dict[DeadlineKind, tuple[str, ...]] = {
+    DeadlineKind.SUBMISSION: ("提出締切", "提出期限", "作品提出"),
     DeadlineKind.EARLY_BIRD: ("早割", "早期割引", "先行販売", "先行予約"),
     DeadlineKind.SPEAKER: ("登壇", "発表者", "スピーカー", "出展", "ピッチ"),
 }
@@ -215,7 +212,9 @@ def ground_deadline_kind(item: ExtractedOpportunity, page_content: str) -> Extra
     **推薦からは外れない**（`availability.is_actionable` を参照）。
     誤って閉じるより、確認できていないと示すほうがよい。
     """
-    if item.deadline is None or item.deadline_kind not in GATING_DEADLINES:
+    # 提出締切も種類によっては行動を閉ざす。根拠を求める対象に含める。
+    needs_proof = GATING_DEADLINES | {DeadlineKind.SUBMISSION}
+    if item.deadline is None or item.deadline_kind not in needs_proof:
         return item
     if not quote_is_in_source(item.deadline_quote, page_content):
         return item.model_copy(update={"deadline_kind": DeadlineKind.UNKNOWN})

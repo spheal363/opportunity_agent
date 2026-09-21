@@ -29,8 +29,8 @@ SYSTEM = (
     '  "eligibility": str|null,// 参加条件\n'
     '  "cost": int|null,       // 参加費（円）\n'
     '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
-    '  "deadline_kind": str,   // application / registration / early_bird /\n'
-    "                          // speaker / other / unknown\n"
+    '  "deadline_kind": str,   // application / registration / submission /\n'
+    "                          // early_bird / speaker / other / unknown\n"
     '  "deadline_quote": str|null,     // deadline の日付そのものの表記\n'
     '  "deadline_context": str|null,   // 何の期限か分かる周辺の一文（原文のまま）\n'
     '  "start_at_is_date_only": bool,  // 出典に時刻が無く日付だけなら true\n'
@@ -61,6 +61,7 @@ SYSTEM = (
     "同じページに複数の締切が並ぶ。\n"
     "   application  応募締切・参加申込の締切（**推薦する行動に対応する**）\n"
     "   registration 参加登録・チケット申込の期限（同上）\n"
+    "   submission   **作品・提出物の締切。申込の締切とは別。**\n"
     "   early_bird   早割・先行販売の期限（**過ぎても参加できる**）\n"
     "   speaker      登壇者・発表者・出展者の募集締切（**参加とは別の行動**）\n"
     "   other        上のどれでもない締切\n"

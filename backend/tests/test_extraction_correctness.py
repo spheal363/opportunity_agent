@@ -855,12 +855,50 @@ def test_the_title_line_is_omitted_when_there_is_none():
     assert "取得元のページタイトル" not in user
 
 
-def test_a_submission_deadline_counts_as_an_application_deadline():
-    """**実測で落とした。** ハッカソンの「提出締切」は応募の締切。
+SUBMISSION_PAGE = "### 応募方法\n\n提出締切: 2026 年 2 月 15 日（日）\n"
 
-    語彙に無いと、正しい分類が `unknown` に落ちて締切が効かなくなる。
+
+def _submission(opportunity_type: str) -> ExtractedOpportunity:
+    return _grounded(
+        {
+            "title": "Agentic AI Hackathon",
+            "type": opportunity_type,
+            "deadline": "2026-02-15T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "submission",
+            "deadline_quote": "2026 年 2 月 15 日（日）",
+            "deadline_context": "提出締切: 2026 年 2 月 15 日（日）",
+        },
+        SUBMISSION_PAGE,
+    )
+
+
+def test_a_submission_deadline_is_not_an_application_deadline():
+    """**「提出締切」は「参加申込の締切」ではない。**
+
+    申込だけ先に締め切り、提出は後、という形がある。逆に、提出さえ
+    間に合えば飛び入りを認める催しもある。同じものとして扱わない。
     """
-    page = "### 応募方法\n\n提出締切: 2026 年 2 月 15 日（日）\n"
+    item = _submission("hackathon")
+    assert item.deadline_kind is DeadlineKind.SUBMISSION
+
+
+def test_a_past_submission_deadline_closes_a_hackathon():
+    """**提出しなければ参加にならない種類**では、行動を閉ざす。"""
+    status, reason = _avail(_submission("hackathon"))
+    assert status is availability.Availability.CLOSED
+    assert "提出締切" in reason
+
+
+def test_a_past_submission_deadline_does_not_close_a_community():
+    """**一般化しない。** 提出が参加の条件でない種類では閉じない。"""
+    status, reason = _avail(_submission("community"))
+    assert status is not availability.Availability.CLOSED
+    assert "参加の締切ではありません" in reason
+
+
+def test_a_claimed_application_kind_on_a_submission_context_is_rejected():
+    """周辺文が提出の話なら、申込締切とは認めない。"""
     item = _grounded(
         {
             "title": "Agentic AI Hackathon",
@@ -871,9 +909,9 @@ def test_a_submission_deadline_counts_as_an_application_deadline():
             "deadline_quote": "2026 年 2 月 15 日（日）",
             "deadline_context": "提出締切: 2026 年 2 月 15 日（日）",
         },
-        page,
+        SUBMISSION_PAGE,
     )
-    assert item.deadline_kind is DeadlineKind.APPLICATION
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
 
 
 def test_the_word_deadline_alone_is_not_enough():
@@ -887,3 +925,43 @@ def test_the_word_deadline_alone_is_not_enough():
         "締切 2026年10月1日", DeadlineKind.APPLICATION, "締切 2026年10月1日"
     )
     assert supported is False
+
+
+def test_a_finished_event_closes_even_when_another_deadline_passed():
+    """**開催終了を、締切の判定で打ち切らない。**
+
+    実測で踏んだ。参加の締切ではない締切（区分 unknown）が過ぎていると、
+    そこで返してしまい、**終わったハッカソンが「受付中」のまま残った。**
+    """
+    status, reason = availability.from_dates(
+        opportunity_type="hackathon",
+        deadline=datetime(2026, 2, 14, 15, tzinfo=UTC),
+        end_at=datetime(2026, 2, 14, 15, tzinfo=UTC),
+        now=NOW,
+        deadline_kind=DeadlineKind.UNKNOWN,
+    )
+    assert status is availability.Availability.CLOSED
+    assert reason == "開催が終了しています"
+
+
+def test_a_finished_event_closes_even_with_an_early_bird_deadline():
+    status, reason = availability.from_dates(
+        opportunity_type="competition",
+        deadline=datetime(2026, 9, 30, tzinfo=UTC),
+        end_at=datetime(2026, 8, 1, tzinfo=UTC),
+        now=AFTER_EARLY_BIRD,
+        deadline_kind=DeadlineKind.EARLY_BIRD,
+    )
+    assert status is availability.Availability.CLOSED
+    assert reason == "開催が終了しています"
+
+
+def test_a_community_that_started_long_ago_is_not_closed():
+    """**終わらない種類は閉じない。** community / job は開始済みでも参加できる。"""
+    status, _ = availability.from_dates(
+        opportunity_type="community",
+        deadline=None,
+        end_at=datetime(2024, 1, 1, tzinfo=UTC),
+        now=NOW,
+    )
+    assert status is not availability.Availability.CLOSED

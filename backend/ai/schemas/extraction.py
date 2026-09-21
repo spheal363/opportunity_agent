@@ -64,6 +64,16 @@ class DeadlineKind(StrEnum):
     APPLICATION = "application"  # 応募締切
     REGISTRATION = "registration"  # 参加申込・参加登録の期限
 
+    # **作品・提出物の締切。** 申込の締切とは別。
+    #
+    # 「提出締切」は「参加申込の締切」ではない。申込だけ先に締め切り、
+    # 提出は後、という形がある。逆に、提出さえ間に合えば飛び入り参加を
+    # 認める催しもある。**同じものとして扱わない。**
+    #
+    # ただしハッカソンやコンテストでは、**提出しなければ参加にならない。**
+    # その種類に限って、過ぎた提出締切を受付終了の根拠にする。
+    SUBMISSION = "submission"
+
     # 過ぎても参加はできる締切。**受付終了の根拠にしない。**
     EARLY_BIRD = "early_bird"  # 早割・先行販売
     SPEAKER = "speaker"  # 登壇者・発表者・出展者の募集
@@ -75,6 +85,9 @@ class DeadlineKind(StrEnum):
 
 # 推薦する行動を閉ざす締切。これ以外は過ぎていても参加できることがある。
 GATING_DEADLINES = frozenset({DeadlineKind.APPLICATION, DeadlineKind.REGISTRATION})
+
+# **提出しなければ参加にならない**種類。ここでだけ提出締切が行動を閉ざす。
+SUBMISSION_GATES_TYPES = frozenset({"hackathon", "competition"})
 
 
 class CostKind(StrEnum):

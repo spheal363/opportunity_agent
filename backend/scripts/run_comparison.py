@@ -222,11 +222,30 @@ class Capture:
         original = loop._choose_what_to_read
 
         def choose(db, state, candidates):
-            read, deferred = original(db, state, candidates)
+            # **見立ての中身も残す。** どれをなぜ外したかが後から読めないと、
+            # 取りこぼしの原因を調べられない。
+            verdicts: list[dict] = []
+            from ai.jev import prefilter as pf
+
+            inner = pf.rank_for_reading
+
+            def ranked(results, **kw):
+                selected, rest = inner(results, **kw)
+                verdicts.append({"selected": selected, "rest": rest})
+                return selected, rest
+
+            pf.rank_for_reading = ranked
+            loop.rank_for_reading = ranked
+            try:
+                read, deferred = original(db, state, candidates)
+            finally:
+                pf.rank_for_reading = inner
+                loop.rank_for_reading = inner
             self.prefilter = {
                 "total": len(candidates),
                 "read": [_candidate(d, r) for d, r in read],
                 "deferred": [_candidate(d, r) for d, r in deferred],
+                "order": verdicts,
             }
             return read, deferred
 
