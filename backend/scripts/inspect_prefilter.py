@@ -30,7 +30,11 @@ def main() -> int:
     print(f"=== 候補 {pf['total']} 件 -> 読んだ {len(read)} / 保留 {len(deferred)} ===\n")
 
     print("=== 検索方向ごとの配分 ===")
-    print("  **粗選別は検索方向を見ていない。** 全候補を関連性順に並べるだけ。")
+    slots = _slots(pf)
+    if slots:
+        print("  （方向枠つきの選別。枠の割り当ても記録されている）")
+    else:
+        print("  **この run は方向枠の記録が無い。** 割り当ては推測しない。")
     queries = [c["query"] for c in read + deferred]
     for q in dict.fromkeys(queries):
         r = sum(1 for c in read if c["query"] == q)
@@ -77,6 +81,11 @@ def main() -> int:
         print("    4. 記事らしいものは最後")
         print("  **どの候補がどの枠で選ばれたかは、この run からは分からない。**")
     return 0
+
+
+def _slots(pf: dict) -> dict:
+    order = pf.get("order") or []
+    return order[0].get("slots", {}) if order else {}
 
 
 def _fetched(run: dict) -> dict:
