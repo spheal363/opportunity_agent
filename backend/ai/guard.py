@@ -154,6 +154,48 @@ def inspect(text: str | None) -> GuardResult:
     return GuardResult(_remove(normalized, spans), tuple(findings))
 
 
+# --- 出力側（#77）-----------------------------------------------------------
+#
+# LLM が書いた自由文（推薦理由・説明・参加条件など）から連絡先を取り除く。
+#
+# **画面に出してよい行き先は、検証済みの `url` だけにする。** 注入で
+# 「申込はこちら: https://evil.example」と書かせる攻撃は、その URL が
+# ページ本文に書かれていれば「本文にあるか」の照合では防げない。
+# 自由文には一切載せない、と決めてしまう方が確実。
+LINK_MARK = "[リンク省略]"
+
+# URL に続く文字。ASCII に限る（「…/applyへ」の「へ」まで食べない）。
+# 括弧と引用符も含めない（「(https://a.com)」の閉じ括弧を残す）。
+_URL_END = r"[A-Za-z0-9\-._~:/?#@!$&*+,;=%]"
+_LINKS = (
+    re.compile(rf"(?:https?|ftp)://{_URL_END}+", re.IGNORECASE),
+    re.compile(rf"www\.{_URL_END}+", re.IGNORECASE),
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"),
+    # スキームの無いドメイン（evil.example/apply）。**小文字だけ**を見る。
+    # 大文字を含めると ASP.NET のような技術名まで消してしまう。
+    re.compile(
+        r"(?<![A-Za-z0-9.@/-])(?:[a-z0-9-]+\.)+"
+        r"(?:com|net|org|jp|io|dev|app|co|info|biz|xyz|me|site|online|link|ai|example)"
+        rf"(?![A-Za-z0-9-])(?:/{_URL_END}*)?"
+    ),
+    # 電話番号（03-1234-5678 / +81 90 1234 5678 / 09012345678）
+    re.compile(
+        r"(?<!\d)(?:0\d{1,4}-\d{1,4}-\d{3,4}"
+        r"|\+\d{1,3}[-\s]?\d{1,4}[-\s]?\d{2,4}[-\s]?\d{3,4}"
+        r"|0\d{9,10})(?!\d)"
+    ),
+)
+
+
+def strip_links(text: str | None) -> str | None:
+    """LLM が書いた自由文から URL・メールアドレス・電話番号を取り除く。"""
+    if not text:
+        return text
+    for pattern in _LINKS:
+        text = pattern.sub(LINK_MARK, text)
+    return text
+
+
 def _sentence_around(text: str, start: int, end: int) -> tuple[int, int]:
     """見つけた箇所を含む 1 文の範囲。"""
     lo = max(0, start - _MAX_BEFORE)

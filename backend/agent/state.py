@@ -29,8 +29,10 @@ class AgentState(BaseModel):
     discovered_ids: list[str] = Field(default_factory=list)
     selected_ids: list[str] = Field(default_factory=list)
 
-    # 指示らしき文が見つかったページの URL（ai/guard.py, #27）。推薦しない判断に使う。
+    # 指示らしき文が見つかったページの URL（ai/guard.py, #27）と、
+    # そこから取った Opportunity の id。推薦しない（#77）。
     flagged_urls: set[str] = Field(default_factory=set)
+    flagged_ids: set[str] = Field(default_factory=set)
 
     # 探索の繰り返し回数。上限を超えたら打ち切る。
     iteration: int = 0

@@ -227,6 +227,8 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     for source_url, item in extracted:
         row = _save_extracted(db, state, item, source_url)
         ids.append(row.opportunity_id)
+        if source_url in state.flagged_urls:
+            state.flagged_ids.add(row.opportunity_id)
         index = by_url[source_url]
         per_direction[index] = per_direction.get(index, 0) + 1
 
@@ -295,6 +297,7 @@ def _save_extracted(
     同じ URL を過去の run でも拾っている場合は、その行を使い回す。
     run のたびに同じ催しが増えないようにするため。
     """
+    item = _without_links(item)
     url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
     row = None
     if url:
@@ -329,6 +332,15 @@ def _save_extracted(
 
     db.commit()
     return row
+
+
+def _without_links(item: ExtractedOpportunity) -> ExtractedOpportunity:
+    """画面に出る自由文から URL・メール・電話番号を取り除く（#77）。
+
+    行き先として見せるのは、検索結果と照合した `url` だけにする。
+    """
+    fields = ("title", "description", "location", "eligibility")
+    return item.model_copy(update={f: guard.strip_links(getattr(item, f)) for f in fields})
 
 
 def _trusted_url(
@@ -428,6 +440,11 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
         for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
     }
 
+    # 指示らしき文があったページの候補は、評価にも推薦にも回さない（#77）。
+    # 取り除いた後の本文でも、書き手が推薦を操作しようとした事実は残る。
+    for opportunity_id in sorted(state.flagged_ids & rows.keys()):
+        _drop_flagged(db, state, rows.pop(opportunity_id), AgentStep.EVALUATING)
+
     # ④ 全件を評価する
     evaluated, failed = evaluate_many(
         goal_summary=goal.goal_summary,
@@ -438,7 +455,7 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
         row = rows[opportunity_id]
         row.score = out.score
         row.serendipity_score = out.serendipity_score
-        row.match_reasons = out.match_reasons
+        row.match_reasons = [guard.strip_links(m) for m in out.match_reasons]
     db.commit()
 
     if failed:
@@ -458,11 +475,13 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
 
     def one(opportunity_id: str) -> str | None:
         try:
-            return recommend(
+            reason = recommend(
                 goals=goals,
                 opportunity=targets[opportunity_id],
                 evaluation=by_id[opportunity_id],
             ).reason
+            # 推薦理由はそのまま画面に出る。連絡先を載せない（#77）。
+            return guard.strip_links(reason)
         except LLMError as exc:
             # 理由が無くても推薦自体は成立する。run を落とさない。
             logger.warning("recommendation.failed id=%s reason=%s", opportunity_id, exc)
@@ -566,9 +585,31 @@ def _verify(db: Session, state: AgentState) -> None:
         else:
             _log(db, state, AgentStep.VERIFYING, f"「{row.title}」は確認できませんでした")
         for warning in out.warnings:
-            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {warning}")
+            # 警告も LLM が書いた文。Agent Log として画面に出る（#77）。
+            _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {guard.strip_links(warning)}")
+        if row.url in flagged:
+            # 推薦した後で見つかっても、推薦のままにしない（#77）。
+            _drop_flagged(db, state, row, AgentStep.VERIFYING)
+            state.selected_ids = [i for i in state.selected_ids if i != row.opportunity_id]
 
     db.commit()
+
+
+def _drop_flagged(db: Session, state: AgentState, row: Opportunity, step: AgentStep) -> None:
+    """指示らしき文があったページの候補を推薦から外し、そのことを Log に残す（#77）。
+
+    ユーザーが自分で決めた状態（興味あり・参加済みなど）は変えない。
+    過去の run で推薦済みだった行は、推薦から戻す。
+    """
+    state.flagged_ids.add(row.opportunity_id)
+    if row.status == OpportunityStatus.RECOMMENDED:
+        row.status = OpportunityStatus.DISCOVERED
+    _log(
+        db,
+        state,
+        step,
+        f"「{row.title}」は指示らしき文を含むページから取ったため、推薦から外しました",
+    )
 
 
 def _fetch_page(url: str) -> str | None:
