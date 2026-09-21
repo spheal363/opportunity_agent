@@ -36,9 +36,9 @@ def _ok(url: str, content: str = "本文") -> httpx.Response:
 # --- 検索と本文取得を別々に選ぶ ---------------------------------------------
 
 
-def test_default_fetcher_is_unchanged():
-    """既定は現行のまま。採用が決まるまで本番の既定値を変えない。"""
-    assert Settings().page_fetcher == "tavily"
+def test_the_default_fetcher_is_jina():
+    """**既定は jina（構成 C）。** キー無しでも動く。"""
+    assert Settings(_env_file=None).page_fetcher == "jina"
 
 
 def test_fetcher_is_selected_by_setting(monkeypatch):

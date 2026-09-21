@@ -43,13 +43,13 @@ def main() -> int:
         print("  **いま生成した側の合計に入っている。** 下の表では両方に足す。")
     print()
 
-    print("=== ① 構成ごとの比較（計画生成を両方に同じ条件で含む）===")
+    print("=== ① 構成ごとの比較（通常実行相当。計画生成を両方に同じ条件で含む）===")
     print(f"  {'':24} {'A':>18} {'C':>18}")
     for label, fa, fc in _rows(a, c, shared):
         print(f"  {label:24} {fa:>18} {fc:>18}")
     print()
 
-    print("=== ② 今回実際に払った実験総額（共有ぶんは 1 度だけ）===")
+    print("=== ② 今回実際に実行・支払った分（共有ぶんは 1 度だけ）===")
     paid = a["actual_usd"] + c["actual_usd"]
     print(f"  OrcaRouter 実費 ${paid:.6f}（A ${a['actual_usd']:.6f} + C ${c['actual_usd']:.6f}）")
     print("  **共有ぶんは A の中に 1 度だけ含まれる。二重には数えない。**")
@@ -64,14 +64,37 @@ def main() -> int:
     la, lc = _with_shared(a, c, shared)
     cut = (la - lc) / la * 100
     word = "削減" if cut > 0 else "増加"
-    print(f"  OrcaRouter の実費  {abs(cut):.0f}% {word}（${la:.6f} -> ${lc:.6f}）")
-    print("  **1 run ずつの値。** 出力長は実行ごとに変わるので、率は確定ではない。")
+    print(f"  **OrcaRouter 費用のみ**  {abs(cut):.0f}% {word}（${la:.6f} -> ${lc:.6f}）")
+    print("  **総費用の削減率ではない。** 検索・本文取得・Jev は含まれない。")
+    print("  **1 run ずつの観測。** 出力長は実行ごとに変わるので、率は確定ではない。")
     print("  総費用             **出せない**。検索・本文取得の単価が未確認で、")
     print("                     Serper と Jina は今回無料枠のため支払いが 0 だった。")
     print("                     継続利用時の単価が分からない限り、総額は比べられない。")
     print()
 
-    print("=== ④ 工程別時間と全体時間 ===")
+    print("=== ④ 候補全体と最終 TOP3（**件数を混ぜない**）===")
+    print(f"  {'':26} {'A 全体':>10} {'A TOP3':>8} {'C 全体':>10} {'C TOP3':>8}")
+    for label, key in (
+        ("申込先を確認できた", "application"),
+        ("参加条件が取れた", "eligibility"),
+        ("受付中を確認（open）", "open"),
+        ("受付不明（unknown）", "unknown"),
+        ("行動を特定できた", "action"),
+    ):
+        print(
+            f"  {label:26} {_count(a, key, False):>10} {_count(a, key, True):>8}"
+            f" {_count(c, key, False):>10} {_count(c, key, True):>8}"
+        )
+    print(
+        f"  {'候補数':26} {len(a['run']['opportunities']):>10}"
+        f" {len(a['run']['selected_ids'] or []):>8}"
+        f" {len(c['run']['opportunities']):>10}"
+        f" {len(c['run']['selected_ids'] or []):>8}"
+    )
+    print("  **参加条件が取れても、本人が適格とは限らない。** 照合は未実施。")
+    print()
+
+    print("=== ⑤ 工程別時間と全体時間 ===")
     print("  **各工程は中の並列呼び出しを含む経過時間。** 工程どうしは直列。")
     steps = sorted(set(a["steps"]) | set(c["steps"]))
     print(f"  {'工程':18} {'A':>10} {'C':>10}")
@@ -86,6 +109,22 @@ def main() -> int:
         )
     print("  **この節は共有ぶんを足していない実測値。** ① の表とは前提が違う。")
     return 0
+
+
+def _count(run: dict, key: str, top3_only: bool) -> int:
+    """候補全体と最終 TOP3 を分けて数える。**混ぜない。**"""
+    rows = run["run"]["opportunities"]
+    if top3_only:
+        selected = set(run["run"]["selected_ids"] or [])
+        rows = [r for r in rows if r["opportunity_id"] in selected]
+    tests = {
+        "application": lambda r: bool(r.get("application_url")),
+        "eligibility": lambda r: bool(r.get("eligibility")),
+        "open": lambda r: r.get("availability") == "open",
+        "unknown": lambda r: r.get("availability") == "unknown",
+        "action": lambda r: bool(r.get("recommended_action")),
+    }
+    return sum(1 for r in rows if tests[key](r))
 
 
 def _load(path: str) -> dict:

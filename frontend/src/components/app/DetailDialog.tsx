@@ -8,6 +8,7 @@ import {
   deadlineKindLabel,
   deadlineLabel,
   isStep,
+  primaryLink,
   scheduleLabel,
   safeHttpUrl,
 } from '../../utils/display';
@@ -66,7 +67,14 @@ export function DetailDialog() {
 
   const summary = opportunities?.find((o) => o.opportunity_id === detailId);
   /** 登録先は POST /interest の結果が最新。無ければ詳細の url に戻す。 */
-  const officialUrl = item ? safeHttpUrl(registrationUrlOf(item.opportunity_id) ?? item.url) : null;
+  // **未確認なら「申込先」と断定しない。** 検証で本文から導線を読み取れた
+  // ときだけ申込先として出す。「気になる」で得た登録 URL はそれより確か。
+  const link = item
+    ? (() => {
+        const registered = safeHttpUrl(registrationUrlOf(item.opportunity_id));
+        return registered ? { url: registered, label: '申込先' } : primaryLink(item);
+      })()
+    : { url: null, label: '' };
   const inSteps = summary ? isStep(statusOf(summary)) : false;
 
   const openPrepare = () => {
@@ -204,14 +212,13 @@ export function DetailDialog() {
             </li>
           </ul>
 
-          {officialUrl ? (
+          {/* **未確認なら「申込先」と断定しない。** 検証で本文から導線を
+              読み取れたときだけ申込先として出す。同一サイトは根拠にしない。 */}
+          {link.url ? (
             <p className="text-[14px]">
-              {/* **情報源を申込先として見せない。** 実測で、応募できる催しほど
-                  本文から申込先が取れず、応募できないページほど自分自身の URL を
-                  返した。確認できていないものを「申込先」と呼ばない。 */}
-              {item.url_is_source_only ? '情報源のページ（申込先は未確認）：' : '申込先：'}
-              <a href={officialUrl} target="_blank" rel="noreferrer" className="underline">
-                {officialUrl}
+              {link.label}：
+              <a href={link.url} target="_blank" rel="noreferrer" className="underline">
+                {link.url}
               </a>
             </p>
           ) : null}

@@ -156,15 +156,15 @@ def test_entry_without_link_is_skipped():
 
 
 def test_provider_is_selected_by_setting(monkeypatch):
-    """既定は現行のまま。採用が決まるまで本番の既定値を変えない。"""
+    """**既定は serper（構成 C）。** A へ戻すには tavily を指定する。"""
     from config import Settings as S
 
-    assert S().search_provider == "tavily"
+    assert S(_env_file=None).search_provider == "serper"
 
     get_provider.cache_clear()
-    monkeypatch.setattr("tools.search.get_settings", lambda: _settings(search_provider="serper"))
+    monkeypatch.setattr("tools.search.get_settings", lambda: _settings(search_provider="tavily"))
     try:
-        assert get_provider().name == "serper"
+        assert get_provider().name == "tavily"
     finally:
         get_provider.cache_clear()
 

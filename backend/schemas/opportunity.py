@@ -95,6 +95,8 @@ class OpportunitySummary(BaseModel):
     deadline_is_date_only: bool | None = None
     # **この URL は申込先か、情報源か。** True なら申込先は未確認。
     url_is_source_only: bool = True
+    # 検証で本文から読み取れた申込先。**同一サイトは根拠にしない。**
+    application_url: str | None = None
     # 本人が取れる行動。特定できなければ null で、推薦には出さない。
     recommended_action: str | None = None
     status: OpportunityStatus = OpportunityStatus.DISCOVERED

@@ -35,7 +35,8 @@ from ai.schemas.extraction import ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
 from ai.search_plan import plan_search
 from ai.verification import verify_with_page
-from config import get_settings
+from config import FALLBACK_TO_A, get_settings
+from config import missing_keys as config_missing_keys
 from db.session import SessionLocal
 from logging_config import get_logger
 from models import AgentLog, AgentRun, Opportunity, UserProfile
@@ -96,6 +97,18 @@ def _closing(db: Session) -> Iterator[None]:
 def _run(db: Session, run_id: str, user_id: str) -> None:
     try:
         state = AgentState(run_id=run_id, user_id=user_id, status=AgentRunStatus.RUNNING)
+        settings = get_settings()
+        if not settings.agent_stub_mode and (missing := config_missing_keys(settings)):
+            # **黙って別構成へ落とさない。** 鍵が無いことと、候補が
+            # 見つからないことは別。理由が分かる形で止める。
+            _fail(
+                db,
+                state,
+                "探索に必要な設定が足りません: "
+                + "、".join(missing)
+                + f"。構成 A へ戻すには {FALLBACK_TO_A}",
+            )
+            return
         profile = db.get(UserProfile, user_id)
         if profile is None:
             _fail(db, state, "プロフィールが登録されていません")
@@ -356,14 +369,14 @@ def _save_extracted(
     run のたびに同じ催しが増えないようにするため。
     """
     url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
-    # **申込先を確認できたか。**
+    # **抽出の時点では申込先を確認できていない。**
     #
-    # モデルが本文から申込先を読み取り、かつ取得元と同じサイトのときだけ
-    # 「申込先」と言える。それ以外は**情報源のページ**でしかない。
+    # 以前は「同じサイトなら申込先」としていたが、**同一サイトであることは
+    # 根拠にならない。** 外部の申込サービス（Google Form、Peatix、connpass）を
+    # 使う催しは多く、逆に同じサイトでも申込ページとは限らない。
     #
-    # 実測で、応募できる催しほど url が null で返り、応募できないページほど
-    # 自分自身の URL を返した。**取得元をそのまま申込先として見せない。**
-    url_is_source_only = not item.url or url == source_url
+    # 申込先と言えるのは、⑦ 検証で**本文から導線を読み取れた**ときだけ。
+    url_is_source_only = True
     row = None
     if url:
         row = (
@@ -682,6 +695,12 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
         row.verified = out.verified
         row.verified_at = out.verified_at
         row.verification_source = out.verification_source
+        # **申込先と言えるのはここだけ。** 本文から導線を読み取れたとき。
+        # 取りに行く先ではなく**表示に使う**ので、別サイトでも受け入れる。
+        # 画面側で http/https 以外は出さない（`safeHttpUrl`）。
+        if out.application_url:
+            row.application_url = out.application_url
+            row.url_is_source_only = False
         _set_availability(
             row,
             out.availability,

@@ -51,6 +51,9 @@ class Opportunity(Base):
     # **申込先を確認できたか。** True は「この URL は取得元のページで、
     # 申込先として確かめたものではない」。情報源へのリンクとして扱う。
     url_is_source_only: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 検証で**本文から読み取れた**申込先。読み取れなければ null。
+    # **同一サイトかどうかは根拠にしない。** 外部の申込サービスもある。
+    application_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # 出典に時刻が書かれていたか。False でも「00:00 と書いてあった」ではなく
     # 「時刻の記載があった」という意味。日付だけなら True。
     # **`None` は「分からない」。** false（出典に時刻があった）とは違う。

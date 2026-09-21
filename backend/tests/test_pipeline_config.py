@@ -15,22 +15,66 @@ from tests.fixtures import candidates as fx
 # --- 既定値 ------------------------------------------------------------------
 
 
-def test_defaults_keep_the_current_configuration():
-    """**採用が決まるまで本番の既定値を変えない。**
+def test_the_default_is_configuration_c():
+    """**既定は構成 C（暫定採用）。**
 
-    Code Freeze が近く、未検証の構成をデモの既定にしない。
+    根拠は docs/experiments/65-search-comparison.md。1 run ずつの比較で、
+    時間 24% 短縮・OrcaRouter 実費 47% 削減を観測した。
     """
-    s = Settings()
-    assert s.search_provider == "tavily"
-    assert s.page_fetcher == "tavily"
-    assert s.evaluator == "llm"
-    assert s.search_pipeline == "full"
+    s = Settings(_env_file=None)
+    assert s.search_provider == "serper"
+    assert s.page_fetcher == "jina"
+    assert s.evaluator == "jev"
+    assert s.search_pipeline == "prefilter"
+
+
+def test_going_back_to_a_takes_four_settings():
+    """**A へ戻せる形を残す。** 4 つとも戻す。"""
+    from config import FALLBACK_TO_A
+
+    for key in (
+        "SEARCH_PROVIDER=tavily",
+        "PAGE_FETCHER=tavily",
+        "EVALUATOR=llm",
+        "SEARCH_PIPELINE=full",
+    ):
+        assert key in FALLBACK_TO_A
+
+
+def test_missing_keys_are_named_not_silently_ignored():
+    """**黙って別構成へ落とさない。**
+
+    鍵が無いことと、候補が見つからないことは別。以前は検索が方向ごとに
+    失敗し、候補 0 件で終わっていた。
+    """
+    from config import missing_keys
+
+    missing = missing_keys(Settings(_env_file=None, search_provider="serper", evaluator="jev"))
+    assert any("SERPER_API_KEY" in m for m in missing)
+    assert any("TYPESAFE_API_KEY" in m for m in missing)
+
+
+def test_jina_needs_no_key():
+    """本文取得はキー無しでも動く（20 RPM）。**足りない鍵に挙げない。**"""
+    from config import missing_keys
+
+    missing = missing_keys(
+        Settings(
+            _env_file=None,
+            search_provider="serper",
+            page_fetcher="jina",
+            evaluator="jev",
+            serper_api_key="x",
+            typesafe_api_key="y",
+        )
+    )
+    assert missing == []
 
 
 def test_read_limit_is_a_hypothesis_not_a_fixed_answer():
     """件数は仮説。比較で決める。"""
-    assert 6 <= Settings().prefilter_read_limit <= 8
-    assert Settings().prefilter_extra_reads > 0
+    assert 6 <= Settings(_env_file=None).prefilter_read_limit <= 8
+    assert Settings(_env_file=None).prefilter_extra_reads > 0
 
 
 # --- 本文取得を挟む ----------------------------------------------------------
@@ -159,11 +203,14 @@ def test_evaluator_failure_falls_back_instead_of_dropping(monkeypatch):
     assert tracker.by_step["evaluation"].jev.low_confidence_fallbacks == 1
 
 
-def test_llm_is_used_by_default(monkeypatch):
+def test_the_evaluator_can_be_forced_back_to_llm(monkeypatch):
+    """**A へ戻せる。** EVALUATOR=llm なら Jev を呼ばない。"""
     import ai.evaluation as ev
 
+    monkeypatch.setattr(ev, "get_settings", lambda: Settings(_env_file=None, evaluator="llm"))
+
     def boom(**_):  # pragma: no cover
-        raise AssertionError("既定で Jev が呼ばれている")
+        raise AssertionError("EVALUATOR=llm なのに Jev が呼ばれている")
 
     monkeypatch.setattr(ev, "evaluate_with_jev", boom)
     monkeypatch.setattr(
@@ -182,9 +229,10 @@ def test_the_configuration_is_recorded_with_the_run():
         pass
 
     out = tracker.to_dict()
-    assert out["search_provider"] == "tavily"
-    assert out["page_fetcher"] == "tavily"
-    assert out["search_pipeline"] == "full"
+    # **走った構成をそのまま残す。** 既定が変わっても記録は実態に従う。
+    assert out["search_provider"] == Settings().search_provider
+    assert out["page_fetcher"] == Settings().page_fetcher
+    assert out["search_pipeline"] == Settings().search_pipeline
 
 
 def test_evaluator_is_recorded():

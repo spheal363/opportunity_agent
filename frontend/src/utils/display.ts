@@ -180,7 +180,19 @@ export function isStep(status: OpportunityStatus): boolean {
  * 「ここから申し込める」という誤った案内になる。
  */
 export function linkLabel(opportunity: Opportunity): string {
-  return opportunity.url_is_source_only ? '情報を見る（申込先は未確認）' : '申し込む';
+  return opportunity.application_url ? '申込先' : '詳細・情報源';
+}
+
+/**
+ * 表示するリンクと、その意味。
+ *
+ * **未確認なら「申込先」と断定しない。** 検証で本文から導線を読み取れた
+ * ときだけ申込先として出す。それ以外は情報源のページ。
+ */
+export function primaryLink(opportunity: Opportunity): { url: string | null; label: string } {
+  const application = safeHttpUrl(opportunity.application_url);
+  if (application) return { url: application, label: '申込先' };
+  return { url: safeHttpUrl(opportunity.url), label: '詳細・情報源（申込先は未確認）' };
 }
 
 /** 次に取れる行動。特定できていなければ null。 */

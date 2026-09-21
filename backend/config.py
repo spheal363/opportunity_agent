@@ -26,9 +26,14 @@ class Settings(BaseSettings):
     # **別々に選ぶ。** Serper は検索だけで本文を返さないため、検索 provider を
     # 変えただけでは抽出の入力が痩せる（#65）。
     #
-    # 既定値は比較で採用が決まるまで**現行構成のまま**にする。
-    search_provider: str = "tavily"  # tavily | serper
-    page_fetcher: str = "tavily"  # tavily | jina
+    # **既定は構成 C（暫定採用）。** 比較の根拠は
+    # docs/experiments/65-search-comparison.md。
+    #
+    # A へ戻すには 4 つとも戻す（`.env` か環境変数）:
+    #   SEARCH_PROVIDER=tavily PAGE_FETCHER=tavily
+    #   EVALUATOR=llm SEARCH_PIPELINE=full
+    search_provider: str = "serper"  # tavily | serper
+    page_fetcher: str = "jina"  # tavily | jina
 
     # 応答に実費（usage.cost_usd）を載せてもらうヘッダを送るか。
     # **モデルの挙動は変わらない。** 既定は無効にしてあり、比較のときだけ
@@ -44,9 +49,9 @@ class Settings(BaseSettings):
     jina_api_key: str | None = None
 
     # --- 評価器 ----------------------------------------------------------
-    # EVALUATOR=llm   既定・現行。自由文の match_reasons も出る
-    # EVALUATOR=jev   分類・採点のみ。**自由文は作れない**（#65 の A/B 比較）
-    evaluator: str = "llm"
+    # EVALUATOR=llm   自由文の match_reasons も出る（構成 A）
+    # EVALUATOR=jev   **既定。** 分類・採点のみで、**自由文は作れない**
+    evaluator: str = "jev"  # llm | jev
     typesafe_api_key: str | None = None
     typesafe_base_url: str = "https://api.typesafe.ai/v1"
     jev_model: str = "jev-latest"
@@ -56,9 +61,9 @@ class Settings(BaseSettings):
     jev_min_confidence: float = 0.5
 
     # --- 探索の構成 ------------------------------------------------------
-    # SEARCH_PIPELINE=full       既定・現行。見つけた候補を全件抽出して評価
-    # SEARCH_PIPELINE=prefilter  抽出前に読む優先順位を付ける（構成 C）
-    search_pipeline: str = "full"
+    # SEARCH_PIPELINE=full       候補を全件抽出して評価（構成 A）
+    # SEARCH_PIPELINE=prefilter  **既定。** 抽出前に読む優先順位を付ける
+    search_pipeline: str = "prefilter"  # full | prefilter
     # 本文を読む候補の数。**仮説であって正解ではない。** 比較で決める。
     prefilter_read_limit: int = 8
     # 不足したときに追加で読む上限。無制限には増やさない。
@@ -73,6 +78,40 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.frontend_url.split(",") if o.strip()]
+
+
+# 構成ごとに要る鍵。**足りなければ黙って別構成へ落とさない。**
+#
+# 以前は鍵が無いと検索が方向ごとに失敗し、候補 0 件で終わっていた。
+# 「何も見つからなかった」と「鍵が無い」は別のこと。
+_REQUIRED_KEYS = {
+    "search_provider": {
+        "tavily": ("search_api_key", "SEARCH_API_KEY"),
+        "serper": ("serper_api_key", "SERPER_API_KEY"),
+    },
+    "evaluator": {"jev": ("typesafe_api_key", "TYPESAFE_API_KEY")},
+}
+
+# A へ戻すときの設定。エラー文に載せる。
+FALLBACK_TO_A = "SEARCH_PROVIDER=tavily PAGE_FETCHER=tavily EVALUATOR=llm SEARCH_PIPELINE=full"
+
+
+def missing_keys(settings: "Settings") -> list[str]:
+    """いまの構成に足りない鍵。**空なら走らせてよい。**
+
+    `page_fetcher=jina` は鍵が無くても動く（20 RPM）ので、ここには挙げない。
+    """
+    missing: list[str] = []
+    for field, table in _REQUIRED_KEYS.items():
+        chosen = (getattr(settings, field) or "").strip().lower()
+        need = table.get(chosen)
+        if need and not getattr(settings, need[0]):
+            missing.append(f"{need[1]}（{field}={chosen} に必要）")
+    return missing
+
+
+class ConfigurationError(RuntimeError):
+    """構成に足りないものがある。**別構成へは落とさない。**"""
 
 
 @lru_cache

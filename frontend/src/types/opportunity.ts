@@ -88,6 +88,14 @@ export type Opportunity = {
    * 見せ、「申込先は未確認」と添える。**情報源を申込先として見せない。**
    */
   url_is_source_only: boolean;
+  /**
+   * 検証で**本文から読み取れた**申込先。読み取れなければ null。
+   *
+   * **同一サイトであることは根拠にしない。** 外部の申込サービス
+   * （Google Form、Peatix、connpass）を使う催しは多く、逆に同じサイトでも
+   * 申込ページとは限らない。
+   */
+  application_url: string | null;
   /** 本人が取れる行動。特定できなければ null。 */
   recommended_action: string | null;
   status: OpportunityStatus;

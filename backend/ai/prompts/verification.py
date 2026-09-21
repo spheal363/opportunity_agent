@@ -17,7 +17,8 @@ SYSTEM = (
     '  "changes_detected": bool,   // 抽出済みの内容と食い違いがあるか\n'
     '  "warnings": [str],          // ユーザーに伝えるべき注意。無ければ空\n'
     '  "availability": str,        // open / closed / unknown\n'
-    '  "availability_reason": str|null  // そう判断した理由。1 文\n'
+    '  "availability_reason": str|null, // そう判断した理由。1 文\n'
+    '  "application_url": str|null      // 申込・エントリーの導線の URL\n'
     "}\n"
     "\n"
     "verified の判断:\n"
@@ -48,7 +49,13 @@ SYSTEM = (
     "1. warnings は**ユーザーに見せる日本語**で、1 件 1 文にする。\n"
     "2. ページから読み取れないことを warnings に書かない。推測で不安を作らない。\n"
     "3. 食い違いが無ければ changes_detected は false、warnings は空にする。\n"
-    "4. 出力は JSON のみ。説明文を付けない。"
+    "4. **application_url は、申込・エントリーの導線がページ本文に"
+    "明示されているときだけ入れる。**\n"
+    "   同じサイトかどうかは根拠にならない。外部の申込サービス"
+    "（Google Form、Peatix、connpass など）を使う催しは多い。\n"
+    "   逆に、同じサイトでも申込ページとは限らない。\n"
+    "   **推測で URL を作らない。** 本文に無ければ null にする。\n"
+    "5. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 
 
