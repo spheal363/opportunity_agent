@@ -612,7 +612,7 @@ _PAST = datetime(2020, 1, 1, tzinfo=UTC)
 _FUTURE = datetime(2099, 1, 1, tzinfo=UTC)
 
 
-def _guarded(deadline, kind) -> str:
+def _guarded(deadline, kind, *, date_only: bool | None = False) -> str:
     row = SimpleNamespace(
         type="event",
         title="t",
@@ -620,7 +620,7 @@ def _guarded(deadline, kind) -> str:
         deadline=deadline,
         end_at=None,
         deadline_kind=kind,
-        deadline_is_date_only=False,
+        deadline_is_date_only=date_only,
         end_at_is_date_only=False,
     )
     out = SimpleNamespace(availability="closed", availability_reason="募集を締め切りました")
@@ -655,6 +655,19 @@ def test_the_guard_fires_only_on_a_passed_non_participation_deadline(
     assert _guarded(deadline, kind) == expected, label
 
 
+@pytest.mark.parametrize("date_only", [False, True, None])
+def test_the_guard_does_not_depend_on_the_date_precision(date_only):
+    """**日付の精度で結論を変えない。**
+
+    `deadline_is_date_only` は「出典に時刻が書かれていたか」であって、
+    「検証が読み違えうるか」とは関係がない。表の全行を 3 通りで通す。
+    """
+    assert _guarded(_PAST, "early_bird", date_only=date_only) == "unknown"
+    assert _guarded(_PAST, "application", date_only=date_only) == "closed"
+    assert _guarded(_FUTURE, "early_bird", date_only=date_only) == "closed"
+    assert _guarded(None, None, date_only=date_only) == "closed"
+
+
 def test_a_date_only_deadline_today_is_still_treated_as_misreadable():
     """**`availability._is_past` とはわざと違う判定を使っている。**
 
@@ -670,8 +683,9 @@ def test_a_date_only_deadline_today_is_still_treated_as_misreadable():
 
     # `_is_past` は「まだ過ぎていない」と言う
     assert availability._is_past(today_midnight, datetime.now(UTC), date_only=True) is False
-    # ここでは倒す（安全側）
-    assert _guarded(today_midnight, "early_bird") == "unknown"
+    # ここでは倒す（安全側）。**精度によらず同じ。**
+    for date_only in (True, None, False):
+        assert _guarded(today_midnight, "early_bird", date_only=date_only) == "unknown"
 
 
 def test_a_naive_deadline_from_sqlite_does_not_crash():
