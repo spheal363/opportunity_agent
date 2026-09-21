@@ -24,8 +24,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+
+# **実費を取る。** 前回これを設定しておらず、監査の費用が全件「不明」になった。
+# 見積もりしか残らないと、C の費用と並べて語れない。
+os.environ.setdefault("ORCAROUTER_INCLUDE_COST", "true")
 from datetime import UTC, date, datetime
 from pathlib import Path
 
