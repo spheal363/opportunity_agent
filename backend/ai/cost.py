@@ -133,7 +133,10 @@ class CostTracker:
     by_step: dict[str, StepUsage] = field(default_factory=dict)
     # 検索 provider の使用量。**料金は未確認**なので回数だけ持つ。
     search_calls: int = 0
+    # 本文取得を**試した** URL 数と、**取れた**数。
+    # **試行と成功を分ける。** 取れなかった分も使用量としては発生している。
     extract_calls: int = 0
+    extract_successes: int = 0
     # 候補が落ちた理由別の件数
     dropped: dict[str, int] = field(default_factory=dict)
     # 最終結果の受付状況の内訳
@@ -297,6 +300,10 @@ class CostTracker:
         with self._lock:
             self.extract_calls += n
 
+    def record_extract_success(self, n: int = 1) -> None:
+        with self._lock:
+            self.extract_successes += n
+
     def record_dropped(self, reason: str, n: int = 1) -> None:
         with self._lock:
             self.dropped[reason] = self.dropped.get(reason, 0) + n
@@ -318,6 +325,7 @@ class CostTracker:
                 "by_step": {k: v.to_dict() for k, v in self.by_step.items()},
                 "search_calls": self.search_calls,
                 "extract_calls": self.extract_calls,
+                "extract_successes": self.extract_successes,
                 "dropped": dict(self.dropped),
                 "final_availability": dict(self.final_availability),
                 "evaluator": self.evaluator,
@@ -490,3 +498,7 @@ def record_jev_low_confidence() -> None:
 
 def record_evaluator(evaluator: str, model: str | None = None) -> None:
     _to_tracker("record_evaluator", evaluator, model)
+
+
+def record_extract_success(n: int = 1) -> None:
+    _to_tracker("record_extract_success", n)

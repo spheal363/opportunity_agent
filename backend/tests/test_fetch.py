@@ -248,3 +248,26 @@ def test_page_reader_never_hands_internal_urls_to_the_fetcher(monkeypatch):
 
     assert seen["urls"] == ["https://ok.jp/a"]
     assert out.data["failed"] == ["http://169.254.169.254/x"]
+
+
+def test_page_reader_counts_attempts_and_successes(monkeypatch):
+    """**試した数と取れた数を分けて数える。**
+
+    取れなかった分も、そのサービスの使用量としては発生している。
+    """
+    from ai import cost
+    from tools import registry
+
+    class Fake:
+        name = "fake"
+
+        def fetch(self, urls):
+            return [PageContent(url=urls[0], title="t", content="c")], [urls[1]]
+
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
+    with cost.track() as tracker:
+        registry.invoke("read_page", url=["https://a.jp/x", "https://b.jp/y"])
+
+    out = tracker.to_dict()
+    assert out["extract_calls"] == 2
+    assert out["extract_successes"] == 1

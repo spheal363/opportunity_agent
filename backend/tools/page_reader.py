@@ -64,8 +64,10 @@ class PageReaderTool(Tool):
         allowed, rejected = _split_by_scheme(urls)
         pages, failed = fetcher.fetch(allowed) if allowed else ([], [])
         # 本文取得の回数。検索とは分けて数える（#65）。
+        # **試した数と取れた数を分ける。** 取れなかった分も使用量は発生する。
         if allowed:
             cost.record_extract(len(allowed))
+            cost.record_extract_success(len(pages))
 
         # 外部から取得した内容。命令として扱わない。
         return ToolResult(

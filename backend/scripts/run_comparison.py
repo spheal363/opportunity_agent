@@ -1,9 +1,14 @@
-"""構成 A のベースラインを 1 run だけ実行し、入力と出力を保存する（#65）。
+"""構成 A / C を 1 run ずつ実行し、入力と出力を保存する（#65）。
 
 **目的は比較の基準線を作ること。** 次の実験では Web 検索も抽出もやり直さず、
 ここで保存した**同じ評価入力**を Jev へ渡す。
 
-    cd backend && .venv/bin/python -m scripts.run_baseline
+    cd backend && .venv/bin/python -m scripts.run_comparison A
+    cd backend && .venv/bin/python -m scripts.run_comparison C
+
+## 1 run ずつは予備比較
+
+**優劣の確定とは扱わない。** 出力長も検索結果も実行ごとに変わる。
 
 ## 実ユーザーの DB は触らない
 
@@ -29,13 +34,40 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-# --- 実験用 DB へ差し替える。**db.session の import より先に行う。** -------
+# --- 構成を選ぶ。**環境変数は db.session の import より先に決める。** ----
+#
+# 既定の .env は触らない。ここで環境変数を上書きするだけにする。
+_CONFIG = (sys.argv[1] if len(sys.argv) > 1 else "A").upper()
+_CONFIGS = {
+    # 基準線。**本番の既定と同じ構成。**
+    "A": {
+        "SEARCH_PROVIDER": "tavily",
+        "PAGE_FETCHER": "tavily",
+        "EVALUATOR": "llm",
+        "SEARCH_PIPELINE": "full",
+    },
+    # 検索サービスと処理方法の**両方**が変わる。
+    # 差を Serper 単体や Jev 単体の効果とは説明できない。
+    "C": {
+        "SEARCH_PROVIDER": "serper",
+        "PAGE_FETCHER": "jina",
+        "EVALUATOR": "jev",
+        "SEARCH_PIPELINE": "prefilter",
+    },
+}
+if _CONFIG not in _CONFIGS:
+    print(f"構成は {'/'.join(_CONFIGS)} のいずれかです（指定: {_CONFIG}）")
+    raise SystemExit(2)
+
 _STAMP = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-_OUT = Path(__file__).resolve().parent.parent / "experiments" / f"baseline-A-{_STAMP}"
+_OUT = Path(__file__).resolve().parent.parent / "experiments" / f"run-{_CONFIG}-{_STAMP}"
 _OUT.mkdir(parents=True, exist_ok=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{_OUT / 'experiment.db'}"
 # 実探索で走らせる。既定の .env は stub=true のまま触らない。
 os.environ["AGENT_STUB_MODE"] = "false"
+os.environ.update(_CONFIGS[_CONFIG])
+# **実費を取る。** 見積もりと別の欄に置く。
+os.environ["ORCAROUTER_INCLUDE_COST"] = "true"
 
 from agent import loop  # noqa: E402
 from ai import cost  # noqa: E402
@@ -72,7 +104,7 @@ PROFILE = {
 
 
 class Capture:
-    """LLM 呼び出しと Tool 呼び出しを記録する。
+    """LLM / Tool / Jev の呼び出しと、粗選別の結果を記録する。
 
     **キーと認証ヘッダは記録しない。** 記録するのは messages と応答だけ。
     """
@@ -80,6 +112,9 @@ class Capture:
     def __init__(self) -> None:
         self.llm: list[dict] = []
         self.tools: list[dict] = []
+        self.jev: list[dict] = []
+        # **C が読まなかった候補。** 取りこぼし監査の入力になる。
+        self.prefilter: dict | None = None
 
     def wrap_llm(self) -> None:
         original = OrcaRouterClient.chat
@@ -113,6 +148,49 @@ class Capture:
 
         OrcaRouterClient.chat = chat  # type: ignore[method-assign]
 
+    def wrap_jev(self) -> None:
+        """Jev の使用量を別に数える。**LLM と混ぜない。**"""
+        from ai.jev.client import JevClient
+
+        original = JevClient.ask
+
+        def ask(client_self, state, questions, **kwargs):
+            started = time.perf_counter()
+            res = original(client_self, state, questions, **kwargs)
+            self.jev.append(
+                {
+                    "at": datetime.now(UTC).isoformat(),
+                    "step": cost.current_step(),
+                    "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                    "model": res.model,
+                    "input_tokens": res.input_tokens,
+                    "output_tokens": res.output_tokens,
+                    "questions": list(questions),
+                }
+            )
+            return res
+
+        JevClient.ask = ask  # type: ignore[method-assign]
+
+    def wrap_prefilter(self) -> None:
+        """**読んだ候補と読まなかった候補を残す。**
+
+        C の取りこぼしは、C が実際に捨てた候補を見ないと測れない。
+        A の検索結果との照合では分からない。
+        """
+        original = loop._choose_what_to_read
+
+        def choose(db, state, candidates):
+            read, deferred = original(db, state, candidates)
+            self.prefilter = {
+                "total": len(candidates),
+                "read": [_candidate(d, r) for d, r in read],
+                "deferred": [_candidate(d, r) for d, r in deferred],
+            }
+            return read, deferred
+
+        loop._choose_what_to_read = choose  # type: ignore[assignment]
+
     def wrap_tools(self) -> None:
         original = registry.invoke
 
@@ -132,6 +210,17 @@ class Capture:
             return result
 
         registry.invoke = invoke  # type: ignore[method-assign]
+
+
+def _candidate(direction, result) -> dict:
+    """候補 1 件の記録。**本文は持たない**（監査で取り直す）。"""
+    return {
+        "query": direction.query,
+        "title": result.title,
+        "url": result.url,
+        "snippet": result.snippet,
+        "has_content": bool(result.content),
+    }
 
 
 def _usage_of(res) -> dict | None:
@@ -203,6 +292,8 @@ def main() -> int:
     capture = Capture()
     capture.wrap_llm()
     capture.wrap_tools()
+    capture.wrap_jev()
+    capture.wrap_prefilter()
 
     print(f"=== 実行開始 {run_id} ===")
     started = time.perf_counter()
@@ -227,6 +318,7 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
         "total_ms": total_ms,
         # **実行設定。キーは含めない。**
         "config": {
+            "name": _CONFIG,
             "search_provider": settings.search_provider,
             "page_fetcher": settings.page_fetcher,
             "evaluator": settings.evaluator,
@@ -272,6 +364,9 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
         # **次の実験でやり直さないための入力。**
         "llm_calls": capture.llm,
         "tool_calls": capture.tools,
+        "jev_calls": capture.jev,
+        # **C が読まなかった候補。** 取りこぼし監査の入力。
+        "prefilter": capture.prefilter,
     }
     db.close()
 
@@ -280,6 +375,15 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
     print(f"保存しました: {path}")
     print(f"  LLM 呼び出し {len(capture.llm)} 件 / Tool 呼び出し {len(capture.tools)} 件")
     print("  **キー・認証ヘッダは含まれない。**\n")
+
+
+def _service_note(name: str | None) -> str:
+    """そのサービスの費用をどう扱うか。**無料枠と継続費用を分ける。**"""
+    return {
+        "tavily": "**単価・残量とも未確認**",
+        "serper": "無料枠 2,500 クエリを消費。**単価は未確認**",
+        "jina": "キー無し 20 RPM の範囲。**支払いは発生しないが使用量は出る**",
+    }.get(name or "", "**未確認**")
 
 
 def _iso(value) -> str | None:
@@ -299,9 +403,20 @@ def _report(run_id: str, total_ms: int) -> None:
         print(f"    {name:16} {u.get('elapsed_ms', 0) / 1000:6.1f} 秒")
     print("  （工程時間は**並列呼び出しの合計ではなく**、工程に入って出るまで）\n")
 
-    print("=== ② 使用量と費用 ===")
-    print(f"  検索リクエスト    {usage.get('search_calls', 0)} 回  （**料金は未確認**）")
-    print(f"  本文取得          {usage.get('extract_calls', 0)} 件  （**料金は未確認**）")
+    print("=== ② 使用量と費用（**サービス別。合算しない**）===")
+    cfg = usage.get("search_provider"), usage.get("page_fetcher")
+    print(f"  検索  {cfg[0]:8} {usage.get('search_calls', 0)} 回   {_service_note(cfg[0])}")
+    print(
+        f"  本文  {cfg[1]:8} 試行 {usage.get('extract_calls', 0)} 件 /"
+        f" 成功 {usage.get('extract_successes', 0)} 件   {_service_note(cfg[1])}"
+    )
+    jev_usd = sum(u.get("jev", {}).get("usd", 0.0) for u in by_step.values())
+    jev_req = sum(u.get("jev", {}).get("request_attempts", 0) for u in by_step.values())
+    if jev_req:
+        print(
+            f"  Jev   {'typesafe':8} {jev_req} 回   公式単価 x 実トークン ${jev_usd:.6f}"
+            "（**請求額ではない**）"
+        )
     total = {"logical": 0, "attempts": 0, "records": 0, "nousage": 0, "retries": 0, "fb": 0}
     jpy = 0.0
     tokens = 0
@@ -320,7 +435,16 @@ def _report(run_id: str, total_ms: int) -> None:
     print(f"  使用量不明        {total['nousage']}  （**費用ゼロとは限らない**）")
     print(f"  Retry / Fallback  {total['retries']} / {total['fb']}")
     print(f"  トークン          {tokens}")
-    print(f"  LLM 費用          ¥{jpy:.2f}  （**見積もり。請求額ではない**）\n")
+    actual = usage.get("actual_usd", 0.0)
+    missing = usage.get("responses_without_actual_cost", 0)
+    print(f"  LLM 見積もり      ¥{jpy:.2f}  （単価表からの推定）")
+    print(f"  LLM 実費          ${actual:.6f}  （OrcaRouter の cost_usd）")
+    if missing:
+        print(
+            f"                    **実費不明 {missing} 件**。確定額は GET /v1/generation?id= で引く"
+        )
+    print(f"  request ID        {len(usage.get('request_ids', []))} 件を保存\n")
+    print("  **OrcaRouter の実費は LLM 分だけ。** 検索・本文取得・Jev は含まれない。\n")
 
     print("=== ③ 受付状況と最終 TOP3 ===")
     counts: dict[str, int] = {}

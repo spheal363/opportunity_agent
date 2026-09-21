@@ -396,3 +396,14 @@ def test_usage_is_recorded_before_schema_validation(monkeypatch):
     assert step.fallbacks == 1
     assert step.actual_usd == pytest.approx(0.004)
     assert tracker.jpy > 0
+
+
+def test_fetch_attempts_and_successes_are_counted_separately():
+    """**取れなかった分も使用量は発生している。** 成功数と混ぜない。"""
+    with cost.track() as tracker:
+        cost.record_extract(5)
+        cost.record_extract_success(3)
+
+    out = tracker.to_dict()
+    assert out["extract_calls"] == 5
+    assert out["extract_successes"] == 3
