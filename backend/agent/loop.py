@@ -131,7 +131,21 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
     except Exception as exc:  # Agent 全体を落とさず run を failed にする
         logger.exception("agent run failed run_id=%s", run_id)
         db.rollback()
-        _fail(db, AgentState(run_id=run_id, user_id=user_id), str(exc))
+        _fail(db, AgentState(run_id=run_id, user_id=user_id), _public_error(exc))
+
+
+def _public_error(exc: Exception) -> str:
+    """画面に出す失敗理由（#81）。**例外の文字列は載せない。**
+
+    run の `error` は GET /api/agent/runs/{id} でそのまま返る。例外の文字列には
+    SQL とパラメータ（プロフィール本文）や外部 API の応答が入りうるため、
+    種類ごとの決まった文言にする。詳細はサーバーのログ（上の logger.exception）だけに残す。
+    """
+    if isinstance(exc, LLMError):
+        return "AI の呼び出しに失敗しました。時間をおいて再度お試しください"
+    if isinstance(exc, SearchError):
+        return "Web 検索に失敗しました。時間をおいて再度お試しください"
+    return "予期しないエラーが発生しました"
 
 
 # --------------------------------------------------------------------------
