@@ -53,6 +53,33 @@ Frontend がこの段階から通しで結合できるようにするための�
 
 LLM の出力は `ai/schemas/` の Pydantic モデルで Validation し、不正なら Retry する。
 
+## Google Calendar 連携
+
+空き確認（`GET /api/calendar/availability`）と予定追加（`POST /api/opportunities/{id}/calendar`）に使う。
+Backend を動かす人ごとに、自分の Google アカウントで 1 回だけ連携する。
+
+1. Google Cloud の OAuth クライアント（種類は**デスクトップアプリ**）の ID とシークレットを
+   `.env` の `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` に入れる。
+   チーム内では git ではなく DM などで受け渡す
+2. 使う Google アカウントを、OAuth 同意画面の**テストユーザー**に追加してもらう
+3. 連携スクリプトを実行し、ブラウザで Google にログインして「許可」を押す
+
+```bash
+.venv/bin/python -m scripts.google_auth
+# ブラウザが開かないとき（WSL など）は、表示された URL を手元のブラウザで開く
+.venv/bin/python -m scripts.google_auth --no-browser
+```
+
+トークンが `GOOGLE_TOKEN_PATH`（既定 `.google_token.json`）に保存される。
+Backend はこれを読み、アクセストークンの期限切れ（約 1 時間）は自分で取り直す。
+
+- **トークンは人に渡さない。** カレンダーへ書き込める権限そのもの。`.gitignore` 済み
+- テスト公開中のアプリでは**リフレッシュトークンが 7 日で失効する**。
+  API が `CALENDAR_NOT_CONNECTED` を返したら、スクリプトをもう一度実行する（Backend の再起動は不要）
+- 使うスコープは `calendar.events` だけ（予定の読み取りと追加）。
+  記事のサンプルなどで作った読み取り専用のトークンは使えないので、作り直す
+- 未連携でもアプリは動く。カレンダーの確認・追加だけが「未連携」と表示される
+
 ## 注意
 
 - Web から取得した内容は Untrusted Data。`ToolResult.external=True` を付ける
