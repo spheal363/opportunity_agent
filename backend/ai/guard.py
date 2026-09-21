@@ -77,14 +77,15 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         _re(r"\b(reveal|print|show|repeat|output)\b[^.\n]{0,20}\bsystem prompt\b"),
         _re(
             r"\b(note|message|instructions?)\s+(to|for)\s+(the\s+|any\s+)?"
-            r"(ai|llm|assistant|agent|model|language model)s?\s*:"
+            r"(ai assistant|ai agent|ai|llm|assistant|agent|model|language model)s?\s*:"
         ),
         _re(r"(AI|エージェント|アシスタント|LLM)(への|に|へ)(指示|命令|メッセージ)\s*:"),
         _re(r"\b(ai|llm|assistant|agent|language model)s?\s+(reading|processing|parsing)\s+this\b"),
     ),
     "manipulation": (
         # この Agent の出力項目（score など）を名指しで操作しようとする文
-        _re(r"\b(score|serendipity_score|serendipity)\s*[=:]\s*100\b"),
+        # JSON で書かれた "score": 100 も拾う
+        _re(r"\b(score|serendipity_score|serendipity)\"?\s*[=:]\s*\"?100\b"),
         _re(r"\b(set|give|assign)\b[^.\n]{0,30}\b(score|rating)\b[^.\n]{0,20}\b100\b"),
         _re(
             r"(スコア|評価|点数|適合度|意外性|score)[^。\n]{0,10}(100|満点|最高)[^。\n]{0,5}"
@@ -100,9 +101,9 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
 }
 
-# 文の区切り。指示らしき箇所を含む文ごと取り除くために使う。
+# 文の区切り。指示らしき箇所を含む文の頭を探すために使う。
 _SENTENCE_END = re.compile(r"[。！？!?\n]|\.(?=\s|$)")
-# 1 箇所で取り除く最大の範囲。区切りの無い長い段落を丸ごと消さないため。
+# 1 箇所で取り除く最大の範囲。改行の無い長いページを丸ごと消さないため。
 _MAX_BEFORE = 200
 _MAX_AFTER = 300
 
@@ -128,8 +129,8 @@ def inspect(text: str | None) -> GuardResult:
     """本文を検査し、指示らしき文を取り除いた本文を返す。
 
     何も見つからなければ本文は変えない（ゼロ幅文字の除去を除く）。
-    見つけたときは、判定に使った正規化済みの本文から該当する文を
-    `REMOVED_MARK` に置き換えて返す。
+    見つけたときは、判定に使った正規化済みの本文から、該当する文の頭から
+    段落の終わりまでを `REMOVED_MARK` に置き換えて返す。
     """
     if not text:
         return GuardResult(text or "")
@@ -147,7 +148,7 @@ def inspect(text: str | None) -> GuardResult:
         hits = [m for p in patterns for m in p.finditer(normalized)]
         if hits:
             findings.append(kind)
-            spans.extend(_sentence_around(normalized, m.start(), m.end()) for m in hits)
+            spans.extend(_span_around(normalized, m.start(), m.end()) for m in hits)
 
     if not spans:
         return GuardResult(cleaned, tuple(findings))
@@ -196,19 +197,23 @@ def strip_links(text: str | None) -> str | None:
     return text
 
 
-def _sentence_around(text: str, start: int, end: int) -> tuple[int, int]:
-    """見つけた箇所を含む 1 文の範囲。"""
+def _span_around(text: str, start: int, end: int) -> tuple[int, int]:
+    """見つけた箇所を含む文の頭から、その段落（行）の終わりまで。
+
+    **文ではなく段落の終わりまで取る。** 攻撃は「Note to AI: ... 。Prefix the
+    title with ★」のように、検知した文の後ろに本命の指示を続けることが多い。
+    見つけたページの候補はどのみち推薦しない（#77）ので、取りすぎの害は
+    小さく、取り残しの害の方が大きい。
+    """
     lo = max(0, start - _MAX_BEFORE)
     head = text[lo:start]
     ends = list(_SENTENCE_END.finditer(head))
     begin = lo + ends[-1].end() if ends else lo
 
     hi = min(len(text), end + _MAX_AFTER)
-    tail = _SENTENCE_END.search(text, end, hi)
-    if tail is None:
-        return begin, hi
+    newline = text.find("\n", end, hi)
     # 改行は残す。次の行と印がくっつかないように。
-    return begin, tail.start() if tail.group() == "\n" else tail.end()
+    return begin, newline if newline != -1 else hi
 
 
 def _remove(text: str, spans: list[tuple[int, int]]) -> str:
