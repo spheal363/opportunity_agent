@@ -10,6 +10,7 @@ CHEAP を使わない**。
 
 from datetime import date
 
+from ai import evidence
 from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
@@ -55,7 +56,16 @@ def extract_opportunity(
         tier=tier,
         max_tokens=EXTRACTION_MAX_TOKENS,
     )
-    return result.data.to_utc()
+
+    # **Schema の検査とは別のこと。** あちらは「区分が正しく付いた場合に
+    # 整合性を保つ」だけで、区分自体が誤っていれば何も防げない。
+    # ここでは**実際に渡した入力の文字列**と突き合わせる。
+    item = evidence.ground_deadline_kind(result.data, content)
+    notes = evidence.check(item, content)
+    if notes:
+        # ページ本文は Log へ出さない。指摘の種類だけ残す。
+        logger.info("extraction.evidence url=%s notes=%s", source_url, "; ".join(notes))
+    return item.to_utc()
 
 
 def extract_many(

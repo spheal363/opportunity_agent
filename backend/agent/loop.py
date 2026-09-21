@@ -582,6 +582,10 @@ def _drop_before_evaluation(
         if status is availability.Availability.CLOSED:
             _set_availability(row, status, reason, source=None)
             closed += 1
+            # **区分を確認できていない旧い行は、別に数える。**
+            # 確認済みのものと同じ確かさで扱われていないかを後から見るため。
+            if row.deadline_kind is None:
+                cost.record_dropped("closed_by_date_unclassified")
             continue
         # 閉じないが理由が付いた場合（早割の期限だった等）も残す。
         # **理由を捨てると、なぜ受付中扱いなのかが後から読めない。**

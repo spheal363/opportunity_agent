@@ -294,3 +294,94 @@ def test_the_isct_case_keeps_the_information_it_should():
     assert item.eligibility
     status, _ = _avail(item)
     assert status is availability.Availability.CLOSED
+
+
+# --- 区分が誤っていれば防げない ---------------------------------------------
+#
+# **Schema の検査は「区分が正しく付いた場合に整合性を保つ」だけ。**
+# ここを取り違えると、防げていないものを防げたと読んでしまう。
+
+
+def test_schema_cannot_stop_a_fabricated_time_when_the_flag_is_wrong():
+    """`is_date_only=false` と申告されれば、時刻はそのまま残る。
+
+    **区分もモデルの出力なので、Schema では防げない。**
+    """
+    item = _o(start_at=datetime(2026, 10, 7, 9, 0, tzinfo=JST), start_at_is_date_only=False)
+    assert item.start_at.hour == 9  # 防げていない
+
+
+def test_schema_cannot_stop_a_wrong_free_marking():
+    """`cost_kind=free` と誤って申告されれば、0 円は残る。"""
+    item = _o(cost=0, cost_kind=CostKind.FREE)
+    assert item.cost == 0  # 防げていない
+
+
+def test_source_check_catches_the_fabricated_time():
+    """入力と突き合わせれば気づける。**Schema とは別の手当て。**"""
+    from ai import evidence
+
+    page = "開催日 10月7日（水）　会場 九段会館テラス"
+    item = _o(start_at=datetime(2026, 10, 7, 9, 0, tzinfo=JST), start_at_is_date_only=False)
+
+    assert "start_at の時刻 09:00 が入力に見つかりません" in evidence.check(item, page)
+
+
+def test_unfounded_deadline_kind_is_downgraded_not_dropped():
+    """根拠が入力に無い区分は `unknown` へ落とす。**候補は落とさない。**"""
+    from ai import evidence
+
+    page = "早割り ¥8,000 (9/30迄)"
+    item = _o(
+        deadline=datetime(2026, 9, 30, tzinfo=JST),
+        deadline_kind=DeadlineKind.APPLICATION,
+        deadline_quote="応募締切 9月30日",  # 入力に無い
+    )
+    grounded = evidence.ground_deadline_kind(item, page)
+
+    assert grounded.deadline_kind is DeadlineKind.UNKNOWN
+    status, _ = _avail(grounded, now=datetime(2026, 10, 5, tzinfo=UTC))
+    assert availability.is_actionable(status) is True
+
+
+def test_a_quote_that_is_in_the_source_is_kept():
+    """**全角・半角の違いで「書かれていない」と誤判定しない。**"""
+    from ai import evidence
+
+    page = "応募締め切り：２０２６年８月２１日"
+    item = _o(
+        deadline=datetime(2026, 8, 21, tzinfo=JST),
+        deadline_kind=DeadlineKind.SPEAKER,
+        deadline_quote="応募締め切り：2026年8月21日",
+    )
+    assert evidence.ground_deadline_kind(item, page).deadline_kind is DeadlineKind.SPEAKER
+
+
+# --- 旧データを確認済みと同じ確かさで扱わない -------------------------------
+
+
+def test_legacy_rows_say_that_the_kind_is_unconfirmed():
+    """旧い行も閉じるが、**確かさが違うことを文面で示す。**
+
+    旧 prompt が申込締切を指示していたことは、保存された値が申込締切で
+    ある保証にはならない。実際に早割の取り違えが観測されている。
+    """
+    _, reason = availability.from_dates(
+        opportunity_type="event",
+        deadline=datetime(2026, 2, 9, tzinfo=UTC),
+        end_at=None,
+        now=NOW,
+        deadline_kind=None,
+    )
+    assert "種類は未確認" in reason
+
+
+def test_confirmed_rows_do_not_carry_the_unconfirmed_note():
+    _, reason = availability.from_dates(
+        opportunity_type="event",
+        deadline=datetime(2026, 2, 9, tzinfo=UTC),
+        end_at=None,
+        now=NOW,
+        deadline_kind=DeadlineKind.APPLICATION,
+    )
+    assert "未確認" not in reason

@@ -87,7 +87,7 @@ def from_dates(
     if deadline is not None and _is_past(deadline, now, date_only=deadline_is_date_only):
         gating, reason = _deadline_gates_action(deadline_kind)
         if gating:
-            return Availability.CLOSED, "申込の締切が過ぎています"
+            return Availability.CLOSED, reason or "申込の締切が過ぎています"
         # 過ぎていても参加はできる締切。**閉じる根拠にしない。**
         return Availability.UNKNOWN, reason
 
@@ -114,8 +114,15 @@ def _is_past(deadline: datetime, now: datetime, *, date_only: bool) -> bool:
 def _deadline_gates_action(deadline_kind: str | None) -> tuple[bool, str | None]:
     """その締切が、推薦する行動を閉ざすものか。"""
     if deadline_kind is None:
-        # 区分を持たなかった頃の行。当時の前提（申込締切）のまま扱う。
-        return True, None
+        # 区分を持たなかった頃の行。
+        #
+        # **当時の prompt がそう指示していたことは、保存された値が申込締切で
+        # ある保証にはならない。** 実際、同じ設定で早割の期限を締切として
+        # 拾った例が観測されている。
+        #
+        # それでも閉じるのは、閉じないと期限切れが推薦に戻るため。
+        # **確かさが違うことを理由の文面で示し、確認済みのものと混ぜない。**
+        return True, "申込の締切が過ぎています（**締切の種類は未確認**）"
     try:
         kind = DeadlineKind(deadline_kind)
     except ValueError:
