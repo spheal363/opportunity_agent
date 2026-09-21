@@ -494,3 +494,108 @@ def test_unknown_availability_is_still_recommended(db, state, real_mode, monkeyp
     row = db.get(loop.Opportunity, "u1")
     assert row.availability == "unknown"
     assert row.availability_reason
+
+
+# --- 検証が締切の区分を見ずに閉じないこと（PR #10 の指摘）------------------
+#
+# 検証はページ文言だけで open / closed を決めている。渡しているのは
+# `_as_dict` の中身で、`deadline_kind` は入っていない。
+#
+# そのため、取り消し線つきの「応募を締め切りました」（登壇者募集）を拾って
+# `closed` を返しうる。**抽出段階で unknown に倒したはずの判断が、
+# 最後の一歩で誤って閉じられる。**
+
+
+def test_verification_cannot_close_on_a_non_participation_deadline(
+    db, state, real_mode, monkeypatch
+):
+    """**早割の期限しか分かっていないのに、検証の closed で閉じない。**"""
+    from datetime import UTC, datetime
+
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="closed", availability_reason="応募を締め切りました"),
+    )
+    state.ranked_ids = [
+        _add(
+            db,
+            "early",
+            deadline=datetime(2026, 1, 1, tzinfo=UTC),
+            deadline_kind="early_bird",
+        )
+    ]
+    loop._verify_and_finalize(db, state)
+
+    row = db.get(loop.Opportunity, "early")
+    assert row.availability == "unknown"
+    assert "参加の締切かどうかを確認できませんでした" in row.availability_reason
+    # **候補としては残る。**
+    assert state.selected_ids == ["early"]
+
+
+def test_verification_still_closes_a_confirmed_participation_deadline(
+    db, state, real_mode, monkeypatch
+):
+    """**閉じるべきものは閉じる。** 緩めすぎない。"""
+    from datetime import UTC, datetime
+
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="closed", availability_reason="受付を終了しました"),
+    )
+    state.ranked_ids = [
+        _add(
+            db,
+            "app",
+            deadline=datetime(2026, 1, 1, tzinfo=UTC),
+            deadline_kind="application",
+        )
+    ]
+    loop._verify_and_finalize(db, state)
+
+    row = db.get(loop.Opportunity, "app")
+    assert row.availability == "closed"
+    assert row.availability_reason == "受付を終了しました"
+
+
+def test_verification_can_still_close_when_there_is_no_deadline(db, state, real_mode, monkeypatch):
+    """締切そのものが無いときは、検証の判断をそのまま採る。
+
+    **見張るのは「参加の締切ではない締切で閉じようとする」場合だけ。**
+    """
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="closed", availability_reason="開催は終了しました"),
+    )
+    state.ranked_ids = [_add(db, "nodl")]
+    loop._verify_and_finalize(db, state)
+
+    assert db.get(loop.Opportunity, "nodl").availability == "closed"
+
+
+def test_verification_opening_is_never_second_guessed(db, state, real_mode, monkeypatch):
+    """**開ける向きは触らない。**
+
+    検証はページを読んでいるので、open の根拠は抽出時より確かなことが多い。
+    """
+    from datetime import UTC, datetime
+
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="open", availability_reason="エントリー受付中"),
+    )
+    state.ranked_ids = [
+        _add(
+            db,
+            "open1",
+            deadline=datetime(2026, 1, 1, tzinfo=UTC),
+            deadline_kind="early_bird",
+        )
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert db.get(loop.Opportunity, "open1").availability == "open"

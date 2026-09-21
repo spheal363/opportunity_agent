@@ -271,3 +271,62 @@ def test_page_reader_counts_attempts_and_successes(monkeypatch):
     out = tracker.to_dict()
     assert out["extract_calls"] == 2
     assert out["extract_successes"] == 1
+
+
+# --- 不正な URL で巻き添えにしない（PR #10 の指摘）--------------------------
+#
+# **URL は LLM がページ本文から読み取った値。** ページの書き手が仕込める。
+# 制御文字を含む URL 1 件で、正常な候補まで取得できなくなっていた。
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://ok.jp/a\r\nX-Injected: 1",
+        "http://ok.jp/a\nX",
+        "http://ok.jp/a\tb",
+        "http://ok.jp/a b",
+        "http://ok.jp/a\x00b",
+        "http://ok.jp/a\x7fb",
+    ],
+)
+def test_a_url_with_control_characters_is_rejected(url):
+    """**根本はここで落とす。** 取得経路が増えても効く。"""
+    assert is_fetchable(url) is False
+
+
+def test_one_malformed_url_does_not_take_the_others_down():
+    """**1 件の不正な URL で、正常な候補まで捨てない。**
+
+    Jina は URL をパスに連結するので、漏れると `httpx.InvalidURL` が飛ぶ。
+    これは `httpx.HTTPError` の**サブクラスではない**ため、以前は
+    `except httpx.HTTPError` で拾えず、fetch 全体が落ちていた。
+    """
+    assert issubclass(httpx.InvalidURL, httpx.HTTPError) is False
+
+    urls = ["https://good1.jp/a", "http://ok.jp/a\r\nX", "https://good2.jp/b"]
+    pages, failed = _jina(lambda r: _ok("https://good1.jp/a")).fetch(urls)
+
+    assert len(pages) == 2, "正常な候補まで落ちている"
+    assert failed == ["http://ok.jp/a\r\nX"]
+
+
+def test_the_tool_does_not_leak_the_exception(monkeypatch):
+    """`read_page` の外へ例外を漏らさない。
+
+    漏れると `agent/loop.py` の `_with_bodies` は `except SearchError` しか
+    見ていないので、**run 全体が failed になる。**
+    """
+    from tools import registry
+
+    class Fake:
+        name = "fake"
+
+        def fetch(self, urls):
+            return [PageContent(url=u, title="t", content="c") for u in urls], []
+
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
+    out = registry.invoke("read_page", url=["https://ok.jp/a", "http://ng.jp/a\r\nX"])
+
+    assert [p.url for p in out.data["pages"]] == ["https://ok.jp/a"]
+    assert out.data["failed"] == ["http://ng.jp/a\r\nX"]

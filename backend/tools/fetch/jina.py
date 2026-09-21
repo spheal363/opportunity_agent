@@ -91,6 +91,14 @@ class JinaReaderFetcher(PageFetcher):
 
         try:
             res = self._client.get(JINA_READER_BASE + url, headers=headers)
+        except httpx.InvalidURL:
+            # **URL の形が不正。** `tools/urlcheck.py` で落としているはずだが、
+            # ここは URL をパスに連結するので、漏れると `HTTPError` では
+            # 拾えない例外（`InvalidURL` は別系統）が飛ぶ。
+            #
+            # **1 件で他の候補まで巻き添えにしない。**
+            logger.warning("fetch.jina.invalid_url")
+            return None
         except httpx.HTTPError as exc:
             # 例外メッセージに URL とヘッダを含めない（Secret 混入を防ぐ）
             logger.warning("fetch.jina.error kind=%s", type(exc).__name__)

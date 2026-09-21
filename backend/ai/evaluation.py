@@ -78,7 +78,11 @@ def _try_jev(
         )
     except JevError as exc:
         # 1 件の失敗で評価全体を止めない。LLM へ戻して続ける。
-        cost.record_jev_low_confidence()
+        #
+        # **低確信とは別に数える。** これは「確信が持てなかった」のではなく
+        # 「呼べなかった」。同じ欄に積むと、A/B 比較で見たいフォールバック率に
+        # 接続エラーが紛れ込む。
+        cost.record_jev_hard_failure()
         logger.warning("evaluation.jev_failed reason=%s", exc)
         return None
 

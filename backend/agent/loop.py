@@ -31,7 +31,7 @@ from ai.jev.prefilter import rank_for_reading
 from ai.llm import LLMError
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.evaluation import EvaluationOutput
-from ai.schemas.extraction import ExtractedOpportunity
+from ai.schemas.extraction import GATING_DEADLINES, ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
 from ai.search_plan import plan_search
 from ai.verification import verify_with_page
@@ -51,6 +51,9 @@ logger = get_logger(__name__)
 # 増やすほど候補は増えるが、1 件ごとに LLM 抽出が走るので時間とコストが伸びる。
 # 削減は Search Cost Optimization（P2）の範囲。
 MAX_RESULTS_PER_DIRECTION = 5
+
+# 参加の締切だと確認できた区分。これ以外は「閉じる根拠」にしない。
+_GATING_KINDS = frozenset({k.value for k in GATING_DEADLINES})
 
 # ユーザーが自分で決めた状態。Agent が再探索で上書きしない。
 # status は「ユーザー操作」由来の列（.claude/rules/architecture.md）。
@@ -624,6 +627,39 @@ def _drop_before_evaluation(
     return kept
 
 
+def _verified_availability(row: Opportunity, out) -> tuple[str, str | None]:
+    """検証の結果を、締切の区分と突き合わせてから採る。
+
+    **検証はページ文言だけで open / closed を決めている。** 渡しているのは
+    `_as_dict` の中身（title / start_at / deadline / location / cost）で、
+    `deadline_kind` は入っていない。
+
+    そのため、取り消し線つきの「応募を締め切りました」（登壇者募集）を拾って
+    `closed` を返しうる。**抽出段階で `unknown` に倒したはずの判断が、
+    最後の一歩で誤って閉じられる。**
+
+    閉じる向きだけを見張る。**開ける向きは触らない**（検証はページを読んで
+    いるので、`open` の根拠は抽出時より確かなことが多い）。
+    """
+    if out.availability != availability.Availability.CLOSED:
+        return out.availability, out.availability_reason
+
+    # 日付から閉じられるなら、検証の closed と食い違わない。そのまま採る。
+    from_dates, _ = availability.for_extracted(row)
+    if from_dates is availability.Availability.CLOSED:
+        return out.availability, out.availability_reason
+
+    # 日付では閉じられない。**参加の締切だと確認できた区分が無いのに
+    # 閉じようとしている。** 安全側へ倒す。
+    if row.deadline is not None and row.deadline_kind not in _GATING_KINDS:
+        return (
+            availability.Availability.UNKNOWN,
+            "公式ページに終了を示す記述がありましたが、"
+            "それが参加の締切かどうかを確認できませんでした",
+        )
+    return out.availability, out.availability_reason
+
+
 def _set_availability(
     row: Opportunity, status: str, reason: str | None, *, source: str | None
 ) -> None:
@@ -701,12 +737,8 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
         if out.application_url:
             row.application_url = out.application_url
             row.url_is_source_only = False
-        _set_availability(
-            row,
-            out.availability,
-            out.availability_reason,
-            source=row.url if out.verified else None,
-        )
+        status, reason = _verified_availability(row, out)
+        _set_availability(row, status, reason, source=row.url if out.verified else None)
         db.commit()
 
         _log_verification(db, state, row, out)

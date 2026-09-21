@@ -329,3 +329,36 @@ def test_state_is_japanese_not_translated():
 
     assert "AI Agent を作れるエンジニアになりたい" in seen["state"]
     assert "AI Agent Hackathon 2026" in seen["state"]
+
+
+def test_a_hard_failure_is_not_counted_as_low_confidence():
+    """**「確信が持てなかった」と「呼べなかった」を混ぜない。**
+
+    A/B 比較で見たいのは「Jev の確信度が低くて LLM へ回った率」で、
+    それが C の費用削減幅を決める。接続エラーが紛れ込むと読めない。
+    """
+    with cost.track() as tracker:
+        with cost.step("evaluation"):
+            cost.record_jev_hard_failure()
+
+    jev = tracker.by_step["evaluation"].jev
+    assert jev.hard_failures == 1
+    assert jev.low_confidence_fallbacks == 0
+
+
+def test_low_confidence_still_lands_in_its_own_field():
+    body = _answer_body()
+    body["answers"]["serendipity"]["confidence"] = 0.1
+
+    with cost.track() as tracker:
+        with cost.step("evaluation"):
+            evaluate_with_jev(
+                goal_summary="g",
+                interest_connections=[],
+                opportunity=OPPORTUNITY,
+                client=_client(lambda r: httpx.Response(200, json=body)),
+            )
+
+    jev = tracker.by_step["evaluation"].jev
+    assert jev.low_confidence_fallbacks == 1
+    assert jev.hard_failures == 0

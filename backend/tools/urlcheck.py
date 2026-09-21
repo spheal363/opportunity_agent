@@ -19,6 +19,17 @@ ALLOWED_SCHEMES = frozenset({"http", "https"})
 BLOCKED_HOSTS = frozenset({"localhost", "localhost.localdomain", "metadata.google.internal"})
 
 
+# URL に入っていてはいけない文字。
+#
+# **ここで落とすのが根本。** 制御文字を含む URL を通すと、それを
+# パスに埋める取得経路（Jina Reader）で `httpx.InvalidURL` が飛び、
+# **1 件の不正な URL で他の候補まで巻き添えになる。**
+#
+# URL は LLM がページ本文から読み取った値で、**ページの書き手が
+# 仕込める。** 取得経路が増えても効くよう、判定の側で落とす。
+_FORBIDDEN = frozenset({chr(c) for c in range(0x21)} | {chr(0x7F)})
+
+
 def is_fetchable(url: str) -> bool:
     """取りに行ってよい URL か。
 
@@ -33,6 +44,10 @@ def is_fetchable(url: str) -> bool:
     **名前解決はしない。** 内部 IP へ解決されるホスト名は通る。
     完全な対策にはならず、明らかなものを落とすだけ。
     """
+    if any(c in _FORBIDDEN for c in url):
+        # 制御文字・空白。まっとうな URL には現れない。
+        return False
+
     try:
         parsed = urlparse(url)
     except ValueError:

@@ -200,7 +200,10 @@ def test_evaluator_failure_falls_back_instead_of_dropping(monkeypatch):
             out = ev.evaluate(goal_summary="g", interest_connections=[], opportunity={})
 
     assert out.score == 1
-    assert tracker.by_step["evaluation"].jev.low_confidence_fallbacks == 1
+    jev = tracker.by_step["evaluation"].jev
+    # **低確信とは別の欄。** 「確信が持てなかった」のではなく「呼べなかった」。
+    assert jev.hard_failures == 1
+    assert jev.low_confidence_fallbacks == 0
 
 
 def test_the_evaluator_can_be_forced_back_to_llm(monkeypatch):

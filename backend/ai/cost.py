@@ -75,7 +75,14 @@ class JevUsage:
     usd: float = 0.0
     # confidence が閾値を下回り、既存 LLM へ回した回数。
     # **その費用は LLM 側の欄に乗る。** Jev に替えた分だけ安くなる、とは限らない。
+    #
+    # **呼べなかった回数はここに入れない。** 混ぜると、A/B 比較で見たい
+    # 「Jev の確信度が低くて LLM へ回った率」に接続エラーが紛れ込む。
+    # フォールバック率は C の費用削減幅を決める値なので、濁らせない。
     low_confidence_fallbacks: int = 0
+    # Jev を呼べなかった・応答が使えなかった回数（timeout / HTTP / 形式異常）。
+    # こちらも LLM へ回るが、**原因が違う。**
+    hard_failures: int = 0
     # 実際に応答を返したモデルのバージョン。alias（jev-latest）は解決後の値が返る。
     models: dict[str, int] = field(default_factory=dict)
 
@@ -287,6 +294,11 @@ class CostTracker:
     def record_jev_low_confidence(self) -> None:
         with self._lock:
             self._slot(current_step()).jev.low_confidence_fallbacks += 1
+
+    def record_jev_hard_failure(self) -> None:
+        """**確信が持てなかったのではなく、呼べなかった。** 別に数える。"""
+        with self._lock:
+            self._slot(current_step()).jev.hard_failures += 1
 
     def record_elapsed(self, step: str, ms: int) -> None:
         with self._lock:
@@ -502,3 +514,7 @@ def record_evaluator(evaluator: str, model: str | None = None) -> None:
 
 def record_extract_success(n: int = 1) -> None:
     _to_tracker("record_extract_success", n)
+
+
+def record_jev_hard_failure() -> None:
+    _to_tracker("record_jev_hard_failure")
