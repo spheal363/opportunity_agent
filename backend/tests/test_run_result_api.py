@@ -165,3 +165,29 @@ def test_availability_is_exposed(client, db):
     items = client.get("/api/opportunities").json()["data"]
     assert items[0]["availability"] == "closed"
     assert items[0]["availability_reason"] == "申込の締切が過ぎています"
+
+
+def test_a_failed_run_returns_the_reason(client, db):
+    """**失敗したときこそ理由が要る。**
+
+    「記録されていません」だけでは、設定が足りないのか、探しても
+    見つからなかったのかが分からない。
+    """
+    from models import AgentRun
+    from schemas.agent import AgentRunStatus
+
+    db.add(
+        AgentRun(
+            run_id="run_failed",
+            user_id="user_001",
+            status=AgentRunStatus.FAILED,
+            error="探索に必要な設定が足りません: SERPER_API_KEY",
+        )
+    )
+    db.commit()
+
+    body = client.get("/api/agent/runs/run_failed/result").json()["data"]
+
+    assert body["recorded"] is False
+    assert body["status"] == "failed"
+    assert "SERPER_API_KEY" in body["error"]

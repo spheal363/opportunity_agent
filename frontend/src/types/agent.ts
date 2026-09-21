@@ -63,4 +63,6 @@ export type AgentRunResult = {
   selected: Opportunity[];
   /** 3 件に満たなかった理由 */
   shortfall_reason: string | null;
+  /** 失敗した理由。**「記録されていません」だけでは原因が分からない。** */
+  error: string | null;
 };

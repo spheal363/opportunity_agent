@@ -46,7 +46,9 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
 
     ids = run.selected_ids
     if ids is None:
-        return AgentRunResult(run_id=run_id, status=run.status, recorded=False)
+        # **失敗したときこそ理由が要る。** 「記録されていません」だけでは、
+        # 設定が足りないのか、探しても見つからなかったのかが分からない。
+        return AgentRunResult(run_id=run_id, status=run.status, recorded=False, error=run.error)
 
     rows = {
         r.opportunity_id: r
@@ -62,4 +64,6 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
         recorded=True,
         selected=selected,
         shortfall_reason=run.shortfall_reason,
+        # **失敗の理由を隠さない。** 設定不足なら直せる。
+        error=run.error,
     )

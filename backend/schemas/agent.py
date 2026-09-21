@@ -64,6 +64,9 @@ class AgentRunResult(BaseModel):
     selected: list[OpportunitySummary] = Field(default_factory=list)
     # 3 件に満たなかった理由
     shortfall_reason: str | None = None
+    # **失敗した理由。** 「記録されていません」だけでは原因が分からない。
+    # 設定不足（鍵が無いなど）と、探しても見つからなかったことは別。
+    error: str | None = None
 
 
 class AgentLogEntry(BaseModel):

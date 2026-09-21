@@ -165,6 +165,13 @@ export function DetailDialog() {
           ) : null}
           <h3 className={H3}>参加条件</h3>
           <p className="text-[14px]">{item.eligibility ?? '記載なし'}</p>
+          {/* **条件が取れても、本人が適格とは限らない。** プロフィールとの
+              照合は行っていない。取れていない場合も「無い」ではない。 */}
+          <p className={`${MUTED} text-[13px]`}>
+            {item.eligibility
+              ? 'あなたが条件を満たすかは照合していません。ご自身で確認してください。'
+              : '参加条件は読み取れていません。**無い**という意味ではありません。'}
+          </p>
 
           <div className="flex gap-[9px] my-[20px]">
             {(['like', 'dislike'] as const).map((value) => (

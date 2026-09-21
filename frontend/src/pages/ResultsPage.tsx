@@ -65,6 +65,12 @@ export default function ResultsPage() {
       <ErrorMessage error={error} />
 
       {/* 3 件に満たなかった理由を隠さない。期限切れで埋めるより正直に伝える。 */}
+      {/* **失敗の理由を隠さない。** 設定不足なら直せる。 */}
+      {result?.error ? (
+        <p role="alert" className="text-[14px] text-[#9a5c4c] my-[12px]">
+          探索に失敗しました：{result.error}
+        </p>
+      ) : null}
       {result?.shortfall_reason ? (
         <p role="status">{result.shortfall_reason}</p>
       ) : null}

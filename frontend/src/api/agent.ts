@@ -37,6 +37,7 @@ export async function fetchAgentRunResult(runId: string): Promise<AgentRunResult
       recorded: true,
       selected: MOCK_OPPORTUNITY_SUMMARIES,
       shortfall_reason: null,
+      error: null,
     };
   }
   return api.get<AgentRunResult>(`/agent/runs/${runId}/result`);
