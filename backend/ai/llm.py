@@ -11,7 +11,7 @@ AI の誤出力で Agent が止まるのを防ぐ（自由文のまま次の処�
   - OrcaRouter への接続とエラー分類   ai/orcarouter.py（#14）
   - モデル振り分けの方針とコスト記録   #26
   - 別モデルへの Fallback              #25
-  - Prompt Injection の検知と無害化    #27
+  - Prompt Injection の検知と無害化    ai/guard.py（#27）
 """
 
 from __future__ import annotations

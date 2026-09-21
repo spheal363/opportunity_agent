@@ -104,7 +104,7 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Web Search | 実装済み（Tavily。provider 差し替え可能） |
 | ページ取得 | 実装済み（Tavily extract。一部失敗しても残りを返す） |
 | Opportunity 構造化 | 実装済み（LLM 抽出。日時は tz 必須、不明な項目は null） |
-| Prompt Injection 対策 | 未実装（外部データを囲む仕組みのみ。cheap モデルは突破される。#27 で対応） |
+| Prompt Injection 対策 | 実装済み（LLM の手前で指示らしき文を除去し、疑わしいページは推薦しない。実測と限界は `docs/security.md`） |
 | Retry / Fallback | 実装済み（tier ごとに Retry し、駄目なら上の tier へ Fallback） |
 
 Frontend 側は `VITE_USE_MOCK=true` にすると Backend なしで画面を作れる。
