@@ -31,7 +31,8 @@ SYSTEM = (
     '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
     '  "deadline_kind": str,   // application / registration / early_bird /\n'
     "                          // speaker / other / unknown\n"
-    '  "deadline_quote": str|null,     // deadline の根拠にしたページ上の表記\n'
+    '  "deadline_quote": str|null,     // deadline の日付そのものの表記\n'
+    '  "deadline_context": str|null,   // 何の期限か分かる周辺の一文（原文のまま）\n'
     '  "start_at_is_date_only": bool,  // 出典に時刻が無く日付だけなら true\n'
     '  "end_at_is_date_only": bool,\n'
     '  "deadline_is_date_only": bool\n'
@@ -68,8 +69,15 @@ SYSTEM = (
     "早割の期限を申込締切として入れてはならない。"
     "参加・応募の締切が読み取れないなら deadline は null、"
     'deadline_kind は "unknown" にする。\n'
-    "   deadline_quote には、その判断の根拠にしたページ上の表記を"
-    "そのまま短く写す（例:「応募締め切り 2026年8月21日」）。\n"
+    "   deadline_quote には、その日付の表記をそのまま写す（例:「2026年8月21日」）。\n"
+    "   deadline_context には、**何の期限か分かる周辺の一文**を"
+    "**原文のまま**写す。日付だけを写してはならない。\n"
+    "     正:「応募締め切り：2026年8月21日(金)17時（日本時間）」\n"
+    "     正:「定価2万円のチケットの早割価格での提供となります。（9月30日まで）」\n"
+    "     誤:「9月30日まで」（何の期限か分からない）\n"
+    "   **原文に無い文を書いてはならない。** 要約も言い換えもしない。"
+    "該当する一文が見つからないなら、deadline は null、"
+    'deadline_kind は "unknown" にする。\n'
     "8. **取り消し線や「募集を締め切りました」「延長しました」は、"
     "どの募集に付いているかを見る。** 登壇者募集が終了していても、"
     "一般参加が受付中のことがある。ページ全体を一括で終了と判断しない。\n"

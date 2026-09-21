@@ -308,3 +308,91 @@ def test_to_dict_is_serialisable():
     json.dumps(d)  # DB へ JSON で入るので落ちないこと
     assert d["by_step"]["extraction"]["usage_records"] == 1
     assert d["final_availability"] == {"open": 2, "unknown": 1}
+
+
+# --- Schema を通らなくても課金記録を残す（#65）------------------------------
+#
+# **応答が返った時点で課金は発生している。** 出力が Schema を通らなくても
+# その呼び出しの費用は消えない。
+
+
+def _usage_with_cost(**overrides):
+    from ai.orcarouter import LLMUsage, ModelTier
+
+    base = {
+        "model": "google/gemini-2.5-flash",
+        "tier": ModelTier.STANDARD,
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "reasoning_tokens": 40,
+        "total_tokens": 150,
+        "latency_ms": 100,
+    }
+    base.update(overrides)
+    return LLMUsage(**base)
+
+
+def test_actual_cost_is_kept_separately_from_the_estimate():
+    """**見積もりと実費を混ぜない。** 単位も出どころも違う。"""
+    with cost.track() as tracker:
+        with cost.step("extraction"):
+            cost.record(_usage_with_cost(cost_usd=0.00654))
+
+    assert tracker.actual_usd == pytest.approx(0.00654)
+    assert tracker.jpy > 0  # 見積もりは別に残る
+
+
+def test_a_response_without_an_actual_cost_is_not_counted_as_zero():
+    """実費が返らなかった応答を費用ゼロとしない。**照会が要る件数として持つ。**"""
+    with cost.track() as tracker:
+        with cost.step("extraction"):
+            cost.record(_usage_with_cost(cost_usd=None))
+
+    assert tracker.actual_usd == 0.0
+    assert tracker.responses_without_actual_cost == 1
+
+
+def test_request_ids_are_kept_for_later_reconciliation():
+    """**捨てると、その run の請求額は二度と確かめられない。**"""
+    with cost.track() as tracker:
+        with cost.step("extraction"):
+            cost.record(_usage_with_cost(request_id="20260921-abc"))
+
+    assert tracker.request_ids == ["20260921-abc"]
+    assert tracker.to_dict()["request_ids"] == ["20260921-abc"]
+
+
+def test_usage_is_recorded_before_schema_validation(monkeypatch):
+    """本番の共通経路でも、Schema 検証の前に記録されること。
+
+    **ここが逆順だと、Schema を通らなかった呼び出しの費用が消える。**
+    """
+    from pydantic import BaseModel
+
+    from ai import llm
+    from ai.orcarouter import LLMResponse
+
+    class Strict(BaseModel):
+        title: str
+
+    class FakeClient:
+        def chat(self, messages, **kwargs):
+            # Schema を通らない出力（title が無い）
+            return LLMResponse(content='{"other": 1}', usage=_usage_with_cost(cost_usd=0.001))
+
+    monkeypatch.setattr(llm, "_sleep", lambda attempt: None)
+    with cost.track() as tracker:
+        with cost.step("extraction"):
+            with pytest.raises(llm.LLMError):
+                llm.generate_structured(
+                    schema=Strict, system="s", user="u", client=FakeClient(), max_attempts=2
+                )
+
+    step = tracker.by_step["extraction"]
+    # STANDARD で 2 回、POWERFUL へ上げてさらに 2 回。**1 論理呼び出しで 4 課金。**
+    # Schema を通らない出力は「作り直せば無料で直る」ものではない。
+    assert step.usage_records == 4, "Schema を通らなかった回の使用量が落ちている"
+    assert step.request_attempts == 4
+    assert step.fallbacks == 1
+    assert step.actual_usd == pytest.approx(0.004)
+    assert tracker.jpy > 0

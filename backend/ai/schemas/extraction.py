@@ -118,8 +118,16 @@ class ExtractedOpportunity(BaseModel):
     # 「登壇者募集は終了、一般参加は受付中」が起きる。
 
     deadline_kind: DeadlineKind = DeadlineKind.UNKNOWN
-    # その締切の根拠になったページ上の表記。**後から人が確かめられるように残す。**
+    # 締切の**日付**そのものの表記。これがあれば「その日付が原文にある」ことは言える。
     deadline_quote: str | None = Field(default=None, max_length=200)
+    # **何の期限か分かる周辺の一文。**
+    #
+    # 日付だけの引用では、区分の根拠にならない。「9月30日まで」は原文に
+    # あっても、それが参加申込の期限なのか早割の期限なのかを示さない。
+    # 実測では、早割の期限を参加申込の期限として分類した。
+    #
+    # 原文のまま写させ、**原文にあることと、区分と矛盾しないこと**を確かめる。
+    deadline_context: str | None = Field(default=None, max_length=400)
     cost_kind: CostKind = CostKind.UNKNOWN
 
     # --- 出典に時刻が書かれていたか ---------------------------------------

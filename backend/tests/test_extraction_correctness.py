@@ -385,3 +385,184 @@ def test_confirmed_rows_do_not_carry_the_unconfirmed_note():
         deadline_kind=DeadlineKind.APPLICATION,
     )
     assert "未確認" not in reason
+
+
+# --- 日付の存在と、期限の意味を分ける --------------------------------------
+#
+# **引用が原文にあることは、分類の根拠にならない。**
+# 「9月30日まで」は原文にあっても、参加申込の期限か早割の期限かを示さない。
+
+# 実測で使った入力の一部（https://www.xsum.jp/gai）。
+XSUM_PAGE = (
+    "早割り\n:   ¥8,000  \n     (9/30迄)\n"
+    "1. 定価2万円のチケットの早割価格での提供となります。（9月30日まで）\n"
+    "5. 10月7日のイベント終了後、会場内で開催するアフターパーティに参加できます。\n"
+    "応募締め切り\n:   ~~2026年8月21日(金)17時（日本時間）~~ 応募を締め切りました\n"
+)
+
+# 実測でモデルが返した出力（1 回目）。**作り変えていない。**
+OBSERVED_MISCLASSIFICATION = {
+    "title": "GenAI/SUM",
+    "type": "event",
+    "deadline": "2026-09-30T23:59:59+09:00",
+    "deadline_kind": "registration",
+    "deadline_quote": "9月30日まで",
+    "deadline_is_date_only": True,
+    "cost": None,
+    "cost_kind": "partially_free",
+}
+
+
+def _grounded(payload: dict, page: str = XSUM_PAGE) -> ExtractedOpportunity:
+    from ai import evidence
+
+    return evidence.ground_deadline_kind(ExtractedOpportunity.model_validate(payload), page)
+
+
+def test_a_quote_without_context_cannot_justify_a_gating_kind():
+    """**実測の出力。** 日付は原文にあるが、何の期限かを示していない。"""
+    item = _grounded(OBSERVED_MISCLASSIFICATION)
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
+
+
+def test_context_from_another_kind_is_rejected():
+    """周辺文が早割の話なら、参加申込の期限とは認めない。"""
+    item = _grounded(
+        {
+            **OBSERVED_MISCLASSIFICATION,
+            "deadline_context": "定価2万円のチケットの早割価格での提供となります。（9月30日まで）",
+        }
+    )
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
+
+
+def test_a_context_the_model_invented_is_rejected():
+    """**原文に無い周辺文は認めない。** 要約も言い換えも一致しない。"""
+    item = _grounded(
+        {
+            **OBSERVED_MISCLASSIFICATION,
+            "deadline_context": "参加申込の締切は9月30日です",  # 原文に無い
+        }
+    )
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
+
+
+def test_a_supported_gating_kind_survives():
+    """**根拠が示されていれば通す。** 一律に疑わない。"""
+    page = "応募締切・募集人数\n\n2026年2月9日（月）、各大学20名程度"
+    item = _grounded(
+        {
+            "title": "合同ハッカソン",
+            "type": "hackathon",
+            "deadline": "2026-02-09T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "application",
+            "deadline_quote": "2026年2月9日（月）",
+            "deadline_context": "応募締切・募集人数\n\n2026年2月9日（月）、各大学20名程度",
+        },
+        page,
+    )
+    assert item.deadline_kind is DeadlineKind.APPLICATION
+
+
+def test_the_same_date_is_not_tied_to_unrelated_text():
+    """**同じ日付が複数箇所にあっても、周辺文で決める。**
+
+    日付の一致だけで結びつけると、どちらの意味にも取れてしまう。
+    """
+    page = "早割価格の申込は9月30日までです。\nアーカイブ視聴の公開は9月30日から始まります。\n"
+    payload = {
+        "title": "t",
+        "type": "event",
+        "deadline": "2026-09-30T00:00:00+09:00",
+        "deadline_is_date_only": True,
+        "deadline_kind": "registration",
+        "deadline_quote": "9月30日",
+    }
+    # 早割の文を根拠にした場合 -> 食い違いとして退ける
+    assert (
+        _grounded(
+            {**payload, "deadline_context": "早割価格の申込は9月30日までです。"}, page
+        ).deadline_kind
+        is DeadlineKind.UNKNOWN
+    )
+    # 参加と無関係な文を根拠にした場合 -> 支える語が無いので退ける
+    assert (
+        _grounded(
+            {**payload, "deadline_context": "アーカイブ視聴の公開は9月30日から始まります。"},
+            page,
+        ).deadline_kind
+        is DeadlineKind.UNKNOWN
+    )
+
+
+# --- 日付が進んだときの誤除外 -----------------------------------------------
+#
+# **9/30 や特定のサイトに反応するルールにしない。** 区分と根拠だけで決める。
+
+AFTER_EARLY_BIRD = datetime(2026, 10, 3, tzinfo=UTC)
+
+
+def test_passing_an_early_bird_date_does_not_close_general_participation():
+    """**これが今回いちばん避けたい誤り。**
+
+    早割の期限を過ぎただけで、参加できるイベントを候補から外さない。
+    """
+    item = _grounded(OBSERVED_MISCLASSIFICATION)
+    status, reason = _avail(item, now=AFTER_EARLY_BIRD)
+
+    assert status is not availability.Availability.CLOSED
+    assert availability.is_actionable(status) is True
+    assert reason  # 理由は残す
+
+
+def test_a_closed_speaker_call_does_not_close_general_participation():
+    item = _o(
+        deadline=datetime(2026, 8, 21, 17, 0, tzinfo=JST),
+        deadline_kind=DeadlineKind.SPEAKER,
+    )
+    status, _ = _avail(item, now=AFTER_EARLY_BIRD)
+    assert status is not availability.Availability.CLOSED
+
+
+def test_a_clear_participation_deadline_closes_after_it_passes():
+    """**閉じるべきものは閉じる。** 緩めすぎない。"""
+    page = "参加申込の締切は2026年10月1日です。"
+    item = _grounded(
+        {
+            "title": "t",
+            "type": "event",
+            "deadline": "2026-10-01T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "registration",
+            "deadline_quote": "2026年10月1日",
+            "deadline_context": "参加申込の締切は2026年10月1日です。",
+        },
+        page,
+    )
+    status, reason = _avail(item, now=AFTER_EARLY_BIRD)
+
+    assert status is availability.Availability.CLOSED
+    assert reason == "申込の締切が過ぎています"
+
+
+def test_a_finished_event_closes_on_its_own_grounds():
+    """**締切とは別の根拠。** 開催が終わっていれば閉じる。"""
+    item = _o(
+        type="event",
+        end_at=datetime(2026, 10, 1, 18, 0, tzinfo=JST),
+        deadline=None,
+    )
+    status, reason = _avail(item, now=AFTER_EARLY_BIRD)
+
+    assert status is availability.Availability.CLOSED
+    assert reason == "開催が終了しています"
+
+
+def test_an_unsupported_kind_keeps_the_candidate_with_a_reason():
+    """**候補を消さない。** 確認できていないと示すだけ。"""
+    item = _grounded(OBSERVED_MISCLASSIFICATION)
+    status, reason = _avail(item, now=AFTER_EARLY_BIRD)
+
+    assert availability.is_actionable(status) is True
+    assert "特定できません" in reason

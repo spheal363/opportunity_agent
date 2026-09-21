@@ -102,6 +102,12 @@ class StepUsage:
     completion_tokens: int = 0
     reasoning_tokens: int = 0
     jpy: float = 0.0
+    # OrcaRouter が返した**実費**（USD）。見積もりとは別に持つ。
+    # `X-OrcaRouter-Include-Cost` を送った呼び出しだけ入る。
+    actual_usd: float = 0.0
+    # 実費を返さなかった応答の数。**費用ゼロではない。** 確定額を引くには
+    # このぶんだけ GET /v1/generation?id= の照会が要る。
+    responses_without_actual_cost: int = 0
     # 工程全体の経過時間。**並列呼び出しの時間の合計ではない。**
     elapsed_ms: int = 0
     calls_by_tier: dict[str, int] = field(default_factory=dict)
@@ -136,6 +142,9 @@ class CostTracker:
     # **比較結果をどの構成で得たか、後から言えるようにする。**
     evaluator: str | None = None
     evaluator_model: str | None = None
+    # 確定額を後から引くための ID（GET /v1/generation?id=）。
+    # **捨てると、その run の請求額は二度と確かめられない。**
+    request_ids: list[str] = field(default_factory=list)
     # どの構成で走ったか。**比較の記録に構成が無いと、後から読めない。**
     search_provider: str | None = None
     page_fetcher: str | None = None
@@ -168,6 +177,16 @@ class CostTracker:
         return merged
 
     @property
+    def actual_usd(self) -> float:
+        """OrcaRouter が返した実費の合計（USD）。**円の見積もりとは別。**"""
+        return sum(u.actual_usd for u in self.by_step.values())
+
+    @property
+    def responses_without_actual_cost(self) -> int:
+        """実費が返らなかった応答の数。**費用ゼロではない。**"""
+        return sum(u.responses_without_actual_cost for u in self.by_step.values())
+
+    @property
     def jev_usd(self) -> float:
         """Jev の見積もり額（ドル）。**円の見積もりとは別。**"""
         return sum(u.jev.usd for u in self.by_step.values())
@@ -187,9 +206,20 @@ class CostTracker:
         return self.by_step.setdefault(step, StepUsage())
 
     def record(self, usage: LLMUsage, *, step: str | None = None) -> None:
+        """**Schema 検証の前に呼ぶ。** 応答が返った時点で課金は発生している。
+
+        出力が Schema を通らなくても、その呼び出しの費用は消えない。
+        """
         with self._lock:
             u = self._slot(step or current_step())
             u.usage_records += 1
+            # **実費と request ID を捨てない。** 後から確定額を引くのに要る。
+            if usage.cost_usd is not None:
+                u.actual_usd += usage.cost_usd
+            else:
+                u.responses_without_actual_cost += 1
+            if usage.request_id:
+                self.request_ids.append(usage.request_id)
             u.prompt_tokens += usage.prompt_tokens
             u.completion_tokens += usage.completion_tokens
             u.reasoning_tokens += usage.reasoning_tokens
@@ -295,6 +325,10 @@ class CostTracker:
                 "search_provider": self.search_provider,
                 "page_fetcher": self.page_fetcher,
                 "search_pipeline": self.search_pipeline,
+                "actual_usd": self.actual_usd,
+                "responses_without_actual_cost": self.responses_without_actual_cost,
+                # **確定額を引くための ID。** 捨てると後から確かめられない。
+                "request_ids": list(self.request_ids),
             }
 
 

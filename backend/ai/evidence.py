@@ -28,7 +28,7 @@ import re
 import unicodedata
 from datetime import datetime
 
-from ai.schemas.extraction import DeadlineKind, ExtractedOpportunity
+from ai.schemas.extraction import GATING_DEADLINES, DeadlineKind, ExtractedOpportunity
 
 
 def normalize(text: str) -> str:
@@ -71,6 +71,68 @@ def time_is_in_source(value: datetime | None, page_content: str) -> bool | None:
     return any(f in body for f in forms)
 
 
+# 区分ごとの手がかりになる語。**サイト名や特定の日付には依存しない。**
+#
+# ここに挙げるのは「その語があればその区分らしい」という手がかりであって、
+# 区分の定義ではない。語が見つからないことは、区分が誤っている証拠では
+# なく、**根拠が示されていない**ということ。
+_KIND_MARKERS: dict[DeadlineKind, tuple[str, ...]] = {
+    DeadlineKind.APPLICATION: ("応募", "申込", "申し込み", "エントリー", "募集締切", "受付"),
+    DeadlineKind.REGISTRATION: ("参加登録", "申込", "申し込み", "登録", "受付", "チケット"),
+    DeadlineKind.EARLY_BIRD: ("早割", "早期割引", "早期申込", "先行販売", "先行予約"),
+    DeadlineKind.SPEAKER: ("登壇", "発表者", "スピーカー", "出展", "ピッチ", "講演"),
+}
+
+# **他の区分にしか出ない語。** claimed kind と食い違えば、分類を疑う。
+_EXCLUSIVE_MARKERS: dict[DeadlineKind, tuple[str, ...]] = {
+    DeadlineKind.EARLY_BIRD: ("早割", "早期割引", "先行販売", "先行予約"),
+    DeadlineKind.SPEAKER: ("登壇", "発表者", "スピーカー", "出展", "ピッチ"),
+}
+
+
+def context_is_in_source(context: str | None, page_content: str) -> bool:
+    """周辺文が原文にそのままあるか。
+
+    **モデルが周辺文を補っていないかを見る。** 要約や言い換えが入れば一致しない。
+    """
+    if not context:
+        return False
+    return normalize(context) in normalize(page_content)
+
+
+def context_supports_kind(
+    context: str | None, kind: DeadlineKind, page_content: str
+) -> tuple[bool, str | None]:
+    """周辺文が、その区分を支えているか。
+
+    **引用が原文にあることと、意味が検証できたことは別。**
+    「9月30日まで」は原文にあっても、それが参加申込の期限か早割の期限かを
+    示さない。ここで見るのは後者。
+
+    判断は 2 段。
+
+      1. 他の区分にしか出ない語があれば、**食い違い**として退ける
+      2. その区分の手がかりが 1 つも無ければ、**根拠が示されていない**
+
+    戻り値は (支えているか, 退けた理由)。
+    """
+    if not context_is_in_source(context, page_content):
+        return False, "周辺文が原文に見つかりません"
+
+    body = normalize(context)
+    for other, words in _EXCLUSIVE_MARKERS.items():
+        if other is kind:
+            continue
+        hit = next((w for w in words if normalize(w) in body), None)
+        if hit:
+            return False, f"周辺文に「{hit}」があり、{kind.value} と食い違います"
+
+    words = _KIND_MARKERS.get(kind, ())
+    if words and not any(normalize(w) in body for w in words):
+        return False, f"周辺文に {kind.value} を示す語がありません"
+    return True, None
+
+
 def check(item: ExtractedOpportunity, page_content: str) -> list[str]:
     """入力と突き合わせて、疑わしい点を挙げる。
 
@@ -79,8 +141,15 @@ def check(item: ExtractedOpportunity, page_content: str) -> list[str]:
     notes: list[str] = []
 
     if item.deadline is not None and item.deadline_kind is not DeadlineKind.UNKNOWN:
+        # ① 日付そのものが原文にあるか
         if not quote_is_in_source(item.deadline_quote, page_content):
             notes.append("deadline_quote が入力に見つかりません")
+        # ② その日付が何の期限かを、原文が支えているか。**① とは別のこと。**
+        supported, why = context_supports_kind(
+            item.deadline_context, item.deadline_kind, page_content
+        )
+        if not supported:
+            notes.append(why or "締切の区分を支える根拠がありません")
 
     for field in ("start_at", "end_at", "deadline"):
         value = getattr(item, field)
@@ -93,16 +162,23 @@ def check(item: ExtractedOpportunity, page_content: str) -> list[str]:
 
 
 def ground_deadline_kind(item: ExtractedOpportunity, page_content: str) -> ExtractedOpportunity:
-    """根拠が入力に無い締切区分を `unknown` へ落とす。
+    """根拠の示されていない締切区分を `unknown` へ落とす。
 
     **区分を信じるかどうかを、モデルの申告ではなく原文で決める。**
+
+    証明を求めるのは、**受付終了の根拠になる区分だけ**。早割や登壇者募集は
+    何も閉じないので、誤っていても行動を妨げない。参加・応募の締切だと
+    主張するなら、原文がそれを支えている必要がある。
 
     `unknown` にしても候補は落とさない。受付終了の根拠に使わなくなるだけで、
     **推薦からは外れない**（`availability.is_actionable` を参照）。
     誤って閉じるより、確認できていないと示すほうがよい。
     """
-    if item.deadline is None or item.deadline_kind is DeadlineKind.UNKNOWN:
+    if item.deadline is None or item.deadline_kind not in GATING_DEADLINES:
         return item
-    if quote_is_in_source(item.deadline_quote, page_content):
-        return item
-    return item.model_copy(update={"deadline_kind": DeadlineKind.UNKNOWN})
+    if not quote_is_in_source(item.deadline_quote, page_content):
+        return item.model_copy(update={"deadline_kind": DeadlineKind.UNKNOWN})
+    supported, _ = context_supports_kind(item.deadline_context, item.deadline_kind, page_content)
+    if not supported:
+        return item.model_copy(update={"deadline_kind": DeadlineKind.UNKNOWN})
+    return item
