@@ -62,7 +62,10 @@ def main() -> int:
 
     print("=== ③ 削減率（**分けて示す**）===")
     la, lc = _with_shared(a, c, shared)
-    print(f"  OrcaRouter の実費  {(1 - lc / la) * 100:+.0f}%  （${la:.6f} -> ${lc:.6f}）")
+    cut = (la - lc) / la * 100
+    word = "削減" if cut > 0 else "増加"
+    print(f"  OrcaRouter の実費  {abs(cut):.0f}% {word}（${la:.6f} -> ${lc:.6f}）")
+    print("  **1 run ずつの値。** 出力長は実行ごとに変わるので、率は確定ではない。")
     print("  総費用             **出せない**。検索・本文取得の単価が未確認で、")
     print("                     Serper と Jina は今回無料枠のため支払いが 0 だった。")
     print("                     継続利用時の単価が分からない限り、総額は比べられない。")
@@ -81,6 +84,7 @@ def main() -> int:
             f"  {name}: 工程の合計 {summed:.1f}s / 全体 {total:.1f}s "
             f"（差 {total - summed:.1f}s は工程の外）"
         )
+    print("  **この節は共有ぶんを足していない実測値。** ① の表とは前提が違う。")
     return 0
 
 
