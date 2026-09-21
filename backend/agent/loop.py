@@ -15,6 +15,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
@@ -22,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
-from ai import cost
+from ai import cost, guard
 from ai.concurrency import map_parallel
 from ai.evaluation import evaluate_many, recommend, select_top
 from ai.extraction import extract_many
@@ -40,7 +41,7 @@ from models import AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import AgentRunStatus, AgentStep
 from schemas.opportunity import OpportunityStatus
 from tools import registry
-from tools.search.base import SearchError
+from tools.search.base import SearchError, SearchResult
 
 logger = get_logger(__name__)
 
@@ -208,6 +209,9 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         state.discovered_ids = []
         return []
 
+    # 本文の指示らしき文は、LLM に渡す前にコードで取り除く（#27）。
+    candidates = _guard_candidates(db, state, candidates)
+
     # --- ② 全候補をまとめて抽出する -----------------------------------------
     # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
     # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
@@ -242,6 +246,42 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
 
     state.discovered_ids = ids
     return ids
+
+
+def _guard_candidates(
+    db: Session, state: AgentState, candidates: list[tuple[SearchDirection, SearchResult]]
+) -> list[tuple[SearchDirection, SearchResult]]:
+    """検索結果の本文を検査し、指示らしき文を取り除いた候補を返す（#27）。
+
+    **LLM に届く前に取り除く。** プロンプトの規則だけに頼らない。
+    見つけたページの URL は `state.flagged_urls` に残す（推薦しない判断に使う）。
+    """
+    guarded = []
+    kinds: set[str] = set()
+    for direction, r in candidates:
+        content = guard.inspect(r.content)
+        snippet = guard.inspect(r.snippet)
+        if content.suspicious or snippet.suspicious:
+            state.flagged_urls.add(r.url)
+            kinds.update(content.findings, snippet.findings)
+        cleaned = replace(
+            r,
+            content=content.text if r.content is not None else None,
+            snippet=snippet.text,
+        )
+        guarded.append((direction, cleaned))
+
+    flagged = {r.url for _, r in candidates} & state.flagged_urls
+    if flagged:
+        _log(
+            db,
+            state,
+            AgentStep.SEARCHING,
+            f"{len(flagged)}件のページで指示らしき文を見つけ、取り除いてから読みました",
+        )
+        # 本文は出さない。種類と件数だけ残す。
+        logger.warning("guard.flagged count=%d kinds=%s", len(flagged), sorted(kinds))
+    return guarded
 
 
 def _save_extracted(
@@ -486,19 +526,40 @@ def _verify(db: Session, state: AgentState) -> None:
     if not rows:
         return
 
+    # 公式ページも Web 由来。LLM に渡す前に指示らしき文を取り除く（#27）。
+    # ワーカースレッドから呼ばれるため、見つけた URL は set に足すだけにする。
+    flagged: set[str] = set()
+
+    def fetch(url: str) -> str | None:
+        content = _fetch_page(url)
+        if content is None:
+            return None
+        checked = guard.inspect(content)
+        if checked.suspicious:
+            flagged.add(url)
+        return checked.text
+
     # 3 件それぞれが「ページ取得 + LLM 呼び出し」で、直列だと待ち時間が積み上がる。
     # DB への書き込みと Log はこのスレッドでまとめて行う（Session を共有しない）。
     targets = [(_as_dict(r), r.url) for r in rows]
     outs = map_parallel(
         targets,
-        lambda t: verify_with_page(opportunity=t[0], url=t[1], fetch_page=_fetch_page),
+        lambda t: verify_with_page(opportunity=t[0], url=t[1], fetch_page=fetch),
     )
+    state.flagged_urls |= flagged
 
     for row, out in zip(rows, outs, strict=True):
         row.verified = out.verified
         row.verified_at = out.verified_at
         row.verification_source = out.verification_source
 
+        if row.url in flagged:
+            _log(
+                db,
+                state,
+                AgentStep.VERIFYING,
+                f"「{row.title}」の公式ページで指示らしき文を見つけ、取り除いてから確認しました",
+            )
         # 確認できなかったことも、食い違いも隠さない。
         if out.verified:
             _log(db, state, AgentStep.VERIFYING, f"「{row.title}」を公式ページで確認しました")
