@@ -7,6 +7,7 @@ import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
 import { formatDateTime } from '../../utils/date';
 import { Dialog } from '../Dialog';
+import { CalendarPanel, type CalendarOutcome } from './CalendarPanel';
 import { StillPose } from './Pose';
 import { DIALOG, DIALOG_CLOSE, DIALOG_H2, EYEBROW, MUTED, PRIMARY } from './styles';
 
@@ -29,13 +30,13 @@ export function DetailDialog() {
     setNote,
     profile,
     registrationUrlOf,
-    showToast,
   } = useAppState();
 
   const [item, setItem] = useState<OpportunityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<Step>('detail');
   const [note, setLocalNote] = useState('');
+  const [calendar, setCalendar] = useState<CalendarOutcome>('skipped');
 
   useEffect(() => {
     if (!detailId) return;
@@ -199,25 +200,19 @@ export function DetailDialog() {
             onChange={(event) => setLocalNote(event.target.value)}
             className="w-full p-[12px] border border-[#d4dbd0] rounded-[7px] bg-white text-ink text-[14px] resize-y min-h-[110px]"
           />
-          <p className={HINT}>
-            予定の空き状況と公式情報は未確認です。実際に参加するときは、公式ページでご確認ください。
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              if (!summary) {
-                // 「次の一歩」は一覧を status で絞って出すため、一覧に無いものは表示先が無い。
-                showToast('この機会はいまのおすすめ一覧に無いため、次の一歩に追加できません');
-                return;
-              }
+          <CalendarPanel
+            item={item}
+            // 「次の一歩」は一覧を status で絞って出すため、一覧に無いものは表示先が無い。
+            blockedReason={
+              summary ? null : 'この機会はいまのおすすめ一覧に無いため、次の一歩に追加できません'
+            }
+            onProceed={(outcome) => {
               markAsStep(item.opportunity_id);
               setNote(item.opportunity_id, note);
+              setCalendar(outcome);
               setStep('done');
             }}
-            className={`${PRIMARY} w-full`}
-          >
-            次の一歩に追加する ↗
-          </button>
+          />
         </>
       ) : null}
 
@@ -230,7 +225,11 @@ export function DetailDialog() {
           <p className="text-[14px]">「{item.title}」を準備リストに追加しました。</p>
           <p className={MUTED}>
             「次の一歩」から、いつでも準備メモを確認できます。外部への応募は行っていません。
-            カレンダー連携は未実装のため、この内容はこのブラウザにのみ残ります。
+            {calendar === 'added' ? ' Google カレンダーにも予定を入れました。' : null}
+            {calendar === 'already_added' ? ' Google カレンダーには、すでに入っていました。' : null}
+            {calendar === 'skipped'
+              ? ' カレンダーには入れていないため、この内容はこのブラウザにのみ残ります。'
+              : null}
           </p>
           <button type="button" onClick={closeDetail} className={`${PRIMARY} w-full`}>
             閉じる ↗

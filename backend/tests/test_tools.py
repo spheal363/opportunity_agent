@@ -3,6 +3,7 @@
 import pytest
 
 from tools import ApprovalRequired, PermissionLevel, registry
+from tools import calendar as calendar_tools
 
 
 def test_registered_tools():
@@ -32,7 +33,18 @@ def test_approval_required_tool_is_blocked_without_approval():
         registry.invoke("add_calendar_event", event={})
 
 
-def test_approved_call_reaches_the_tool():
-    # 承認済みなら Tool 本体まで到達する（本体は未実装なので NotImplementedError）
-    with pytest.raises(NotImplementedError):
-        registry.invoke("add_calendar_event", approved=True, event={})
+def test_approved_call_reaches_the_tool(monkeypatch):
+    # 承認済みなら Tool 本体まで到達する
+    reached = []
+
+    class _Client:
+        def insert_event(self, event):
+            reached.append(event)
+            return "inserted"
+
+    monkeypatch.setattr(calendar_tools, "get_client", lambda: _Client())
+
+    result = registry.invoke("add_calendar_event", approved=True, event="draft")
+
+    assert reached == ["draft"]
+    assert result.data == "inserted"

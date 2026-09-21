@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from api.deps import current_user_id
+from api.deps import current_user_id, require_page_request
 from api.errors import NotFound
 from db.session import get_db
 from schemas.calendar import CalendarEventCreated
@@ -38,10 +38,17 @@ def mark_interested(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
     return ok(result)
 
 
-@router.post("/{opportunity_id}/calendar", response_model=ApiSuccess[CalendarEventCreated])
+@router.post(
+    "/{opportunity_id}/calendar",
+    response_model=ApiSuccess[CalendarEventCreated],
+    dependencies=[Depends(require_page_request)],
+)
 def add_to_calendar(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
     """ユーザーの確認後に Calendar へ予定を追加する。"""
-    return ok(calendar_service.add_event(db, opportunity_id))
+    result = calendar_service.add_event(db, opportunity_id)
+    if result is None:
+        raise NotFound("指定された Opportunity が見つかりません")
+    return ok(result)
 
 
 @router.post("/{opportunity_id}/feedback", response_model=ApiSuccess[FeedbackResult])

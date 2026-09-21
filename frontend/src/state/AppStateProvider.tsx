@@ -48,9 +48,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
    * この端末で行った操作の結果。サーバーの status に重ねて表示する。
    *
    * 「気になる」は POST /opportunities/{id}/interest が status を更新するが、
-   * 解除する API と「次の一歩」に進める API（POST .../calendar）はまだ無いため、
-   * そのぶんはこのブラウザの中だけで保持する。docs/api.md の 7/8 が実装されたら
-   * ここをサーバーの値に置き換える。
+   * 解除する API はまだ無い。「次の一歩」は、カレンダーに入れたときだけ
+   * POST .../calendar がサーバー側も registered にする（docs/api.md の 8）。
+   * 解除と、カレンダーに入れずに進めたぶんは、このブラウザの中だけで保持する。
    *
    * サーバーに置き場所が無い値なので、失うと操作がやり直しになる。
    * 再読み込みでも残るよう localStorage に保存する（このブラウザの中だけ）。
@@ -156,7 +156,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const markAsStep = useCallback(
     (opportunityId: string) => {
-      // TODO: POST /api/opportunities/{id}/calendar 実装後はその結果を使う。
+      // カレンダーに入れた場合は Backend 側も registered になっている（CalendarPanel）。
+      // 入れずに進めた場合はサーバーに置き場所が無いので、このブラウザにだけ残す。
       setStatusOverrides((prev) => ({ ...prev, [opportunityId]: 'registered' }));
     },
     [setStatusOverrides],
