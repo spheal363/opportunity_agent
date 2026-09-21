@@ -3,8 +3,10 @@
 **目的は比較の基準線を作ること。** 次の実験では Web 検索も抽出もやり直さず、
 ここで保存した**同じ評価入力**を Jev へ渡す。
 
-    cd backend && .venv/bin/python -m scripts.run_comparison A
+    # 必要なキーの確認だけ（API は呼ばない）
     cd backend && .venv/bin/python -m scripts.run_comparison C
+    # 実行
+    cd backend && .venv/bin/python -m scripts.run_comparison C --confirm
 
 ## 1 run ずつは予備比較
 
@@ -37,7 +39,9 @@ from pathlib import Path
 # --- 構成を選ぶ。**環境変数は db.session の import より先に決める。** ----
 #
 # 既定の .env は触らない。ここで環境変数を上書きするだけにする。
-_CONFIG = (sys.argv[1] if len(sys.argv) > 1 else "A").upper()
+_ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]
+_CONFIRM = "--confirm" in sys.argv
+_CONFIG = (_ARGS[0] if _ARGS else "A").upper()
 _CONFIGS = {
     # 基準線。**本番の既定と同じ構成。**
     "A": {
@@ -250,6 +254,23 @@ def _jsonable(value):
     return value
 
 
+def _preflight(settings) -> list[str]:
+    """走らせる前に、足りないものを挙げる。**API は呼ばない。**
+
+    キーの値は見ない。**有無だけ**を確かめる。
+    """
+    missing: list[str] = []
+    if not settings.orcarouter_api_key:
+        missing.append("ORCAROUTER_API_KEY（LLM。A / C とも必須）")
+    if settings.search_provider == "tavily" and not settings.search_api_key:
+        missing.append("SEARCH_API_KEY（Tavily 検索）")
+    if settings.search_provider == "serper" and not settings.serper_api_key:
+        missing.append("SERPER_API_KEY（Serper 検索。無料枠 2,500 クエリ、カード不要）")
+    if settings.evaluator == "jev" and not settings.typesafe_api_key:
+        missing.append("TYPESAFE_API_KEY（Jev 評価）")
+    return missing
+
+
 def main() -> int:
     settings = get_settings()
     print("=== 実行設定（値は表示しない）===")
@@ -257,18 +278,52 @@ def main() -> int:
     print(f"  AGENT_STUB_MODE    {settings.agent_stub_mode}  （False でなければ中止）")
     print(f"  SEARCH_PROVIDER    {settings.search_provider}")
     print(f"  PAGE_FETCHER       {settings.page_fetcher}")
-    print(f"  EVALUATOR          {settings.evaluator}  （**既定のまま**）")
-    print(f"  SEARCH_PIPELINE    {settings.search_pipeline}  （**既定のまま**）")
+    note = "（**本番の既定と同じ**）" if _CONFIG == "A" else "（**この run だけの上書き**）"
+    print(f"  EVALUATOR          {settings.evaluator}  {note}")
+    print(f"  SEARCH_PIPELINE    {settings.search_pipeline}  {note}")
     print(f"  LLM_MODEL_STANDARD {settings.llm_model_standard}")
     print(f"  LLM_MODEL_POWERFUL {settings.llm_model_powerful}")
     print(f"  SEARCH_API_KEY     {'設定あり' if settings.search_api_key else '**未設定**'}")
     print()
 
+    print("=== 必要なキー（**有無だけ確認。値は見ない**）===")
+    for label, present in (
+        ("ORCAROUTER_API_KEY", settings.orcarouter_api_key),
+        ("SEARCH_API_KEY (Tavily)", settings.search_api_key),
+        ("SERPER_API_KEY", settings.serper_api_key),
+        ("TYPESAFE_API_KEY (Jev)", settings.typesafe_api_key),
+        ("JINA_API_KEY", settings.jina_api_key),
+    ):
+        mark = "設定あり" if present else "未設定"
+        note = "（**キー無しでも動く**）" if "JINA" in label and not present else ""
+        print(f"  {label:26} {mark}{note}")
+    print()
+
+    missing = _preflight(settings)
+    if missing:
+        print(f"=== 構成 {_CONFIG} を走らせるには足りないものがあります ===")
+        for item in missing:
+            print(f"  **{item}**")
+        print("\n  backend/.env に設定してください（**チャットには貼らない**）。")
+        return 1
+
+    if not _CONFIRM:
+        print(f"=== 構成 {_CONFIG} は走らせられます ===")
+        print("  実行するには --confirm を付けてください。**まだ API を呼んでいません。**")
+        return 0
+
     if settings.agent_stub_mode:
         print("AGENT_STUB_MODE を false にできていません。中止します。")
         return 1
-    if settings.evaluator != "llm" or settings.search_pipeline != "full":
-        print("既定構成ではありません。中止します（この run は構成 A の基準線）。")
+    want = _CONFIGS[_CONFIG]
+    got = {
+        "SEARCH_PROVIDER": settings.search_provider,
+        "PAGE_FETCHER": settings.page_fetcher,
+        "EVALUATOR": settings.evaluator,
+        "SEARCH_PIPELINE": settings.search_pipeline,
+    }
+    if got != want:
+        print(f"構成が一致しません。中止します。\n  期待 {want}\n  実際 {got}")
         return 1
 
     # **実 DB に繋がっていないことを、テーブルを作る前に確かめる。**
@@ -481,5 +536,16 @@ def _report(run_id: str, total_ms: int) -> None:
     db.close()
 
 
+def _cleanup_if_unused() -> None:
+    """確認だけで終わったら、空の実験ディレクトリを残さない。"""
+    try:
+        if _OUT.exists() and not any(_OUT.iterdir()):
+            _OUT.rmdir()
+    except OSError:
+        pass
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    _cleanup_if_unused()
+    sys.exit(code)
