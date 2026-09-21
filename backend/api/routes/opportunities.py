@@ -23,16 +23,24 @@ def list_opportunities(
 
 
 @router.get("/{opportunity_id}", response_model=ApiSuccess[OpportunityDetail])
-def get_opportunity(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
-    detail = opportunity_service.get_detail(db, opportunity_id)
+def get_opportunity(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    detail = opportunity_service.get_detail(db, opportunity_id, user_id)
     if detail is None:
         raise NotFound("指定された Opportunity が見つかりません")
     return ok(detail)
 
 
 @router.post("/{opportunity_id}/interest", response_model=ApiSuccess[InterestResult])
-def mark_interested(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
-    result = opportunity_service.mark_interested(db, opportunity_id)
+def mark_interested(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    result = opportunity_service.mark_interested(db, opportunity_id, user_id)
     if result is None:
         raise NotFound("指定された Opportunity が見つかりません")
     return ok(result)
@@ -43,9 +51,13 @@ def mark_interested(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
     response_model=ApiSuccess[CalendarEventCreated],
     dependencies=[Depends(require_page_request)],
 )
-def add_to_calendar(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
+def add_to_calendar(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
     """ユーザーの確認後に Calendar へ予定を追加する。"""
-    result = calendar_service.add_event(db, opportunity_id)
+    result = calendar_service.add_event(db, opportunity_id, user_id)
     if result is None:
         raise NotFound("指定された Opportunity が見つかりません")
     return ok(result)

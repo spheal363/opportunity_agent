@@ -31,15 +31,23 @@ def start_run(
 
 
 @router.get("/runs/{run_id}", response_model=ApiSuccess[AgentRunState])
-def get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
-    run = agent_service.get_run(db, run_id)
+def get_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    run = agent_service.get_run(db, run_id, user_id)
     if run is None:
         raise NotFound("指定された run_id が見つかりません")
     return ok(run)
 
 
 @router.get("/runs/{run_id}/logs", response_model=ApiSuccess[list[AgentLogEntry]])
-def get_run_logs(run_id: str, db: Session = Depends(get_db)) -> dict:
-    if agent_service.get_run(db, run_id) is None:
+def get_run_logs(
+    run_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    if agent_service.get_run(db, run_id, user_id) is None:
         raise NotFound("指定された run_id が見つかりません")
     return ok(agent_service.list_logs(db, run_id))

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from models import Opportunity
 from schemas.calendar import CalendarAvailability, CalendarConflict, CalendarEventCreated
 from schemas.opportunity import OpportunityStatus
+from services.opportunity_service import get_owned
 from tools import registry
 from tools.google_calendar import CalendarError, EventDraft, InsertedEvent, event_id_for
 
@@ -27,8 +28,10 @@ class ScheduleUnknown(CalendarError):
     code = "SCHEDULE_UNKNOWN"
 
 
-def check_availability(db: Session, opportunity_id: str) -> CalendarAvailability | None:
-    row = db.get(Opportunity, opportunity_id)
+def check_availability(
+    db: Session, opportunity_id: str, user_id: str
+) -> CalendarAvailability | None:
+    row = get_owned(db, opportunity_id, user_id)
     if row is None:
         return None
     start_at, end_at, _ = _window(row)
@@ -49,8 +52,8 @@ def check_availability(db: Session, opportunity_id: str) -> CalendarAvailability
     return CalendarAvailability(available=not conflicts, conflicts=conflicts)
 
 
-def add_event(db: Session, opportunity_id: str) -> CalendarEventCreated | None:
-    row = db.get(Opportunity, opportunity_id)
+def add_event(db: Session, opportunity_id: str, user_id: str) -> CalendarEventCreated | None:
+    row = get_owned(db, opportunity_id, user_id)
     if row is None:
         return None
     start_at, end_at, end_is_placeholder = _window(row)
