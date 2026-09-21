@@ -46,12 +46,22 @@ export async function sendFeedback(id: string, input: FeedbackInput) {
   );
 }
 
-// --- Calendar（Backend 未実装。接続後に有効になる） ---
+// --- Calendar（docs/api.md の 7 / 8） ---
 
+/** その機会の時間帯に重なる予定。読み取りだけなので、画面を開いたときに自動で呼んでよい。 */
 export async function checkCalendarAvailability(id: string): Promise<CalendarAvailability> {
-  return api.get<CalendarAvailability>(`/calendar/availability?opportunity_id=${id}`);
+  if (USE_MOCK) return { available: true, conflicts: [] };
+  return api.get<CalendarAvailability>(
+    `/calendar/availability?opportunity_id=${encodeURIComponent(id)}`,
+  );
 }
 
+/**
+ * ユーザーの Google カレンダーに予定を入れる。**ユーザーが追加内容を見てボタンを押したときだけ呼ぶ。**
+ * 成功すると Backend 側でも status が registered（次の一歩）になる。
+ * status は created / already_exists（同じ機会は何度押しても 1 件）。
+ */
 export async function addToCalendar(id: string): Promise<CalendarEventCreated> {
-  return api.post<CalendarEventCreated>(`/opportunities/${id}/calendar`);
+  if (USE_MOCK) return { calendar_event_id: `mock_${id}`, status: 'created' };
+  return api.post<CalendarEventCreated>(`/opportunities/${encodeURIComponent(id)}/calendar`);
 }
