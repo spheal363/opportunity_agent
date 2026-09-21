@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
+import {
+  EMPTY_PROFILE_DRAFT,
+  loadProfileDraft,
+  saveProfileDraft,
+  type ProfileDraft,
+} from '../../state/persistence';
 import type { UserProfile, UserProfileInput } from '../../types';
 import { parseList } from '../../utils/date';
 import { Dialog } from '../Dialog';
@@ -10,6 +16,20 @@ const FIELD = 'w-full p-[12px] border border-[#d4dbd0] rounded-[7px] bg-white te
 
 /** 興味の候補。プロフィールに入っているものと合わせて表示する。 */
 const SUGGESTED_INTERESTS = ['AI', 'Startup', 'Music', 'Design', 'Community', 'International'];
+
+/** 保存済みプロフィールを、フォームの見たままの形に戻す。 */
+const fromProfile = (profile: UserProfile | null): ProfileDraft =>
+  profile
+    ? {
+        name: profile.name,
+        goals: profile.goals.join('\n'),
+        interests: profile.interests,
+        location: profile.location ?? '',
+        occupation: profile.occupation ?? '',
+        skills: profile.skills.join(', '),
+        about: profile.about ?? '',
+      }
+    : EMPTY_PROFILE_DRAFT;
 
 /** 目標は文章で書けるよう、改行だけで区切る（読点では分けない）。 */
 const parseGoals = (value: string) =>
@@ -47,21 +67,34 @@ export function GoalDialog({
   const [skills, setSkills] = useState('');
   const [about, setAbout] = useState('');
   const [adding, setAdding] = useState('');
+  /** 復元が終わるまでは下書きを書かない。開いた瞬間の空の値で上書きしないため。 */
+  const [restored, setRestored] = useState(false);
 
   const goalRef = useRef<HTMLTextAreaElement>(null);
 
-  // 開くたびに、いま保存されている内容から始める。
+  // 開くたびに、書きかけの下書きがあればそこから、無ければ保存されている内容から始める。
   useEffect(() => {
-    if (!open) return;
-    setName(profile?.name ?? '');
-    setGoals((profile?.goals ?? []).join('\n'));
-    setInterests(profile?.interests ?? []);
-    setLocation(profile?.location ?? '');
-    setOccupation(profile?.occupation ?? '');
-    setSkills((profile?.skills ?? []).join(', '));
-    setAbout(profile?.about ?? '');
+    if (!open) {
+      setRestored(false);
+      return;
+    }
+    const draft = loadProfileDraft() ?? fromProfile(profile);
+    setName(draft.name);
+    setGoals(draft.goals);
+    setInterests(draft.interests);
+    setLocation(draft.location);
+    setOccupation(draft.occupation);
+    setSkills(draft.skills);
+    setAbout(draft.about);
     setAdding('');
+    setRestored(true);
   }, [open, profile]);
+
+  // 入力の途中経過をこのブラウザに残す。閉じても・再読み込みしても続きから書ける。
+  useEffect(() => {
+    if (!open || !restored) return;
+    saveProfileDraft({ name, goals, interests, location, occupation, skills, about });
+  }, [open, restored, name, goals, interests, location, occupation, skills, about]);
 
   const chips = Array.from(new Set([...interests, ...SUGGESTED_INTERESTS]));
 
