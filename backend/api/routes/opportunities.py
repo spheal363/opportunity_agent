@@ -34,7 +34,11 @@ def get_opportunity(
     return ok(detail)
 
 
-@router.post("/{opportunity_id}/interest", response_model=ApiSuccess[InterestResult])
+@router.post(
+    "/{opportunity_id}/interest",
+    response_model=ApiSuccess[InterestResult],
+    dependencies=[Depends(require_page_request)],
+)
 def mark_interested(
     opportunity_id: str,
     db: Session = Depends(get_db),
@@ -63,7 +67,11 @@ def add_to_calendar(
     return ok(result)
 
 
-@router.post("/{opportunity_id}/feedback", response_model=ApiSuccess[FeedbackResult])
+@router.post(
+    "/{opportunity_id}/feedback",
+    response_model=ApiSuccess[FeedbackResult],
+    dependencies=[Depends(require_page_request)],
+)
 def post_feedback(
     opportunity_id: str,
     payload: FeedbackCreate,

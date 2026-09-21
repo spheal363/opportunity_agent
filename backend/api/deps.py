@@ -25,7 +25,10 @@ def require_page_request(x_requested_with: str | None = Header(default=None)) ->
     独自ヘッダーの付いた要求はブラウザが事前に確認（preflight）し、
     許可していない Origin からのものは CORS で止まる。
     そのため、このヘッダーがあれば画面から送られたとみなせる。
-    ユーザーの承認として扱う操作（Calendar への書き込み）に付ける。
+
+    **状態を変える API（POST / PUT）すべてに付ける（#80）。** 探索の開始は
+    LLM の費用がかかり、別サイトを開いただけで走らせられては困る。
+    Calendar への書き込みは、これに加えてユーザーの承認として扱う。
     """
     if x_requested_with != PAGE_REQUEST_HEADER_VALUE:
         raise ApiError(

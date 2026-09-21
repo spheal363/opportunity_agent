@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from agent.loop import run_agent
-from api.deps import current_user_id
+from api.deps import current_user_id, require_page_request
 from api.errors import NotFound
 from db.session import get_db
 from schemas.agent import AgentLogEntry, AgentRunCreated, AgentRunState, AgentRunStatus
@@ -12,7 +12,12 @@ from services import agent_service, profile_service
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
-@router.post("/runs", response_model=ApiSuccess[AgentRunCreated])
+@router.post(
+    "/runs",
+    response_model=ApiSuccess[AgentRunCreated],
+    # LLM の費用が発生する。別サイトから勝手に走らせない（#80）
+    dependencies=[Depends(require_page_request)],
+)
 def start_run(
     background: BackgroundTasks,
     db: Session = Depends(get_db),

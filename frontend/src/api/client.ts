@@ -27,8 +27,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     res = await fetch(`${BASE_URL}${path}`, {
       headers: {
         'Content-Type': 'application/json',
-        // この画面から送った印。Backend は Calendar への書き込みをこれが無いと断る
-        // （別サイトの form から勝手に送られるのを防ぐ。backend/api/deps.py）。
+        // この画面から送った印。Backend は状態を変える操作（POST / PUT）をこれが無いと断る
+        // （別サイトの form から勝手に送られるのを防ぐ。backend/api/deps.py, docs/api.md）。
         'X-Requested-With': 'opportunity-agent',
       },
       ...init,
