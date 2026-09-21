@@ -24,13 +24,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import os  # noqa: F401  設定を入れるために使う
 import sys
 import time
-
-# **実費を取る。** 前回これを設定しておらず、監査の費用が全件「不明」になった。
-# 見積もりしか残らないと、C の費用と並べて語れない。
-os.environ.setdefault("ORCAROUTER_INCLUDE_COST", "true")
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -38,8 +34,13 @@ from ai import availability, cost, evidence
 from ai.extraction import extract_opportunity
 from ai.llm import LLMError
 from config import get_settings
+from scripts import _experiment
 from tools import registry
 from tools.search.base import SearchError
+
+# **実費を取る。** 前回これを設定しておらず、監査の費用が全件「不明」になった。
+# `get_settings()` は最初の呼び出しまで評価されないので、ここで間に合う。
+_experiment.apply_recording_settings()
 
 # 監査で確認する上限。**無制限には増やさない。**
 MAX_AUDIT = 10
@@ -75,8 +76,15 @@ def main() -> int:
     if not args.confirm:
         print("実行するには --confirm を付けてください。**まだ API を呼んでいません。**")
         return 0
-    if not get_settings().orcarouter_api_key:
+    settings = get_settings()
+    if not settings.orcarouter_api_key:
         print("ORCAROUTER_API_KEY が未設定です。")
+        return 1
+    missing = _experiment.check_recording_settings(settings)
+    if missing:
+        print("=== 記録の設定が足りません ===")
+        for item in missing:
+            print(f"  **{item}**")
         return 1
 
     started = time.perf_counter()
@@ -121,16 +129,7 @@ def _one(candidate: dict) -> dict:
         return {**candidate, "error": f"抽出に失敗: {exc}"}
 
     grounded = evidence.ground_deadline_kind(item, page.content)
-    status, reason = availability.from_dates(
-        opportunity_type=grounded.type,
-        deadline=grounded.deadline,
-        end_at=grounded.end_at,
-        deadline_kind=grounded.deadline_kind,
-        deadline_is_date_only=grounded.deadline_is_date_only,
-        speaker_is_the_opportunity=evidence.is_a_call_for_speakers(
-            grounded.title, grounded.description
-        ),
-    )
+    status, reason = availability.for_extracted(grounded)
     return {
         **candidate,
         "elapsed_ms": int((time.perf_counter() - started) * 1000),

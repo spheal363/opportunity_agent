@@ -70,8 +70,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_OUT / 'experiment.db'}"
 # 実探索で走らせる。既定の .env は stub=true のまま触らない。
 os.environ["AGENT_STUB_MODE"] = "false"
 os.environ.update(_CONFIGS[_CONFIG])
-# **実費を取る。** 見積もりと別の欄に置く。
-os.environ["ORCAROUTER_INCLUDE_COST"] = "true"
+
+from scripts import _experiment  # noqa: E402  設定は他の import より先に入れる
+
+_experiment.apply_recording_settings()
 
 from agent import loop  # noqa: E402
 from ai import cost  # noqa: E402
@@ -107,18 +109,6 @@ PROFILE = {
 }
 
 
-# 停止条件。**言うだけでなく、実際に止める。**
-#
-# 超えたら例外を投げる。run は失敗として記録され、そこまでの記録は残る。
-MAX_LLM_REQUESTS = 80  # A の実測は 42
-MAX_ACTUAL_USD = 0.50  # 約 ¥75（為替 150 の仮定）
-MAX_JEV_FAILURES = 3
-
-
-class BudgetExceededError(RuntimeError):
-    """停止条件に達した。**そこまでの記録は残す。**"""
-
-
 class Capture:
     """LLM / Tool / Jev の呼び出しと、粗選別の結果を記録する。
 
@@ -131,26 +121,22 @@ class Capture:
         self.jev: list[dict] = []
         # **C が読まなかった候補。** 取りこぼし監査の入力になる。
         self.prefilter: dict | None = None
-        self.llm_requests = 0
-        self.spent_usd = 0.0
-        self.jev_failures = 0
-        self.stopped: str | None = None
+        # **停止条件は共通モジュールが持つ。** 実験ごとに書くと、実費が
+        # 取れない回を 0 として素通りさせる形が混ざる（実際に混ざった）。
+        self.budget = _experiment.Budget()
 
     def _guard(self) -> None:
-        if self.llm_requests > MAX_LLM_REQUESTS:
-            self.stopped = f"LLM 実リクエストが {MAX_LLM_REQUESTS} 回を超えた"
-        elif self.spent_usd > MAX_ACTUAL_USD:
-            self.stopped = f"実費が ${MAX_ACTUAL_USD} を超えた"
-        elif self.jev_failures >= MAX_JEV_FAILURES:
-            self.stopped = f"Jev が {MAX_JEV_FAILURES} 回続けて失敗した"
-        if self.stopped:
-            raise BudgetExceededError(self.stopped)
+        self.budget.check()
+
+    @property
+    def stopped(self) -> str | None:
+        return self.budget.stopped
 
     def wrap_llm(self) -> None:
         original = OrcaRouterClient.chat
 
         def chat(client_self, messages, **kwargs):
-            self.llm_requests += 1
+            self.budget.llm_requests += 1
             self._guard()
             started = time.perf_counter()
             error = None
@@ -177,9 +163,14 @@ class Capture:
                         "error": error,
                     }
                 )
-                actual = getattr(getattr(res, "usage", None), "cost_usd", None)
-                if actual:
-                    self.spent_usd += actual
+                usage = getattr(res, "usage", None)
+                if usage is not None:
+                    # **実費が取れなかった回も数える。** 0 円として素通りさせない。
+                    self.budget.record_response(
+                        cost_usd=usage.cost_usd, estimate_jpy=cost.estimate_jpy(usage)
+                    )
+                if error:
+                    self.budget.schema_failures += 1
 
         OrcaRouterClient.chat = chat  # type: ignore[method-assign]
 
@@ -195,9 +186,9 @@ class Capture:
             try:
                 res = original(client_self, state, questions, **kwargs)
             except Exception:
-                self.jev_failures += 1
+                self.budget.jev_failures += 1
                 raise
-            self.jev_failures = 0  # 連続でなければ数え直す
+            self.budget.jev_failures = 0  # 連続でなければ数え直す
             self.jev.append(
                 {
                     "at": datetime.now(UTC).isoformat(),
@@ -368,6 +359,13 @@ def main() -> int:
         print("  実行するには --confirm を付けてください。**まだ API を呼んでいません。**")
         return 0
 
+    missing_recording = _experiment.check_recording_settings(settings)
+    if missing_recording:
+        print("=== 記録の設定が足りません ===")
+        for item in missing_recording:
+            print(f"  **{item}**")
+        return 1
+
     if settings.agent_stub_mode:
         print("AGENT_STUB_MODE を false にできていません。中止します。")
         return 1
@@ -407,10 +405,8 @@ def main() -> int:
     capture.wrap_prefilter()
 
     print(f"=== 実行開始 {run_id} ===")
-    print(
-        f"  停止条件: LLM {MAX_LLM_REQUESTS} 回 / 実費 ${MAX_ACTUAL_USD} /"
-        f" Jev 連続失敗 {MAX_JEV_FAILURES} 回"
-    )
+    print(f"  停止条件: {capture.budget.to_dict()['limits']}")
+    print("  **上限は「超えたら次を投げない」。** 並列で飛んでいる分は止まらない。")
     started = time.perf_counter()
     loop.run_agent(run_id, USER_ID)
     total_ms = int((time.perf_counter() - started) * 1000)
@@ -448,7 +444,7 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
             "max_promotions": loop.MAX_PROMOTIONS,
         },
         "profile": PROFILE,
-        "stopped": capture.stopped,
+        "budget": capture.budget.to_dict(),
         "status": run.status if run else None,
         "selected_ids": run.selected_ids if run else None,
         "shortfall_reason": run.shortfall_reason if run else None,

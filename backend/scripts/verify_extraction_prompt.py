@@ -243,15 +243,7 @@ def _one(client: OrcaRouterClient, target: dict, attempt: int) -> dict:
     speaker_opportunity = evidence.is_a_call_for_speakers(grounded.title, grounded.description)
 
     def at(now: datetime) -> dict:
-        status, reason = availability.from_dates(
-            opportunity_type=grounded.type,
-            deadline=grounded.deadline,
-            end_at=grounded.end_at,
-            now=now,
-            deadline_kind=grounded.deadline_kind,
-            deadline_is_date_only=grounded.deadline_is_date_only,
-            speaker_is_the_opportunity=speaker_opportunity,
-        )
+        status, reason = availability.for_extracted(grounded, now=now)
         return {"availability": str(status), "reason": reason}
 
     return {

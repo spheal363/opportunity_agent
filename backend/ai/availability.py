@@ -16,11 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from ai.schemas.extraction import (
-    GATING_DEADLINES,
-    SUBMISSION_GATES_TYPES,
-    DeadlineKind,
-)
+from ai.schemas.extraction import GATING_DEADLINES, DeadlineKind
 from schemas.opportunity import OpportunityType
 
 
@@ -66,6 +62,7 @@ def from_dates(
     now: datetime | None = None,
     deadline_kind: str | None = None,
     deadline_is_date_only: bool = False,
+    end_at_is_date_only: bool = False,
     speaker_is_the_opportunity: bool = False,
 ) -> tuple[Availability, str | None]:
     """日時だけで判定する。評価より前に使う。
@@ -95,7 +92,11 @@ def from_dates(
     # 過ぎていると、そこで打ち切って開催終了を見ていなかった。**
     # 終わったハッカソンが「受付中」のまま残る原因になっていた。
     end_at = as_utc(end_at)
-    if end_at is not None and end_at < now and _ends(opportunity_type):
+    if (
+        end_at is not None
+        and _is_past(end_at, now, date_only=end_at_is_date_only)
+        and _ends(opportunity_type)
+    ):
         return Availability.CLOSED, "開催が終了しています"
 
     deadline = as_utc(deadline)
@@ -194,10 +195,14 @@ def _deadline_gates_action(
     if kind in GATING_DEADLINES:
         return True, None
     if kind is DeadlineKind.SUBMISSION:
-        # **提出しなければ参加にならない種類でだけ閉じる。**
-        # 申込締切と同じものとして一般化しない。
-        if opportunity_type in SUBMISSION_GATES_TYPES:
-            return True, "作品の提出締切が過ぎています"
+        # **提出締切だけでは閉じない。**
+        #
+        # 種別が hackathon だから作品提出が必須、とは決められない。同じ
+        # 催しに一般観覧・聴講の枠があることがあり、提出が締まっても
+        # 参加はできる。**種別だけで全参加形態を閉ざさない。**
+        #
+        # 開催そのものが終わっていれば `end_at` で閉じる。そちらのほうが
+        # 確かな根拠で、参加形態に左右されない。
         return False, "過ぎているのは提出の締切で、参加の締切ではありません"
     if kind is DeadlineKind.SPEAKER and speaker_is_the_opportunity:
         # 登壇機会そのものを薦めている。**この締切が行動を閉ざす。**
@@ -228,3 +233,37 @@ def is_actionable(availability: str | None) -> bool:
     画面では「要確認」と示す。
     """
     return availability != Availability.CLOSED
+
+
+def for_extracted(item, *, now: datetime | None = None) -> tuple[Availability, str | None]:
+    """抽出結果 1 件の受付状況。**本番・比較・再判定・監査の共通入口。**
+
+    呼び出し側が引数を組み立て直すと、どれか 1 つで項目が抜ける。実際に、
+    監査と再判定で `end_at_is_date_only` や登壇判定を渡し忘れていた。
+    **組み立てはここ 1 か所に置く。**
+
+    `item` は `ExtractedOpportunity`、または同じ属性を持つ ORM 行。
+    """
+    from ai import evidence  # 循環 import を避けるためここで読む
+
+    return from_dates(
+        opportunity_type=_attr(item, "type"),
+        deadline=_attr(item, "deadline"),
+        end_at=_attr(item, "end_at"),
+        now=now,
+        deadline_kind=_kind_value(_attr(item, "deadline_kind")),
+        deadline_is_date_only=bool(_attr(item, "deadline_is_date_only")),
+        end_at_is_date_only=bool(_attr(item, "end_at_is_date_only")),
+        speaker_is_the_opportunity=evidence.is_a_call_for_speakers(
+            _attr(item, "title"), _attr(item, "description")
+        ),
+    )
+
+
+def _attr(item, name: str):
+    return getattr(item, name, None)
+
+
+def _kind_value(kind) -> str | None:
+    """StrEnum でも文字列でも受ける。"""
+    return kind.value if isinstance(kind, DeadlineKind) else kind

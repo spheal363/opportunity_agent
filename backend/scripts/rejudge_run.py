@@ -16,6 +16,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from ai import availability, evidence
 from ai.evaluation import _SERENDIPITY_WEIGHT, TOP_N
@@ -123,13 +124,19 @@ def _rejudge(row: dict, item: ExtractedOpportunity | None):
     if item is not None:
         kind_after = item.deadline_kind.value
 
-    status, reason = availability.from_dates(
-        opportunity_type=row["type"],
-        deadline=_dt(row["deadline"]),
-        end_at=_dt(row.get("end_at")),
-        deadline_kind=kind_after,
-        deadline_is_date_only=bool(row.get("deadline_is_date_only")),
-        speaker_is_the_opportunity=evidence.is_a_call_for_speakers(row["title"]),
+    status, reason = availability.for_extracted(
+        item
+        if item is not None
+        else SimpleNamespace(
+            type=row["type"],
+            title=row["title"],
+            description=None,
+            deadline=_dt(row["deadline"]),
+            end_at=_dt(row.get("end_at")),
+            deadline_kind=kind_after,
+            deadline_is_date_only=bool(row.get("deadline_is_date_only")),
+            end_at_is_date_only=bool(row.get("end_at_is_date_only")),
+        )
     )
     if status is availability.Availability.CLOSED:
         return status.value, reason, kind_before, kind_after

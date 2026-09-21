@@ -883,18 +883,78 @@ def test_a_submission_deadline_is_not_an_application_deadline():
     assert item.deadline_kind is DeadlineKind.SUBMISSION
 
 
-def test_a_past_submission_deadline_closes_a_hackathon():
-    """**提出しなければ参加にならない種類**では、行動を閉ざす。"""
-    status, reason = _avail(_submission("hackathon"))
-    assert status is availability.Availability.CLOSED
-    assert "提出締切" in reason
+@pytest.mark.parametrize("opportunity_type", ["hackathon", "competition", "community"])
+def test_a_past_submission_deadline_does_not_close_anything(opportunity_type):
+    """**種別だけで全参加形態を閉ざさない。**
 
+    hackathon だから作品提出が必須、とは決められない。同じ催しに
+    一般観覧・聴講の枠があることがあり、提出が締まっても参加はできる。
 
-def test_a_past_submission_deadline_does_not_close_a_community():
-    """**一般化しない。** 提出が参加の条件でない種類では閉じない。"""
-    status, reason = _avail(_submission("community"))
+    開催そのものが終わっていれば `end_at` で閉じる。そちらのほうが
+    確かな根拠で、参加形態に左右されない。
+    """
+    status, reason = _avail(_submission(opportunity_type))
     assert status is not availability.Availability.CLOSED
     assert "参加の締切ではありません" in reason
+
+
+def test_a_finished_hackathon_still_closes_on_its_end_date():
+    """提出締切では閉じないが、**開催が終わっていれば閉じる。**"""
+    status, reason = availability.from_dates(
+        opportunity_type="hackathon",
+        deadline=datetime(2026, 2, 15, tzinfo=JST),
+        end_at=datetime(2026, 2, 15, tzinfo=JST),
+        now=NOW,
+        deadline_kind=DeadlineKind.SUBMISSION,
+    )
+    assert status is availability.Availability.CLOSED
+    assert reason == "開催が終了しています"
+
+
+def test_a_date_only_end_does_not_close_on_the_day_itself():
+    """**日付だけの終了日を、その日のうちに終了扱いにしない。**
+
+    00:00 はこちらの正規化であって、出典にあった時刻ではない。
+    """
+    status, _ = availability.from_dates(
+        opportunity_type="hackathon",
+        deadline=None,
+        end_at=datetime(2026, 9, 21, tzinfo=UTC),
+        now=datetime(2026, 9, 21, 23, 0, tzinfo=UTC),
+        end_at_is_date_only=True,
+    )
+    assert status is not availability.Availability.CLOSED
+
+
+def test_a_date_only_end_closes_the_next_day():
+    status, reason = availability.from_dates(
+        opportunity_type="hackathon",
+        deadline=None,
+        end_at=datetime(2026, 9, 21, tzinfo=UTC),
+        now=datetime(2026, 9, 22, 1, 0, tzinfo=UTC),
+        end_at_is_date_only=True,
+    )
+    assert status is availability.Availability.CLOSED
+    assert reason == "開催が終了しています"
+
+
+def test_the_shared_entry_point_fills_in_every_argument():
+    """**共通の入口。** 呼び出し側が引数を組み立て直さない。
+
+    実際に、監査と再判定で `end_at_is_date_only` や登壇判定を
+    渡し忘れていた。
+    """
+    item = _o(
+        title="AI Summit 登壇者募集",
+        type="event",
+        deadline=datetime(2026, 8, 21, tzinfo=JST),
+        deadline_kind=DeadlineKind.SPEAKER,
+    )
+    status, reason = availability.for_extracted(item, now=NOW)
+
+    # 登壇機会そのものなので、登壇締切が行動を閉ざす
+    assert status is availability.Availability.CLOSED
+    assert "登壇者募集の締切" in reason
 
 
 def test_a_claimed_application_kind_on_a_submission_context_is_rejected():
