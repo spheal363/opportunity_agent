@@ -653,3 +653,28 @@ def test_the_guard_fires_only_on_a_passed_non_participation_deadline(
     label, deadline, kind, expected
 ):
     assert _guarded(deadline, kind) == expected, label
+
+
+def test_a_date_only_deadline_today_is_still_treated_as_misreadable():
+    """**`availability._is_past` とはわざと違う判定を使っている。**
+
+    あちらは「日付だけの締切は当日中は過ぎていない」とする（00:00 は
+    こちらの正規化で、出典の時刻ではないため）。
+
+    ここで見たいのは「検証が読み違えうる終了っぽい日付が近くにあるか」で、
+    当日が期限の締切もページには終了告知が載りうる。**広く取る。**
+
+    広く取ると `unknown` へ倒れる側に外れるので、誤って閉じることはない。
+    """
+    today_midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # `_is_past` は「まだ過ぎていない」と言う
+    assert availability._is_past(today_midnight, datetime.now(UTC), date_only=True) is False
+    # ここでは倒す（安全側）
+    assert _guarded(today_midnight, "early_bird") == "unknown"
+
+
+def test_a_naive_deadline_from_sqlite_does_not_crash():
+    """SQLite は tz を保持しない。**naive な値で落ちない。**"""
+    naive = (datetime.now(UTC) - timedelta(days=5)).replace(tzinfo=None)
+    assert _guarded(naive, "early_bird") == "unknown"

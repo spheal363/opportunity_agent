@@ -347,3 +347,38 @@ def test_the_tool_does_not_leak_the_exception(monkeypatch):
 
     assert [p.url for p in out.data["pages"]] == ["https://ok.jp/a"]
     assert out.data["failed"] == ["http://ng.jp/a\r\nX"]
+
+
+def test_the_filter_matches_exactly_what_httpx_can_handle():
+    """**判定と httpx の限界がずれていないこと。**
+
+    ずれ方は 2 通りあり、どちらも困る。
+
+      判定を通るのに httpx が落ちる -> 1 件で他の候補まで巻き添えになる
+      httpx は通すのに判定が落とす   -> 取得できたはずの候補を捨てる
+
+    ASCII を全部なめて、両方が 0 であることを確かめる。**httpx の側が
+    変わったら気づける。**
+    """
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+
+    leaks: list[str] = []
+    over_blocked: list[str] = []
+    for code in range(0x80):
+        url = f"https://example.jp/a{chr(code)}b"
+        allowed = is_fetchable(url)
+        try:
+            client.get("https://r.jina.ai/" + url)
+            httpx_breaks = False
+        except httpx.InvalidURL:
+            httpx_breaks = True
+        except httpx.HTTPError:
+            httpx_breaks = False
+
+        if allowed and httpx_breaks:
+            leaks.append(hex(code))
+        if not allowed and not httpx_breaks:
+            over_blocked.append(hex(code))
+
+    assert leaks == [], f"判定を通るのに httpx が落ちる: {leaks}"
+    assert over_blocked == [], f"httpx は通すのに判定が落とす: {over_blocked}"
