@@ -61,8 +61,8 @@ def from_dates(
     end_at: datetime | None,
     now: datetime | None = None,
     deadline_kind: str | None = None,
-    deadline_is_date_only: bool = False,
-    end_at_is_date_only: bool = False,
+    deadline_is_date_only: bool | None = None,
+    end_at_is_date_only: bool | None = None,
     speaker_is_the_opportunity: bool = False,
 ) -> tuple[Availability, str | None]:
     """日時だけで判定する。評価より前に使う。
@@ -150,14 +150,16 @@ _NOT_YET_REASON = {
 }
 
 
-def _is_past(deadline: datetime, now: datetime, *, date_only: bool) -> bool:
+def _is_past(deadline: datetime, now: datetime, *, date_only: bool | None) -> bool:
     """締切を過ぎているか。
 
     **日付しか書かれていなかったものを、当日中に打ち切らない。**
     時刻はこちら側が 00:00 に正規化した値で、出典にあった時刻ではない。
     その日のうちは判断できないものとして残し、翌日以降に過ぎたとする。
     """
-    if date_only:
+    # **`None`（不明）も日付だけとして扱う。** 確かめていない時刻で
+    # 当日中に打ち切らない。安全な側へ寄せる。
+    if date_only is not False:
         return deadline.date() < now.date()
     return deadline < now
 
@@ -252,8 +254,10 @@ def for_extracted(item, *, now: datetime | None = None) -> tuple[Availability, s
         end_at=_attr(item, "end_at"),
         now=now,
         deadline_kind=_kind_value(_attr(item, "deadline_kind")),
-        deadline_is_date_only=bool(_attr(item, "deadline_is_date_only")),
-        end_at_is_date_only=bool(_attr(item, "end_at_is_date_only")),
+        # **bool() で潰さない。** None（不明）を False にすると、
+        # 確かめていない時刻を「出典にあった」と扱うことになる。
+        deadline_is_date_only=_attr(item, "deadline_is_date_only"),
+        end_at_is_date_only=_attr(item, "end_at_is_date_only"),
         speaker_is_the_opportunity=evidence.is_a_call_for_speakers(
             _attr(item, "title"), _attr(item, "description")
         ),

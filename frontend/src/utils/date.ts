@@ -18,12 +18,14 @@ export function formatDateTime(value: string | null | undefined): string {
  */
 export function formatDateOrDateTime(
   value: string | null | undefined,
-  dateOnly: boolean,
+  dateOnly: boolean | null,
 ): string {
   if (!value) return '日時未定';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '日時未定';
-  if (!dateOnly) return formatDateTime(value);
+  // **`null`（分からない）でも時刻は出さない。** 確かめていない時刻を
+  // 出典の値として見せないため。
+  if (dateOnly === false) return formatDateTime(value);
   return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(date);
 }
 

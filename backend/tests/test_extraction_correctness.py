@@ -190,9 +190,35 @@ def test_a_dated_and_timed_deadline_closes_at_that_time():
     item = _o(
         deadline=datetime(2026, 9, 21, 17, 0, tzinfo=JST),
         deadline_kind=DeadlineKind.APPLICATION,
+        # **出典に時刻があったと言えるときだけ false。**
+        deadline_is_date_only=False,
     )
     status, _ = _avail(item, now=datetime(2026, 9, 21, 9, 0, tzinfo=UTC))  # 18:00 JST
     assert status is availability.Availability.CLOSED
+
+
+def test_an_unknown_precision_does_not_close_on_the_day_itself():
+    """**不明（None）を false と同じに扱わない。**
+
+    確かめていない時刻で当日中に打ち切ると、まだ応募できる機会を落とす。
+    """
+    item = _o(
+        deadline=datetime(2026, 9, 21, 17, 0, tzinfo=JST),
+        deadline_kind=DeadlineKind.APPLICATION,
+        deadline_is_date_only=None,
+    )
+    status, _ = _avail(item, now=datetime(2026, 9, 21, 9, 0, tzinfo=UTC))
+    assert status is not availability.Availability.CLOSED
+
+    # 翌日には閉じる
+    status, _ = _avail(item, now=datetime(2026, 9, 22, 9, 0, tzinfo=UTC))
+    assert status is availability.Availability.CLOSED
+
+
+def test_an_unknown_precision_keeps_the_time_value():
+    """**値は消さない。** 分からないことと、無いことは違う。"""
+    item = _o(start_at=datetime(2026, 3, 14, 14, 0, tzinfo=JST), start_at_is_date_only=None)
+    assert item.start_at.hour == 14
 
 
 # --- 料金区分 ----------------------------------------------------------------

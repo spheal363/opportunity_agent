@@ -206,10 +206,18 @@ export function DetailDialog() {
 
           {officialUrl ? (
             <p className="text-[14px]">
-              公式ページ：
+              {/* **情報源を申込先として見せない。** 実測で、応募できる催しほど
+                  本文から申込先が取れず、応募できないページほど自分自身の URL を
+                  返した。確認できていないものを「申込先」と呼ばない。 */}
+              {item.url_is_source_only ? '情報源のページ（申込先は未確認）：' : '申込先：'}
               <a href={officialUrl} target="_blank" rel="noreferrer" className="underline">
                 {officialUrl}
               </a>
+            </p>
+          ) : null}
+          {item.recommended_action ? (
+            <p className="text-[14px] text-muted">
+              次に取れる行動：{item.recommended_action}
             </p>
           ) : null}
 

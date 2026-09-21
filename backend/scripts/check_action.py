@@ -202,7 +202,8 @@ def _one(client: OrcaRouterClient, case: Case, target: dict) -> dict:
     grounded = evidence.ground_deadline_kind(parsed, content)
     status, reason = availability.for_extracted(grounded, now=datetime(2026, 9, 21, 12, tzinfo=UTC))
     action = grounded.recommended_action
-    target_text = grounded.action_target
+    # **対象は url が持つ。** 別欄は廃止した。
+    target_text = grounded.url
     return {
         "kind": case.kind,
         "expect_action": case.expect_action,
@@ -231,7 +232,7 @@ def _report(results: list[dict]) -> None:
         n = r["normalized"]
         print(f"  type={n['type']}  title={n['title'][:40]}")
         print(f"  recommended_action = {n['recommended_action']!r}")
-        print(f"  action_target      = {str(n['action_target'])[:70]!r}")
+        print(f"  url（対象）        = {str(n['url'])[:70]!r}")
         print(f"  受付 {r['availability']}  {r['availability_reason'] or ''}")
         print("  根拠:")
         print(f"    行動の語が入力にある  {r['action_in_source']}")
@@ -259,12 +260,12 @@ def _judge(r: dict) -> str:
         return "**不合格。応募できないページに行動を付けた**"
     # **対象が None なのは「推測で作った」ではない。** モデルが出さなかっただけ。
     # 推測を疑うのは、値があるのに入力に無いとき。
-    target = n["action_target"]
+    target = n["url"]
     if got and target and not r["target_in_source"] and not r["target_is_the_page_itself"]:
         return "**不合格。対象の値が入力に無い（推測で作った疑い）**"
     if got and not target:
-        note = "（対象は未取得。ページ自身を申込先とみなすしかない）"
-        return f"合格{note}" if want is not False else "**不合格**"
+        # **行動だけの部分合格。** 申込先を特定できていない。
+        return "部分合格（行動のみ。**申込先は未確認**）" if want is not False else "**不合格**"
     if want is None:
         return f"（入力しだい）行動={'あり' if got else 'なし'}"
     return "合格"

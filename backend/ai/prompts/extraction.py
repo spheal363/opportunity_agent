@@ -30,14 +30,13 @@ SYSTEM = (
     '  "cost": int|null,       // 参加費（円）\n'
     '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
     '  "recommended_action": str|null, // 本人が取れる行動（例: 応募する）\n'
-    '  "action_target": str|null,      // その行動の対象（申込ページ等）\n'
     '  "deadline_kind": str,   // application / registration / submission /\n'
     "                          // early_bird / speaker / other / unknown\n"
     '  "deadline_quote": str|null,     // deadline の日付そのものの表記\n'
     '  "deadline_context": str|null,   // 何の期限か分かる周辺の一文（原文のまま）\n'
-    '  "start_at_is_date_only": bool,  // 出典に時刻が無く日付だけなら true\n'
-    '  "end_at_is_date_only": bool,\n'
-    '  "deadline_is_date_only": bool\n'
+    '  "start_at_is_date_only": bool|null, // 時刻が無く日付だけなら true\n'
+    '  "end_at_is_date_only": bool|null,\n'
+    '  "deadline_is_date_only": bool|null\n'
     "}\n"
     "\n"
     "規則:\n"
@@ -58,7 +57,8 @@ SYSTEM = (
     "6. **時刻が書かれていない日付に、時刻を作らない。** "
     "「10月7日」としか書かれていないのに 09:00 や 17:00 を入れてはならない。"
     "日付だけのときは、その日の 00:00 に開催地のオフセットを付けたうえで、"
-    "対応する *_is_date_only を true にする。時刻まで書かれていれば false。\n"
+    "対応する *_is_date_only を true にする。時刻まで書かれていれば false。"
+    "**対応する日時が null のときは *_is_date_only も null にする。**\n"
     "7. **締切は「何に対するものか」を deadline_kind で区別する。** "
     "同じページに複数の締切が並ぶ。\n"
     "   application  応募締切・参加申込の締切（**推薦する行動に対応する**）\n"
@@ -94,16 +94,16 @@ SYSTEM = (
     "区分によって額が違うなら cost は null にする。\n"
     "10. **本人が取れる行動を特定できるときだけ recommended_action を入れる。**\n"
     "   入れてよい例: 応募する / 参加登録する / 申し込む / 入会する / 問い合わせる\n"
+    "   **対象は url に書く。** 別の欄は設けない。\n"
     "   **null にする例**（本人が直接応募・参加できないページ）:\n"
     "     他人の投稿作品・提出物のページ\n"
     "     終了した催しの開催レポート\n"
     "     仕組みや事例の解説記事\n"
     "     検索結果・イベント一覧のページそのもの\n"
     "   **type だけで決めない。** 解説記事でも、本文に具体的な募集先が"
-    "書かれていれば行動を特定できる。その場合は recommended_action を入れ、"
-    "action_target にその募集先（URL や申込方法）を書く。\n"
-    "   一覧ページから 1 件を取り出した場合は、その 1 件の募集先を"
-    "action_target にする。**一覧そのものを対象にしない。**\n"
+    "書かれていれば行動を特定できる。その場合は recommended_action を入れる。"
+    "   一覧ページから 1 件を取り出した場合は、その 1 件の url を書く。"
+    "**一覧そのものを対象にしない。**\n"
     "11. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 

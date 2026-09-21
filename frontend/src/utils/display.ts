@@ -170,3 +170,20 @@ export function isSaved(status: OpportunityStatus): boolean {
 export function isStep(status: OpportunityStatus): boolean {
   return STEP_STATUSES.includes(status);
 }
+
+
+/**
+ * リンクの意味。**情報源を申込先として見せない。**
+ *
+ * 実測で、応募できる催しほど本文から申込先 URL が取れず、応募できない
+ * ページほど自分自身の URL を返した。取得元をそのまま申込先と呼ぶと、
+ * 「ここから申し込める」という誤った案内になる。
+ */
+export function linkLabel(opportunity: Opportunity): string {
+  return opportunity.url_is_source_only ? '情報を見る（申込先は未確認）' : '申し込む';
+}
+
+/** 次に取れる行動。特定できていなければ null。 */
+export function actionLabel(opportunity: Opportunity): string | null {
+  return opportunity.recommended_action;
+}

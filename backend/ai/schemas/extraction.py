@@ -159,12 +159,24 @@ class ExtractedOpportunity(BaseModel):
     # **`type` で決めない。** 解説記事（type=other）の中に募集先が
     # 書かれていることもあり、その場合は行動が特定できる。
     recommended_action: str | None = Field(default=None, max_length=60)
-    # その行動の対象（申込ページ、フォーム、問い合わせ先など）。
-    action_target: str | None = Field(default=None, max_length=300)
+    #
+    # **対象は `url` が持つ。** 別欄（action_target）を用意していたが、
+    # `url`（申込・詳細ページ）と同じものを二重に尋ねているだけだった。
+    # 実測で 4 件とも null が返り、代わりに `url` にページ自身が入ったり
+    # 逆に null になったりした。**欄を増やしても確からしさは上がらない。**
 
-    start_at_is_date_only: bool = False
-    end_at_is_date_only: bool = False
-    deadline_is_date_only: bool = False
+    # **`None` は「分からない」。** false（＝出典に時刻があった）とは違う。
+    #
+    # 実測で、日時が null の候補にモデルが `null` を返し、`bool` を要求して
+    # いたため Schema 検証に落ちて Retry になった（1 回ぶん余分に課金）。
+    # **不明を false へ倒して通さない。** 倒すと、確かめていない時刻を
+    # 「出典にあった」と言うことになる。
+    #
+    # 不明のときは**日付だけとして扱う**（時刻を表示せず、当日中に
+    # 締め切らない）。安全な側へ寄せる。
+    start_at_is_date_only: bool | None = None
+    end_at_is_date_only: bool | None = None
+    deadline_is_date_only: bool | None = None
 
     @model_validator(mode="after")
     def _guard(self) -> "ExtractedOpportunity":
@@ -176,7 +188,14 @@ class ExtractedOpportunity(BaseModel):
         # 日付だけと申告したなら、時刻はこちらで 00:00 に落とす。
         # モデルが入れた時刻をそのまま残すと、出典にある時刻と区別できない。
         for field in ("start_at", "end_at", "deadline"):
-            if getattr(self, f"{field}_is_date_only") and getattr(self, field) is not None:
+            # **`True`（日付だけと申告）のときだけ時刻を落とす。**
+            #
+            # `None`（不明）では落とさない。落とすと、出典にあった時刻まで
+            # 消してしまう。**分からないことと、無いことは違う。**
+            # 不明のときは値を残したうえで、表示と締切判定を保守的に扱う。
+            if getattr(self, f"{field}_is_date_only") is True and (
+                getattr(self, field) is not None
+            ):
                 value = getattr(self, field)
                 object.__setattr__(
                     self, field, value.replace(hour=0, minute=0, second=0, microsecond=0)

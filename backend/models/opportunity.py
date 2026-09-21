@@ -48,12 +48,16 @@ class Opportunity(Base):
     # null の候補は最終推薦に出さない（投稿作品・過去レポート・解説記事・
     # 検索一覧そのものを「応募できる機会」として出さないため）。
     recommended_action: Mapped[str | None] = mapped_column(String, nullable=True)
-    action_target: Mapped[str | None] = mapped_column(String, nullable=True)
+    # **申込先を確認できたか。** True は「この URL は取得元のページで、
+    # 申込先として確かめたものではない」。情報源へのリンクとして扱う。
+    url_is_source_only: Mapped[bool] = mapped_column(Boolean, default=True)
     # 出典に時刻が書かれていたか。False でも「00:00 と書いてあった」ではなく
     # 「時刻の記載があった」という意味。日付だけなら True。
-    start_at_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
-    end_at_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
-    deadline_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    # **`None` は「分からない」。** false（出典に時刻があった）とは違う。
+    # 不明のときは時刻を表示せず、締切も当日中には切らない。
+    start_at_is_date_only: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    end_at_is_date_only: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    deadline_is_date_only: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # --- 受付状況（verified とは別軸）---
     #

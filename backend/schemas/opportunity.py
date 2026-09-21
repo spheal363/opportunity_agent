@@ -89,8 +89,14 @@ class OpportunitySummary(BaseModel):
     availability_checked_at: Timestamp = None
     # **出典に時刻が書かれていたか。** false のとき時刻を表示すると、
     # こちらが 00:00 へ正規化した値を出典の値として見せることになる。
-    start_at_is_date_only: bool = False
-    deadline_is_date_only: bool = False
+    # **`None` は「分からない」。** false（出典に時刻があった）とは違う。
+    # 不明のときは時刻を表示しない（確かめていない時刻を見せない）。
+    start_at_is_date_only: bool | None = None
+    deadline_is_date_only: bool | None = None
+    # **この URL は申込先か、情報源か。** True なら申込先は未確認。
+    url_is_source_only: bool = True
+    # 本人が取れる行動。特定できなければ null で、推薦には出さない。
+    recommended_action: str | None = None
     status: OpportunityStatus = OpportunityStatus.DISCOVERED
 
 
@@ -106,7 +112,7 @@ class OpportunityDetail(OpportunitySummary):
     # 「記載が無い」のか「区分によって違う」のかで伝え方が変わる。
     cost_kind: str | None = None
 
-    end_at_is_date_only: bool = False
+    end_at_is_date_only: bool | None = None
     # **その締切が何に対するものか。** 早割の期限を申込締切として見せない。
     deadline_kind: str | None = None
     # 判断の根拠になったページ上の表記。

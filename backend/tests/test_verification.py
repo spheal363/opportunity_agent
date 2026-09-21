@@ -59,7 +59,6 @@ def _add(db, oid: str, **kw) -> str:
         # **行動を特定できる候補が既定。** 特定できないものは
         # `recommended_action=None` を明示して作る。
         "recommended_action": "応募する",
-        "action_target": f"https://e.com/{oid}/apply",
     }
     base.update(kw)
     db.add(Opportunity(**base))
@@ -427,7 +426,7 @@ def test_a_candidate_without_an_action_is_not_recommended(db, state, real_mode, 
     """**行動の対象を特定できないものは出さない。**"""
     monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out())
     state.ranked_ids = [
-        _add(db, "gallery", recommended_action=None, action_target=None),
+        _add(db, "gallery", recommended_action=None),
         _add(db, "real"),
     ]
     loop._verify_and_finalize(db, state)

@@ -356,6 +356,14 @@ def _save_extracted(
     run のたびに同じ催しが増えないようにするため。
     """
     url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
+    # **申込先を確認できたか。**
+    #
+    # モデルが本文から申込先を読み取り、かつ取得元と同じサイトのときだけ
+    # 「申込先」と言える。それ以外は**情報源のページ**でしかない。
+    #
+    # 実測で、応募できる催しほど url が null で返り、応募できないページほど
+    # 自分自身の URL を返した。**取得元をそのまま申込先として見せない。**
+    url_is_source_only = not item.url or url == source_url
     row = None
     if url:
         row = (
@@ -387,7 +395,7 @@ def _save_extracted(
     row.deadline_quote = item.deadline_quote
     row.cost_kind = item.cost_kind
     row.recommended_action = item.recommended_action
-    row.action_target = item.action_target
+    row.url_is_source_only = url_is_source_only
     row.start_at_is_date_only = item.start_at_is_date_only
     row.end_at_is_date_only = item.end_at_is_date_only
     row.deadline_is_date_only = item.deadline_is_date_only

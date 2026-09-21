@@ -75,8 +75,21 @@ export type Opportunity = {
    * 出典に時刻が書かれていたか。**false のとき時刻を表示しない。**
    * 00:00 はこちら側の正規化であって、出典の値ではない。
    */
-  start_at_is_date_only: boolean;
-  deadline_is_date_only: boolean;
+  /**
+   * 出典に時刻が書かれていたか。**`null` は「分からない」**で、
+   * `false`（出典に時刻があった）とは違う。どちらでもない限り時刻を出さない。
+   */
+  start_at_is_date_only: boolean | null;
+  deadline_is_date_only: boolean | null;
+  /**
+   * この URL は**申込先ではなく情報源**か。
+   *
+   * `true` のとき、申込先は確認できていない。取得元のページへのリンクとして
+   * 見せ、「申込先は未確認」と添える。**情報源を申込先として見せない。**
+   */
+  url_is_source_only: boolean;
+  /** 本人が取れる行動。特定できなければ null。 */
+  recommended_action: string | null;
   status: OpportunityStatus;
 };
 
@@ -93,7 +106,7 @@ export type OpportunityDetail = Opportunity & {
    */
   cost_kind: CostKind | null;
 
-  end_at_is_date_only: boolean;
+  end_at_is_date_only: boolean | null;
   /** その締切が何に対するものか。**早割の期限を申込締切として見せない。** */
   deadline_kind: DeadlineKind | null;
   /** 判断の根拠になったページ上の表記。 */
