@@ -2,58 +2,38 @@
 
 **欄を落とすと「取れていない」と読み違える。**
 
-実際に `eligibility` を落とし、「参加条件が 0 / 18 件」と報告した。
-DB には 4 件入っており、モデルは 5 件返していた。
+2 度やった。`eligibility` を落として「参加条件 0 / 18 件」と報告し、
+`recommended_action` を落として「行動 None」と報告した。どちらも DB には
+入っていた。
+
+**列を手で並べるのをやめ、モデルの列をそのまま出す**ようにした。
+ここではその約束を固定する。
+
+`row_dict` は `scripts/_experiment.py` に置いてある。`run_comparison` は
+import しただけで環境変数を書き換えるため、テストから切り離してある。
 """
 
-import ast
-import pathlib
-
-# レポートに必ず載せる項目。**判断に使うものは落とさない。**
-REQUIRED = {
-    "opportunity_id",
-    "type",
-    "title",
-    "description",
-    "url",
-    "source",
-    "start_at",
-    "end_at",
-    "deadline",
-    "location",
-    "eligibility",
-    "cost",
-    "cost_kind",
-    "format",
-    "score",
-    "serendipity_score",
-    "match_reasons",
-    "reason",
-    "verified",
-    "verification_source",
-    "availability",
-    "availability_reason",
-    "availability_checked_at",
-    "deadline_kind",
-    "deadline_quote",
-    "status",
-}
+from scripts._experiment import row_dict
 
 
-def _recorded_keys() -> set[str]:
-    """`run_comparison.py` が opportunities に書き出す欄を読み取る。"""
-    source = (pathlib.Path(__file__).parent.parent / "scripts/run_comparison.py").read_text()
-    tree = ast.parse(source)
-    keys: set[str] = set()
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Dict):
-            continue
-        names = {k.value for k in node.keys if isinstance(k, ast.Constant)}
-        if "opportunity_id" in names and "availability" in names:
-            keys |= names
-    return keys
+def test_every_model_column_is_written_out():
+    """**モデルの列がすべて出る。** 手で並べた一覧に依存しない。"""
+    from sqlalchemy import inspect as sa_inspect
+
+    from models import Opportunity
+
+    row = Opportunity(opportunity_id="o1", user_id="u1", title="t", type="event")
+    written = set(row_dict(row))
+    expected = {c.key for c in sa_inspect(Opportunity).mapper.column_attrs}
+
+    assert written == expected
 
 
-def test_the_report_keeps_every_field_used_for_judging():
-    missing = REQUIRED - _recorded_keys()
-    assert not missing, f"レポートから落ちている欄: {sorted(missing)}"
+def test_the_fields_we_lost_before_are_present():
+    """**同じ取りこぼしを繰り返さない。**"""
+    from models import Opportunity
+
+    row = Opportunity(opportunity_id="o1", user_id="u1", title="t", type="event")
+    written = set(row_dict(row))
+
+    assert {"eligibility", "recommended_action", "url_is_source_only"} <= written

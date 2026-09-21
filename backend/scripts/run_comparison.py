@@ -489,44 +489,10 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
         "shortfall_reason": run.shortfall_reason if run else None,
         "usage": run.usage_json if run else None,
         "logs": [{"step": lg.step, "message": lg.message} for lg in logs],
-        "opportunities": [
-            {
-                "opportunity_id": r.opportunity_id,
-                "type": r.type,
-                "title": r.title,
-                "url": r.url,
-                "source": r.source,
-                "start_at": _iso(r.start_at),
-                "end_at": _iso(r.end_at),
-                "deadline": _iso(r.deadline),
-                "location": r.location,
-                # **欄を落とすと「取れていない」と読み違える。**
-                # 実際に eligibility を落とし、0 件と報告してしまった。
-                "description": r.description,
-                "eligibility": r.eligibility,
-                "format": r.format,
-                "score": r.score,
-                "serendipity_score": r.serendipity_score,
-                "match_reasons": r.match_reasons,
-                "reason": r.reason,
-                "verified": r.verified,
-                "verification_source": r.verification_source,
-                "availability": r.availability,
-                "availability_reason": r.availability_reason,
-                "availability_checked_at": _iso(r.availability_checked_at),
-                "availability_source": r.availability_source,
-                # **何に対する締切・料金かの区分。** 出力から漏れていた。
-                "deadline_kind": r.deadline_kind,
-                "deadline_quote": r.deadline_quote,
-                "deadline_context": getattr(r, "deadline_context", None),
-                "cost_kind": r.cost_kind,
-                "deadline_is_date_only": r.deadline_is_date_only,
-                "start_at_is_date_only": r.start_at_is_date_only,
-                "cost": r.cost,
-                "status": r.status,
-            }
-            for r in rows
-        ],
+        # **列を手で並べない。** 2 度、判断に使う欄を書き漏らして
+        # 「取れていない」と読み違えた（eligibility、recommended_action）。
+        # モデルの列をそのまま出す。
+        "opportunities": [_experiment.row_dict(r) for r in rows],
         # **次の実験でやり直さないための入力。**
         "llm_calls": capture.llm,
         "tool_calls": capture.tools,

@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 # 実験では必ず実費を取る。**モデルの挙動は変わらない**（応答に欄が増えるだけ）。
 REQUIRED_ENV = {"ORCAROUTER_INCLUDE_COST": "true"}
@@ -129,3 +130,21 @@ class Budget:
 
 class BudgetExceededError(RuntimeError):
     """停止条件に達した。**そこまでの記録は残す。**"""
+
+
+def row_dict(row) -> dict:
+    """ORM 行を、列を落とさずに dict にする。
+
+    **手で並べると落ちる。** 実際に 2 度落とし、どちらも「取れていない」と
+    報告してしまった（`eligibility` と `recommended_action`）。
+
+    ここに置いてあるのは、**import しただけで環境変数を書き換える
+    モジュールからテストを切り離す**ため。
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    out = {}
+    for column in sa_inspect(row).mapper.column_attrs:
+        value = getattr(row, column.key)
+        out[column.key] = value.isoformat() if isinstance(value, datetime) else value
+    return out
