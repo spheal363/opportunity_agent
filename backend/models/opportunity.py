@@ -35,6 +35,21 @@ class Opportunity(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     match_reasons: Mapped[list] = mapped_column(JSON, default=list)
 
+    # 何に対する締切・料金かの区別（#65 で見つかった取り違えへの対処）。
+    #
+    # **ページ全体の受付状況を一括で決めないための情報。** 早割の期限を
+    # 申込締切として扱うと、終了した募集が受付中に見える。
+    #
+    # 旧い行は None。**当時の前提（deadline = 申込締切）のまま扱う。**
+    deadline_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    deadline_quote: Mapped[str | None] = mapped_column(String, nullable=True)
+    cost_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 出典に時刻が書かれていたか。False でも「00:00 と書いてあった」ではなく
+    # 「時刻の記載があった」という意味。日付だけなら True。
+    start_at_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    end_at_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    deadline_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
+
     # --- 受付状況（verified とは別軸）---
     #
     # **verified は「情報を確認できたか」、availability は「今応募・参加できるか」。**

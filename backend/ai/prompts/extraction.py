@@ -27,7 +27,14 @@ SYSTEM = (
     '  "location": str|null,   // 開催場所\n'
     '  "format": str|null,     // offline / online / hybrid\n'
     '  "eligibility": str|null,// 参加条件\n'
-    '  "cost": int|null        // 参加費（円）\n'
+    '  "cost": int|null,       // 参加費（円）\n'
+    '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
+    '  "deadline_kind": str,   // application / registration / early_bird /\n'
+    "                          // speaker / other / unknown\n"
+    '  "deadline_quote": str|null,     // deadline の根拠にしたページ上の表記\n'
+    '  "start_at_is_date_only": bool,  // 出典に時刻が無く日付だけなら true\n'
+    '  "end_at_is_date_only": bool,\n'
+    '  "deadline_is_date_only": bool\n'
     "}\n"
     "\n"
     "規則:\n"
@@ -45,7 +52,36 @@ SYSTEM = (
     "4. 年が書かれていない日付は、今日以降で最も近い年として解釈する。\n"
     "5. **ページが催しや募集の告知ではなく、記事・ブログ・解説の場合は "
     'type を "other" にする。** 記事の題名を催しの名称のように扱わない。\n'
-    "6. 出力は JSON のみ。説明文を付けない。"
+    "6. **時刻が書かれていない日付に、時刻を作らない。** "
+    "「10月7日」としか書かれていないのに 09:00 や 17:00 を入れてはならない。"
+    "日付だけのときは、その日の 00:00 に開催地のオフセットを付けたうえで、"
+    "対応する *_is_date_only を true にする。時刻まで書かれていれば false。\n"
+    "7. **締切は「何に対するものか」を deadline_kind で区別する。** "
+    "同じページに複数の締切が並ぶ。\n"
+    "   application  応募締切・参加申込の締切（**推薦する行動に対応する**）\n"
+    "   registration 参加登録・チケット申込の期限（同上）\n"
+    "   early_bird   早割・先行販売の期限（**過ぎても参加できる**）\n"
+    "   speaker      登壇者・発表者・出展者の募集締切（**参加とは別の行動**）\n"
+    "   other        上のどれでもない締切\n"
+    "   unknown      何に対する締切か特定できない\n"
+    "   deadline には **deadline_kind に対応する日付だけ**を入れる。"
+    "早割の期限を申込締切として入れてはならない。"
+    "参加・応募の締切が読み取れないなら deadline は null、"
+    'deadline_kind は "unknown" にする。\n'
+    "   deadline_quote には、その判断の根拠にしたページ上の表記を"
+    "そのまま短く写す（例:「応募締め切り 2026年8月21日」）。\n"
+    "8. **取り消し線や「募集を締め切りました」「延長しました」は、"
+    "どの募集に付いているかを見る。** 登壇者募集が終了していても、"
+    "一般参加が受付中のことがある。ページ全体を一括で終了と判断しない。\n"
+    "9. **一部の区分が無料でも、機会全体を無料としない。**\n"
+    "   free           全体が無料と明記されている\n"
+    "   paid           有料の記載がある\n"
+    "   partially_free 一部の区分・条件だけ無料（学生無料、関係者無料など）\n"
+    "   unknown        参加費の記載が無い（**無料ではない**）\n"
+    "   cost に金額を入れてよいのは、その金額が"
+    "「この機会に参加するために誰もが払う額」である場合のみ。"
+    "区分によって額が違うなら cost は null にする。\n"
+    "10. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 
 

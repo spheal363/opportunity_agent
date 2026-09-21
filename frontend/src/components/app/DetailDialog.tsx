@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 
 import { fetchOpportunity } from '../../api';
-import { availabilityLabel, categoryLabel, costLabel, isStep, safeHttpUrl } from '../../utils/display';
+import {
+  availabilityLabel,
+  categoryLabel,
+  costLabel,
+  deadlineKindLabel,
+  deadlineLabel,
+  isStep,
+  scheduleLabel,
+  safeHttpUrl,
+} from '../../utils/display';
 import { POSE_SLOTS } from '../../utils/poses';
 import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
@@ -113,13 +122,19 @@ export function DetailDialog() {
 
           <dl className="grid grid-cols-[80px_1fr] gap-[10px] text-[14px] bg-[#edf0e7] p-[18px] rounded-[7px] my-[22px]">
             <dt className="text-muted">開催日時</dt>
-            <dd className="m-0">{formatDateTime(item.start_at)}</dd>
+            <dd className="m-0">{scheduleLabel(item)}</dd>
             <dt className="text-muted">開催場所</dt>
             <dd className="m-0">{item.location ?? '場所未定'}</dd>
             <dt className="text-muted">参加費</dt>
-            <dd className="m-0">{costLabel(item.cost)}</dd>
-            <dt className="text-muted">申込締切</dt>
-            <dd className="m-0">{formatDateTime(item.deadline)}</dd>
+            <dd className="m-0">{costLabel(item.cost, item.cost_kind)}</dd>
+            {/* **何に対する締切かを見出しに出す。** 早割の期限を申込締切として見せない。 */}
+            <dt className="text-muted">{deadlineKindLabel(item.deadline_kind)}</dt>
+            <dd className="m-0">
+              {deadlineLabel(item)}
+              {item.deadline_quote ? (
+                <span className="block text-muted text-[13px]">{item.deadline_quote}</span>
+              ) : null}
+            </dd>
             <dt className="text-muted">公式情報</dt>
             <dd className="m-0">
               {item.verified ? `確認済み（${formatDateTime(item.verified_at)}）` : '未確認'}
@@ -178,13 +193,14 @@ export function DetailDialog() {
           <p className="text-[14px]">{item.title}</p>
           <ul className="text-[14px] p-0 list-none my-[1em]">
             <li className="checklist-item border-b border-line py-[10px]">
-              日程を確認：{formatDateTime(item.start_at)}
+              日程を確認：{scheduleLabel(item)}
             </li>
             <li className="checklist-item border-b border-line py-[10px]">
               参加条件：{item.eligibility ?? '記載なし'}
             </li>
             <li className="checklist-item border-b border-line py-[10px]">
-              申込締切：{formatDateTime(item.deadline)}
+              {/* **何に対する締切かを出す。** 早割の期限を申込締切として見せない。 */}
+              {deadlineKindLabel(item.deadline_kind)}：{deadlineLabel(item)}
             </li>
           </ul>
 

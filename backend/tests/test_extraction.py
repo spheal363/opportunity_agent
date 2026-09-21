@@ -70,9 +70,24 @@ def test_to_utc_keeps_null():
 
 
 def test_cost_zero_and_null_are_distinct():
-    """無料は 0、不明は null。混同しない。"""
-    assert _extracted(cost=0).cost == 0
+    """無料は 0、不明は null。混同しない。
+
+    **0 を残すのは「全体が無料」と分かったときだけ。** 区分を伴わない 0 は、
+    一部の無料区分を見て付けられた可能性があるため信用しない。
+    """
+    assert _extracted(cost=0, cost_kind="free").cost == 0
     assert _extracted().cost is None
+
+
+def test_zero_without_a_free_marking_is_not_trusted():
+    """**一部の区分が無料なだけの 0 を、機会全体の無料にしない。**
+
+    実測（https://www.xsum.jp/gai）で、定価 ¥20,000 のイベントに
+    cost=0 が付いた。無料の区分が並んでいたため。
+    """
+    assert _extracted(cost=0, cost_kind="partially_free").cost is None
+    assert _extracted(cost=0, cost_kind="unknown").cost is None
+    assert _extracted(cost=0, cost_kind="paid").cost is None
 
 
 def test_negative_cost_is_rejected():

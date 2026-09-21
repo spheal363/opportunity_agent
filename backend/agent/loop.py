@@ -378,6 +378,13 @@ def _save_extracted(
     row.format = item.format
     row.eligibility = item.eligibility
     row.cost = item.cost
+    # **何に対する締切・料金か。** ページ全体の受付状況を一括で決めないため。
+    row.deadline_kind = item.deadline_kind
+    row.deadline_quote = item.deadline_quote
+    row.cost_kind = item.cost_kind
+    row.start_at_is_date_only = item.start_at_is_date_only
+    row.end_at_is_date_only = item.end_at_is_date_only
+    row.deadline_is_date_only = item.deadline_is_date_only
 
     # ② AI の評価はこの時点では付けない（④ Evaluation の責務）。
     if row.status is None:
@@ -564,12 +571,22 @@ def _drop_before_evaluation(
             continue
 
         status, reason = availability.from_dates(
-            opportunity_type=row.type, deadline=row.deadline, end_at=row.end_at
+            opportunity_type=row.type,
+            deadline=row.deadline,
+            end_at=row.end_at,
+            # **何に対する締切かで扱いを変える。** 早割の期限が過ぎていても
+            # 参加はできる。ここを渡さないと全部を申込締切として閉じてしまう。
+            deadline_kind=row.deadline_kind,
+            deadline_is_date_only=bool(row.deadline_is_date_only),
         )
         if status is availability.Availability.CLOSED:
             _set_availability(row, status, reason, source=None)
             closed += 1
             continue
+        # 閉じないが理由が付いた場合（早割の期限だった等）も残す。
+        # **理由を捨てると、なぜ受付中扱いなのかが後から読めない。**
+        if reason:
+            _set_availability(row, status, reason, source=None)
         kept.append(opportunity_id)
 
     db.commit()

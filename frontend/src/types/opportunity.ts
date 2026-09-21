@@ -16,6 +16,18 @@ export type OpportunityFormat = 'offline' | 'online' | 'hybrid';
 /** 受付状況。`verified` とは別の軸。 */
 export type Availability = 'open' | 'closed' | 'unknown';
 
+/** 参加費の区分。backend/ai/schemas/extraction.py と対応。 */
+export type CostKind = 'free' | 'paid' | 'partially_free' | 'unknown';
+
+/** 締切が何に対するものか。backend/ai/schemas/extraction.py と対応。 */
+export type DeadlineKind =
+  | 'application'
+  | 'registration'
+  | 'early_bird'
+  | 'speaker'
+  | 'other'
+  | 'unknown';
+
 export type OpportunityStatus =
   | 'discovered'
   | 'recommended'
@@ -58,6 +70,13 @@ export type Opportunity = {
   availability_reason: string | null;
   /** いつ時点の確認か。古い結果を今の状態として読まないために対で見る。 */
   availability_checked_at: string | null;
+
+  /**
+   * 出典に時刻が書かれていたか。**false のとき時刻を表示しない。**
+   * 00:00 はこちら側の正規化であって、出典の値ではない。
+   */
+  start_at_is_date_only: boolean;
+  deadline_is_date_only: boolean;
   status: OpportunityStatus;
 };
 
@@ -68,6 +87,17 @@ export type OpportunityDetail = Opportunity & {
   format: OpportunityFormat | null;
   eligibility: string | null;
   cost: number | null;
+  /**
+   * 参加費の区分。**cost が null でも意味が違う。**
+   * 記載が無いのか、区分によって額が違うのか。
+   */
+  cost_kind: CostKind | null;
+
+  end_at_is_date_only: boolean;
+  /** その締切が何に対するものか。**早割の期限を申込締切として見せない。** */
+  deadline_kind: DeadlineKind | null;
+  /** 判断の根拠になったページ上の表記。 */
+  deadline_quote: string | null;
   verified_at: string | null;
   verification_source: string | null;
 };

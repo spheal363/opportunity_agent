@@ -4,8 +4,15 @@
  * ここで作るのは「見せ方」だけ。Web 上の事実（日時・場所・費用）は API が
  * 返した値をそのまま出し、取得できていない項目は推測せず「未定」と書く。
  */
-import type { Availability, Opportunity, OpportunityStatus, OpportunityType } from '../types';
-import { formatDateTime } from '../utils/date';
+import type {
+  Availability,
+  CostKind,
+  DeadlineKind,
+  Opportunity,
+  OpportunityStatus,
+  OpportunityType,
+} from '../types';
+import { formatDateOrDateTime, formatDateTime } from '../utils/date';
 
 /** カード表紙の大きな英字。type ごとに固定の装飾文言で、事実ではない。 */
 const COVER_LINES: Record<OpportunityType, [string, string]> = {
@@ -67,22 +74,56 @@ export function safeHttpUrl(url: string | null | undefined): string | null {
   }
 }
 
-/** 取得できなかった事実は推測で埋めない。 */
+/**
+ * 取得できなかった事実は推測で埋めない。
+ *
+ * **出典に時刻が無かったものは、日付だけで見せる。** 00:00 はこちらの
+ * 正規化であって、ページに書かれていた時刻ではない。
+ */
 export function scheduleLabel(opportunity: Opportunity): string {
-  return formatDateTime(opportunity.start_at);
+  return formatDateOrDateTime(opportunity.start_at, opportunity.start_at_is_date_only);
 }
 
 export function placeLabel(opportunity: Opportunity): string {
   return opportunity.location ?? '場所未定';
 }
 
-export function costLabel(cost: number | null | undefined): string {
-  if (cost === null || cost === undefined) return '参加費未確認';
-  return cost === 0 ? '無料' : `${cost.toLocaleString('ja-JP')}円`;
+/**
+ * **「記載が無い」と「区分によって違う」を分ける。**
+ *
+ * 一部の区分だけ無料のページを「無料」と出すと、有料の催しを無料として
+ * 伝えることになる（実測でそうなった）。金額を持てない理由まで見せる。
+ */
+export function costLabel(cost: number | null | undefined, kind?: CostKind | null): string {
+  if (cost !== null && cost !== undefined) {
+    return cost === 0 ? '無料' : `${cost.toLocaleString('ja-JP')}円`;
+  }
+  if (kind === 'partially_free') return '一部無料・区分により異なる';
+  if (kind === 'paid') return '有料（金額は要確認）';
+  return '参加費未確認';
 }
 
 export function deadlineLabel(opportunity: Opportunity): string {
-  return formatDateTime(opportunity.deadline);
+  return formatDateOrDateTime(opportunity.deadline, opportunity.deadline_is_date_only);
+}
+
+/**
+ * **その締切が何に対するものかを添える。**
+ *
+ * 早割の期限を「申込締切」として見せると、参加できる催しを
+ * 締め切ったものに見せてしまう（逆もある）。
+ */
+const DEADLINE_KIND_LABEL: Record<DeadlineKind, string> = {
+  application: '応募締切',
+  registration: '参加申込の期限',
+  early_bird: '早割の期限',
+  speaker: '登壇者募集の締切',
+  other: '締切',
+  unknown: '締切（対象は要確認）',
+};
+
+export function deadlineKindLabel(kind: DeadlineKind | null | undefined): string {
+  return kind ? (DEADLINE_KIND_LABEL[kind] ?? DEADLINE_KIND_LABEL.unknown) : '申込締切';
 }
 
 /**

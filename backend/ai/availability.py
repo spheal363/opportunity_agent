@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from ai.schemas.extraction import GATING_DEADLINES, DeadlineKind
 from schemas.opportunity import OpportunityType
 
 
@@ -59,18 +60,36 @@ def from_dates(
     deadline: datetime | None,
     end_at: datetime | None,
     now: datetime | None = None,
+    deadline_kind: str | None = None,
+    deadline_is_date_only: bool = False,
 ) -> tuple[Availability, str | None]:
     """日時だけで判定する。評価より前に使う。
 
     **`closed` と言い切れるものだけ `closed` にする。** 残りは `unknown`。
     `start_at` は見ない。開始済みでも参加できる機会がある（community / job）し、
     イベントでも当日参加できることがある。終わったかどうかは `end_at` で見る。
+
+    ## 締切は「何に対するものか」で扱いを変える
+
+    **ページ全体の受付状況を一括で決めない。** 同じページに
+    「登壇者募集は終了、一般参加は受付中」が並ぶ。
+
+    受付終了の根拠にしてよいのは、**推薦する行動（参加・応募）に対応する
+    締切だけ**。早割の期限や登壇者募集の締切が過ぎていても、参加はできる。
+
+    `deadline_kind` が None のものは、区分を持たなかった頃に抽出した行。
+    当時の prompt は `deadline` を「申込締切」として書かせていたので、
+    **その前提のまま扱う。** 後から意味を変えない。
     """
     now = now or datetime.now(UTC)
 
     deadline = as_utc(deadline)
-    if deadline is not None and deadline < now:
-        return Availability.CLOSED, "申込の締切が過ぎています"
+    if deadline is not None and _is_past(deadline, now, date_only=deadline_is_date_only):
+        gating, reason = _deadline_gates_action(deadline_kind)
+        if gating:
+            return Availability.CLOSED, "申込の締切が過ぎています"
+        # 過ぎていても参加はできる締切。**閉じる根拠にしない。**
+        return Availability.UNKNOWN, reason
 
     end_at = as_utc(end_at)
     if end_at is not None and end_at < now and _ends(opportunity_type):
@@ -78,6 +97,42 @@ def from_dates(
 
     # 締切が未来でも「受付中」とは限らない（満員・中止がある）。
     return Availability.UNKNOWN, None
+
+
+def _is_past(deadline: datetime, now: datetime, *, date_only: bool) -> bool:
+    """締切を過ぎているか。
+
+    **日付しか書かれていなかったものを、当日中に打ち切らない。**
+    時刻はこちら側が 00:00 に正規化した値で、出典にあった時刻ではない。
+    その日のうちは判断できないものとして残し、翌日以降に過ぎたとする。
+    """
+    if date_only:
+        return deadline.date() < now.date()
+    return deadline < now
+
+
+def _deadline_gates_action(deadline_kind: str | None) -> tuple[bool, str | None]:
+    """その締切が、推薦する行動を閉ざすものか。"""
+    if deadline_kind is None:
+        # 区分を持たなかった頃の行。当時の前提（申込締切）のまま扱う。
+        return True, None
+    try:
+        kind = DeadlineKind(deadline_kind)
+    except ValueError:
+        return False, "締切の区分が読み取れませんでした"
+
+    if kind in GATING_DEADLINES:
+        return True, None
+    if kind is DeadlineKind.UNKNOWN:
+        return False, "締切が何に対するものか特定できませんでした"
+    return False, _NON_GATING_REASON[kind]
+
+
+_NON_GATING_REASON = {
+    DeadlineKind.EARLY_BIRD: "過ぎているのは早割の期限で、参加の締切ではありません",
+    DeadlineKind.SPEAKER: "過ぎているのは登壇者募集の締切で、参加の締切ではありません",
+    DeadlineKind.OTHER: "過ぎている締切は、参加の締切ではありません",
+}
 
 
 def _ends(opportunity_type: str | None) -> bool:

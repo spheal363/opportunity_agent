@@ -27,8 +27,23 @@ logger = get_logger(__name__)
 _UNSUPPORTED_DEFAULT = ("CURRENT_TIMESTAMP",)
 
 
+class MigrationNotLoadedError(RuntimeError):
+    """モデルが登録されていないまま移行を呼んだ。"""
+
+
 def add_missing_columns(engine: Engine) -> list[str]:
-    """モデルにあって DB に無い列を足す。足した列名を返す。"""
+    """モデルにあって DB に無い列を足す。足した列名を返す。
+
+    **モデルを import していないと `Base.metadata` は空で、何も足さずに
+    成功したように見える。** 列を足したつもりの DB がそのまま使われ、
+    後で `no such column` になる。黙って何もしないほうが危ないので止める。
+    """
+    if not Base.metadata.sorted_tables:
+        raise MigrationNotLoadedError(
+            "モデルが登録されていません（`import models` が先に必要です）。"
+            "このまま進むと、列を足さずに成功したように見えます"
+        )
+
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     added: list[str] = []
