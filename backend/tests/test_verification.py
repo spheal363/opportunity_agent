@@ -6,6 +6,7 @@ LLM も read_page も叩かない。
 """
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -599,3 +600,56 @@ def test_verification_opening_is_never_second_guessed(db, state, real_mode, monk
     loop._verify_and_finalize(db, state)
 
     assert db.get(loop.Opportunity, "open1").availability == "open"
+
+
+# --- 倒す範囲を表で固定する（再レビューでの自己指摘）------------------------
+#
+# **最初の実装は倒しすぎていた。** 締切が未来でも倒しており、
+# 「満員につき受付終了」のようにページを読んで初めて分かる観察まで
+# 捨てていた。**見張るのは「過ぎた締切を読み違えた」場合だけ。**
+
+_PAST = datetime(2020, 1, 1, tzinfo=UTC)
+_FUTURE = datetime(2099, 1, 1, tzinfo=UTC)
+
+
+def _guarded(deadline, kind) -> str:
+    row = SimpleNamespace(
+        type="event",
+        title="t",
+        description=None,
+        deadline=deadline,
+        end_at=None,
+        deadline_kind=kind,
+        deadline_is_date_only=False,
+        end_at_is_date_only=False,
+    )
+    out = SimpleNamespace(availability="closed", availability_reason="募集を締め切りました")
+    status, _ = loop._verified_availability(row, out)
+    return str(status)
+
+
+@pytest.mark.parametrize(
+    ("label", "deadline", "kind", "expected"),
+    [
+        # 狙った不具合。過ぎた「参加の締切ではない締切」を読み違えた場合
+        ("早割の期限が過去", _PAST, "early_bird", "unknown"),
+        ("登壇募集の締切が過去", _PAST, "speaker", "unknown"),
+        ("区分 unknown・締切が過去", _PAST, "unknown", "unknown"),
+        # 閉じるべきものは閉じる
+        ("申込締切が過去", _PAST, "application", "closed"),
+        ("参加登録の期限が過去", _PAST, "registration", "closed"),
+        # **締切が未来なら、検証の closed はその締切の話ではない**
+        ("申込締切が未来（満員など）", _FUTURE, "application", "closed"),
+        ("早割の期限が未来（満員など）", _FUTURE, "early_bird", "closed"),
+        ("区分 unknown・締切が未来", _FUTURE, "unknown", "closed"),
+        # 旧データ（区分を持たない行）の挙動を変えない
+        ("旧データ・締切が過去", _PAST, None, "closed"),
+        ("旧データ・締切が未来", _FUTURE, None, "closed"),
+        # 締切そのものが無い
+        ("締切なし", None, None, "closed"),
+    ],
+)
+def test_the_guard_fires_only_on_a_passed_non_participation_deadline(
+    label, deadline, kind, expected
+):
+    assert _guarded(deadline, kind) == expected, label

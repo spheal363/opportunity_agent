@@ -649,9 +649,20 @@ def _verified_availability(row: Opportunity, out) -> tuple[str, str | None]:
     if from_dates is availability.Availability.CLOSED:
         return out.availability, out.availability_reason
 
-    # 日付では閉じられない。**参加の締切だと確認できた区分が無いのに
-    # 閉じようとしている。** 安全側へ倒す。
-    if row.deadline is not None and row.deadline_kind not in _GATING_KINDS:
+    # **見張るのは「過ぎた締切を読み違えた」場合だけ。**
+    #
+    # 早割や登壇者募集の締切が**過ぎている**と、検証がその終了告知
+    # （取り消し線つきの「応募を締め切りました」など）を拾って `closed` を
+    # 返しやすい。それが狙った不具合。
+    #
+    # 締切が**まだ来ていない**なら、検証の `closed` はその締切の話ではない
+    # （満員・中止など、ページを読んで初めて分かること）。**そちらは倒さない。**
+    # 倒すと、実際に確かめた観察を捨てることになる。
+    if (
+        row.deadline is not None
+        and row.deadline_kind not in _GATING_KINDS
+        and availability.as_utc(row.deadline) < datetime.now(UTC)
+    ):
         return (
             availability.Availability.UNKNOWN,
             "公式ページに終了を示す記述がありましたが、"
