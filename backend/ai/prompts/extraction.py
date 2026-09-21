@@ -29,6 +29,8 @@ SYSTEM = (
     '  "eligibility": str|null,// 参加条件\n'
     '  "cost": int|null,       // 参加費（円）\n'
     '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
+    '  "recommended_action": str|null, // 本人が取れる行動（例: 応募する）\n'
+    '  "action_target": str|null,      // その行動の対象（申込ページ等）\n'
     '  "deadline_kind": str,   // application / registration / submission /\n'
     "                          // early_bird / speaker / other / unknown\n"
     '  "deadline_quote": str|null,     // deadline の日付そのものの表記\n'
@@ -90,7 +92,19 @@ SYSTEM = (
     "   cost に金額を入れてよいのは、その金額が"
     "「この機会に参加するために誰もが払う額」である場合のみ。"
     "区分によって額が違うなら cost は null にする。\n"
-    "10. 出力は JSON のみ。説明文を付けない。"
+    "10. **本人が取れる行動を特定できるときだけ recommended_action を入れる。**\n"
+    "   入れてよい例: 応募する / 参加登録する / 申し込む / 入会する / 問い合わせる\n"
+    "   **null にする例**（本人が直接応募・参加できないページ）:\n"
+    "     他人の投稿作品・提出物のページ\n"
+    "     終了した催しの開催レポート\n"
+    "     仕組みや事例の解説記事\n"
+    "     検索結果・イベント一覧のページそのもの\n"
+    "   **type だけで決めない。** 解説記事でも、本文に具体的な募集先が"
+    "書かれていれば行動を特定できる。その場合は recommended_action を入れ、"
+    "action_target にその募集先（URL や申込方法）を書く。\n"
+    "   一覧ページから 1 件を取り出した場合は、その 1 件の募集先を"
+    "action_target にする。**一覧そのものを対象にしない。**\n"
+    "11. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 
 

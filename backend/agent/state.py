@@ -33,6 +33,8 @@ class AgentState(BaseModel):
     selected_ids: list[str] = Field(default_factory=list)
     # 3 件に満たなかった理由。run に保存して後からも同じ内容を返す。
     shortfall_reason: str | None = None
+    # 行動の対象を特定できずに外した件数。**不足理由の説明に使う。**
+    no_action_count: int = 0
 
     # 探索の繰り返し回数。上限を超えたら打ち切る。
     iteration: int = 0

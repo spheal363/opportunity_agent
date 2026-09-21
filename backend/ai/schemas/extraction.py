@@ -148,6 +148,20 @@ class ExtractedOpportunity(BaseModel):
     # **書かれていない時刻を作らない。** 日付だけのときは True にし、
     # 時刻部分はこちら側の正規化（00:00）であって出典の値ではないと示す。
 
+    # **推薦する行動と、その対象。**
+    #
+    # 「このページを見て、本人は何ができるか」。応募する・参加登録する・
+    # 入会する、など。**特定できなければ null。**
+    #
+    # 実測で、ハッカソンの投稿作品ページ（他人の提出物）や検索結果一覧が
+    # TOP に入った。どちらも本人が直接応募・参加できるものではない。
+    #
+    # **`type` で決めない。** 解説記事（type=other）の中に募集先が
+    # 書かれていることもあり、その場合は行動が特定できる。
+    recommended_action: str | None = Field(default=None, max_length=60)
+    # その行動の対象（申込ページ、フォーム、問い合わせ先など）。
+    action_target: str | None = Field(default=None, max_length=300)
+
     start_at_is_date_only: bool = False
     end_at_is_date_only: bool = False
     deadline_is_date_only: bool = False

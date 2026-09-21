@@ -386,6 +386,8 @@ def _save_extracted(
     row.deadline_kind = item.deadline_kind
     row.deadline_quote = item.deadline_quote
     row.cost_kind = item.cost_kind
+    row.recommended_action = item.recommended_action
+    row.action_target = item.action_target
     row.start_at_is_date_only = item.start_at_is_date_only
     row.end_at_is_date_only = item.end_at_is_date_only
     row.deadline_is_date_only = item.deadline_is_date_only
@@ -646,10 +648,23 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
     checked = 0
     promotions = 0
 
+    no_action = 0
+
     while ranked and len(final) < TOP_N and checked < MAX_VERIFY:
         opportunity_id = ranked.pop(0)
         row = db.get(Opportunity, opportunity_id)
         if row is None:
+            continue
+
+        # **推薦する行動を特定できないものは出さない。**
+        #
+        # 他人の投稿作品、終了した催しのレポート、解説記事、検索一覧。
+        # どれも「応募できる機会」ではない。**type では決めない**ので、
+        # 解説記事でも募集先が読み取れていれば通る。
+        #
+        # 検証より前に外す。**確認に 1 回ぶんの費用をかけない。**
+        if not row.recommended_action:
+            no_action += 1
             continue
 
         with cost.step("verification"):
@@ -685,6 +700,15 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
             )
 
     state.selected_ids = final
+    if no_action:
+        cost.record_dropped("no_recommended_action", no_action)
+        _log(
+            db,
+            state,
+            AgentStep.VERIFYING,
+            f"{no_action}件は記事や一覧のため、応募先を特定できませんでした",
+        )
+    state.no_action_count = no_action
     state.shortfall_reason = _shortfall_reason(final, state)
     _write_reasons(db, state, final)
     _save_result(db, state)
@@ -712,6 +736,11 @@ def _shortfall_reason(final: list[str], state: AgentState) -> str | None:
         return None
     if not state.ranked_ids:
         return "条件に合う機会が見つかりませんでした"
+    if state.no_action_count:
+        return (
+            f"応募・参加できる機会が{len(final)}件しか見つかりませんでした"
+            f"（{state.no_action_count}件は記事や一覧で、行動の対象を特定できませんでした）"
+        )
     if not final:
         return "見つかった機会はいずれも受付を終了していました"
     return f"受付中または要確認の機会が{len(final)}件しか見つかりませんでした"

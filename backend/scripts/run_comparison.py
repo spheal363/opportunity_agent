@@ -500,6 +500,11 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
                 "end_at": _iso(r.end_at),
                 "deadline": _iso(r.deadline),
                 "location": r.location,
+                # **欄を落とすと「取れていない」と読み違える。**
+                # 実際に eligibility を落とし、0 件と報告してしまった。
+                "description": r.description,
+                "eligibility": r.eligibility,
+                "format": r.format,
                 "score": r.score,
                 "serendipity_score": r.serendipity_score,
                 "match_reasons": r.match_reasons,

@@ -56,6 +56,10 @@ def _add(db, oid: str, **kw) -> str:
         "title": oid,
         "url": f"https://e.com/{oid}",
         "score": 50,
+        # **行動を特定できる候補が既定。** 特定できないものは
+        # `recommended_action=None` を明示して作る。
+        "recommended_action": "応募する",
+        "action_target": f"https://e.com/{oid}/apply",
     }
     base.update(kw)
     db.add(Opportunity(**base))
@@ -410,3 +414,84 @@ def _goal():
     from ai.schemas.goal_analysis import GoalAnalysisOutput
 
     return GoalAnalysisOutput(goal_summary="g", goal_directions=["d"], interest_connections=["c"])
+
+
+# --- 応募先を特定できない候補は最終推薦に出さない（#65）---------------------
+#
+# 実測で、ハッカソンの**投稿作品ページ**（他人の提出物）が TOP1 に入った。
+# 検索結果一覧そのものが候補になったこともある。どちらも本人が直接
+# 応募・参加できるものではない。
+
+
+def test_a_candidate_without_an_action_is_not_recommended(db, state, real_mode, monkeypatch):
+    """**行動の対象を特定できないものは出さない。**"""
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out())
+    state.ranked_ids = [
+        _add(db, "gallery", recommended_action=None, action_target=None),
+        _add(db, "real"),
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["real"]
+
+
+def test_it_is_not_decided_by_type(db, state, real_mode, monkeypatch):
+    """**type で決めない。**
+
+    解説記事（type=other）でも、本文から募集先が読み取れていれば通す。
+    """
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out())
+    state.ranked_ids = [
+        _add(db, "article", type="other", recommended_action="応募する"),
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["article"]
+
+
+def test_shortfall_says_why_when_articles_were_dropped(db, state, real_mode, monkeypatch):
+    """**記事で埋めない。件数不足と理由を返す。**"""
+    monkeypatch.setattr(loop, "verify_with_page", lambda **k: _out())
+    state.ranked_ids = [
+        _add(db, "a1", recommended_action=None),
+        _add(db, "a2", recommended_action=None),
+        _add(db, "real"),
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["real"]
+    assert "2件" in state.shortfall_reason
+    assert "行動の対象" in state.shortfall_reason
+
+
+def test_a_dropped_candidate_costs_no_verification(db, state, real_mode, monkeypatch):
+    """**確認に費用をかけない。** 検証より前に外す。"""
+    calls = {"n": 0}
+
+    def verify(**kwargs):
+        calls["n"] += 1
+        return _out()
+
+    monkeypatch.setattr(loop, "verify_with_page", verify)
+    state.ranked_ids = [_add(db, "gallery", recommended_action=None), _add(db, "real")]
+    loop._verify_and_finalize(db, state)
+
+    assert calls["n"] == 1
+
+
+def test_unknown_availability_is_still_recommended(db, state, real_mode, monkeypatch):
+    """**受付状況が unknown でも出す。** 不明点は理由で示す。"""
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(
+            availability="unknown", availability_reason="受付状況は確認できませんでした"
+        ),
+    )
+    state.ranked_ids = [_add(db, "u1")]
+    loop._verify_and_finalize(db, state)
+
+    assert state.selected_ids == ["u1"]
+    row = db.get(loop.Opportunity, "u1")
+    assert row.availability == "unknown"
+    assert row.availability_reason

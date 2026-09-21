@@ -44,6 +44,11 @@ class Opportunity(Base):
     deadline_kind: Mapped[str | None] = mapped_column(String, nullable=True)
     deadline_quote: Mapped[str | None] = mapped_column(String, nullable=True)
     cost_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    # **推薦する行動と、その対象。** 特定できなければ null。
+    # null の候補は最終推薦に出さない（投稿作品・過去レポート・解説記事・
+    # 検索一覧そのものを「応募できる機会」として出さないため）。
+    recommended_action: Mapped[str | None] = mapped_column(String, nullable=True)
+    action_target: Mapped[str | None] = mapped_column(String, nullable=True)
     # 出典に時刻が書かれていたか。False でも「00:00 と書いてあった」ではなく
     # 「時刻の記載があった」という意味。日付だけなら True。
     start_at_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False)
