@@ -62,6 +62,7 @@ def from_dates(
     now: datetime | None = None,
     deadline_kind: str | None = None,
     deadline_is_date_only: bool = False,
+    speaker_is_the_opportunity: bool = False,
 ) -> tuple[Availability, str | None]:
     """日時だけで判定する。評価より前に使う。
 
@@ -85,7 +86,9 @@ def from_dates(
 
     deadline = as_utc(deadline)
     if deadline is not None and _is_past(deadline, now, date_only=deadline_is_date_only):
-        gating, reason = _deadline_gates_action(deadline_kind)
+        gating, reason = _deadline_gates_action(
+            deadline_kind, speaker_is_the_opportunity=speaker_is_the_opportunity
+        )
         if gating:
             return Availability.CLOSED, reason or "申込の締切が過ぎています"
         # 過ぎていても参加はできる締切。**閉じる根拠にしない。**
@@ -111,8 +114,18 @@ def _is_past(deadline: datetime, now: datetime, *, date_only: bool) -> bool:
     return deadline < now
 
 
-def _deadline_gates_action(deadline_kind: str | None) -> tuple[bool, str | None]:
-    """その締切が、推薦する行動を閉ざすものか。"""
+def _deadline_gates_action(
+    deadline_kind: str | None, *, speaker_is_the_opportunity: bool = False
+) -> tuple[bool, str | None]:
+    """その締切が、**推薦する行動**を閉ざすものか。
+
+    同じ「登壇者募集の締切」でも、扱いは推薦する行動で変わる。
+
+      一般参加の機会を薦める -> 登壇締切は関係ない。閉じない
+      登壇機会そのものを薦める -> **その締切が行動を閉ざす**
+
+    「登壇締切は何も閉じない」とは一般化できない。
+    """
     if deadline_kind is None:
         # 区分を持たなかった頃の行。
         #
@@ -130,6 +143,9 @@ def _deadline_gates_action(deadline_kind: str | None) -> tuple[bool, str | None]
 
     if kind in GATING_DEADLINES:
         return True, None
+    if kind is DeadlineKind.SPEAKER and speaker_is_the_opportunity:
+        # 登壇機会そのものを薦めている。**この締切が行動を閉ざす。**
+        return True, "登壇者募集の締切が過ぎています"
     if kind is DeadlineKind.UNKNOWN:
         return False, "締切が何に対するものか特定できませんでした"
     return False, _NON_GATING_REASON[kind]

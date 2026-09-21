@@ -566,3 +566,150 @@ def test_an_unsupported_kind_keeps_the_candidate_with_a_reason():
 
     assert availability.is_actionable(status) is True
     assert "特定できません" in reason
+
+
+# --- 登壇者募集は、推薦する行動によって扱いが変わる ------------------------
+#
+# **「登壇締切は何も閉じない」とは一般化できない。**
+
+
+def test_a_speaker_deadline_closes_a_speaking_opportunity():
+    """登壇機会そのものを薦めるなら、その締切が行動を閉ざす。"""
+    from ai import evidence
+
+    item = _o(
+        title="GenAI/SUM インパクトピッチ 登壇者募集",
+        deadline=datetime(2026, 8, 21, 17, 0, tzinfo=JST),
+        deadline_kind=DeadlineKind.SPEAKER,
+    )
+    status, reason = availability.from_dates(
+        opportunity_type=item.type,
+        deadline=item.deadline,
+        end_at=None,
+        now=NOW,
+        deadline_kind=item.deadline_kind,
+        speaker_is_the_opportunity=evidence.is_a_call_for_speakers(item.title),
+    )
+    assert status is availability.Availability.CLOSED
+    assert "登壇者募集の締切" in reason
+
+
+def test_the_same_deadline_does_not_close_general_participation():
+    """同じ締切でも、一般参加の機会なら閉じない。"""
+    from ai import evidence
+
+    item = _o(
+        title="GenAI/SUM",  # イベントそのもの
+        deadline=datetime(2026, 8, 21, 17, 0, tzinfo=JST),
+        deadline_kind=DeadlineKind.SPEAKER,
+    )
+    status, _ = availability.from_dates(
+        opportunity_type=item.type,
+        deadline=item.deadline,
+        end_at=None,
+        now=NOW,
+        deadline_kind=item.deadline_kind,
+        speaker_is_the_opportunity=evidence.is_a_call_for_speakers(item.title),
+    )
+    assert status is not availability.Availability.CLOSED
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("AI Summit 登壇者募集", True),
+        ("Call for Speakers - Tech Conf 2026", True),
+        ("CFP: PyCon JP 2026", True),
+        ("GenAI/SUM", False),
+        ("AI Agent Hackathon 2026", False),
+        # イベント紹介の中で登壇者募集にも触れているだけのページは拾わない。
+        # そこは一般参加の機会として扱うほうが実態に近い。
+        ("GenAI/SUM 開催のお知らせ", False),
+    ],
+)
+def test_detecting_a_call_for_speakers(title, expected):
+    from ai import evidence
+
+    assert evidence.is_a_call_for_speakers(title) is expected
+
+
+def test_a_page_with_both_can_only_hold_one():
+    """**限界。** 一般参加と登壇募集を両方扱うページは、片方しか表せない。
+
+    `deadline` が 1 つしか無く、2 つの締切を持てない。
+    ここでは一般参加の機会として扱われ、登壇締切は閉じる根拠にならない。
+    """
+    from ai import evidence
+
+    # 「登壇者募集」を含まないタイトル -> 一般参加として扱われる
+    assert evidence.is_a_call_for_speakers("GenAI/SUM（登壇者も募集中）") is False
+
+
+# --- 意味は一行上の見出しにあることが多い ----------------------------------
+#
+# **実測で踏んだ。** モデルが写した周辺文の中に語が無く、正しい分類を
+# 退けてしまった。原文の前後まで見て判断する。
+
+ISCT_PAGE = (
+    "### 応募締切・募集人数\n\n"
+    "2026年2月9日（月）、各大学20名程度  \n"
+    " 先着順ですので定員に達し次第、募集を締め切らせていただく場合がございます。\n"
+)
+
+
+def test_a_heading_above_the_quote_counts_as_evidence():
+    """周辺文そのものに語が無くても、**原文の直前の見出し**で支えられる。
+
+    実測でモデルが写したのは「2026年2月9日（月）、各大学20名程度」で、
+    応募締切だと分かるのは直前の見出しだった。
+    """
+    item = _grounded(
+        {
+            "title": "合同ハッカソン",
+            "type": "hackathon",
+            "deadline": "2026-02-09T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "application",
+            "deadline_quote": "2026年2月9日（月）",
+            "deadline_context": "2026年2月9日（月）、各大学20名程度",
+        },
+        ISCT_PAGE,
+    )
+    assert item.deadline_kind is DeadlineKind.APPLICATION
+
+    status, _ = _avail(item, now=AFTER_EARLY_BIRD)
+    assert status is availability.Availability.CLOSED
+
+
+def test_a_conflicting_word_nearby_still_wins():
+    """**食い違いの検査が先。** 近くに早割があれば、申込締切とは認めない。
+
+    広く見るぶん無関係な語を拾いうるが、拾った側の誤りは `unknown` に
+    落ちて閉じないので、**安全な方向に外れる。**
+    """
+    page = "早割価格でのお申込みはこちら\n\n2026年2月9日（月）まで\n"
+    item = _grounded(
+        {
+            "title": "t",
+            "type": "event",
+            "deadline": "2026-02-09T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "application",
+            "deadline_quote": "2026年2月9日（月）",
+            "deadline_context": "2026年2月9日（月）まで",
+        },
+        page,
+    )
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
+
+
+def test_the_window_does_not_reach_across_a_whole_page():
+    """**窓は限られている。** 遠くにある語は根拠にしない。"""
+    from ai import evidence
+
+    page = "応募締切はこちら\n" + "あ" * 400 + "\n2026年2月9日（月）\n"
+    supported, why = evidence.context_supports_kind(
+        "2026年2月9日（月）", DeadlineKind.APPLICATION, page
+    )
+    assert supported is False
+    assert why and "示す語がありません" in why

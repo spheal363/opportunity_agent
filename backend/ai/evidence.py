@@ -100,6 +100,31 @@ def context_is_in_source(context: str | None, page_content: str) -> bool:
     return normalize(context) in normalize(page_content)
 
 
+# 周辺文の前後をどれだけ見るか（正規化後の文字数）。
+#
+# **意味は一行上の見出しにあることが多い。** 実測では、モデルが
+# 「2026年2月9日（月）、各大学20名程度」を周辺文として写したが、
+# それが応募締切だと分かるのは直前の見出し「応募締切・募集人数」だった。
+#
+# 広げるほど無関係な語を拾いやすくなるが、**拾った側の誤りは
+# `unknown` に落ちる**（閉じない）ので、安全な方向に外れる。
+_WINDOW_BEFORE = 120
+_WINDOW_AFTER = 60
+
+
+def source_window(context: str, page_content: str) -> str | None:
+    """周辺文が原文のどこにあるかを見つけ、その前後を切り出す。
+
+    **切り出すのは原文。** モデルが書いた文字列ではない。
+    """
+    body = normalize(page_content)
+    needle = normalize(context)
+    at = body.find(needle)
+    if at < 0:
+        return None
+    return body[max(0, at - _WINDOW_BEFORE) : at + len(needle) + _WINDOW_AFTER]
+
+
 def context_supports_kind(
     context: str | None, kind: DeadlineKind, page_content: str
 ) -> tuple[bool, str | None]:
@@ -109,27 +134,32 @@ def context_supports_kind(
     「9月30日まで」は原文にあっても、それが参加申込の期限か早割の期限かを
     示さない。ここで見るのは後者。
 
-    判断は 2 段。
+    判断は 2 段。**原文の前後も含めて**見る。
 
       1. 他の区分にしか出ない語があれば、**食い違い**として退ける
       2. その区分の手がかりが 1 つも無ければ、**根拠が示されていない**
 
+    見るのは原文の窓であって、モデルが書いた文字列ではない。
+    周辺文は「原文のどこを指しているか」を決めるために使う。
+
     戻り値は (支えているか, 退けた理由)。
     """
-    if not context_is_in_source(context, page_content):
+    if not context:
+        return False, "周辺文がありません"
+    window = source_window(context, page_content)
+    if window is None:
         return False, "周辺文が原文に見つかりません"
 
-    body = normalize(context)
     for other, words in _EXCLUSIVE_MARKERS.items():
         if other is kind:
             continue
-        hit = next((w for w in words if normalize(w) in body), None)
+        hit = next((w for w in words if normalize(w) in window), None)
         if hit:
-            return False, f"周辺文に「{hit}」があり、{kind.value} と食い違います"
+            return False, f"原文の前後に「{hit}」があり、{kind.value} と食い違います"
 
     words = _KIND_MARKERS.get(kind, ())
-    if words and not any(normalize(w) in body for w in words):
-        return False, f"周辺文に {kind.value} を示す語がありません"
+    if words and not any(normalize(w) in window for w in words):
+        return False, f"原文の前後に {kind.value} を示す語がありません"
     return True, None
 
 
@@ -182,3 +212,38 @@ def ground_deadline_kind(item: ExtractedOpportunity, page_content: str) -> Extra
     if not supported:
         return item.model_copy(update={"deadline_kind": DeadlineKind.UNKNOWN})
     return item
+
+
+# その機会**そのもの**が登壇・発表者の募集であることを示す語。
+#
+# 「登壇締切は何も閉じない」は一般化できない。**登壇機会そのものを
+# 推薦するなら、その締切は行動を閉ざす。**
+_SPEAKER_OPPORTUNITY_MARKERS = (
+    "登壇者募集",
+    "登壇募集",
+    "発表者募集",
+    "スピーカー募集",
+    "講演者募集",
+    "出展者募集",
+    "登壇者を募集",
+    "発表者を募集",
+    "call for speakers",
+    "call for papers",
+    "cfp",
+)
+
+
+def is_a_call_for_speakers(title: str | None, description: str | None = None) -> bool:
+    """その機会そのものが、登壇・発表者の募集か。
+
+    **語で見る粗い判定。** 「登壇者募集」と名のつくページだけを拾う。
+    イベント紹介の中で登壇者募集にも触れているページは拾わない
+    （そこは一般参加の機会として扱うほうが実態に近い）。
+
+    限界:
+      - 一般参加と登壇募集を**両方**扱うページは、片方しか表せない
+      - `deadline` が 1 つしか無いので、2 つの締切は持てない
+      - 英語以外の言い回しは拾えない
+    """
+    body = normalize(f"{title or ''} {description or ''}").lower()
+    return any(normalize(m).lower() in body for m in _SPEAKER_OPPORTUNITY_MARKERS)

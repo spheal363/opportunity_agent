@@ -43,6 +43,12 @@ from config import get_settings
 
 JST = timezone(timedelta(hours=9))
 REPEATS = 2
+
+# **早割の期限をまたいで評価する。** 日付が進んだときの誤除外を見るため。
+_TIME_POINTS = {
+    "9/21（早割の前）": datetime(2026, 9, 21, 12, 0, tzinfo=UTC),
+    "10/3（早割の後）": datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
+}
 TODAY = date(2026, 9, 21)  # A の run と同じ日付を渡す
 
 
@@ -216,6 +222,9 @@ def _one(client: OrcaRouterClient, target: dict, attempt: int) -> dict:
     # 費用ゼロとして落とさない。使用量が分からない失敗とも区別する。
     usage = {
         "cost_usd": res.usage.cost_usd,
+        "request_id": res.usage.request_id,
+        "prompt_tokens": res.usage.prompt_tokens,
+        "completion_tokens": res.usage.completion_tokens,
         "reasoning_tokens": res.usage.reasoning_tokens,
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
     }
@@ -231,26 +240,32 @@ def _one(client: OrcaRouterClient, target: dict, attempt: int) -> dict:
         }
 
     grounded = evidence.ground_deadline_kind(parsed, content)
-    status, reason = availability.from_dates(
-        opportunity_type=grounded.type,
-        deadline=grounded.deadline,
-        end_at=grounded.end_at,
-        now=datetime(2026, 9, 21, 12, 0, tzinfo=UTC),
-        deadline_kind=grounded.deadline_kind,
-        deadline_is_date_only=grounded.deadline_is_date_only,
-    )
+    speaker_opportunity = evidence.is_a_call_for_speakers(grounded.title, grounded.description)
+
+    def at(now: datetime) -> dict:
+        status, reason = availability.from_dates(
+            opportunity_type=grounded.type,
+            deadline=grounded.deadline,
+            end_at=grounded.end_at,
+            now=now,
+            deadline_kind=grounded.deadline_kind,
+            deadline_is_date_only=grounded.deadline_is_date_only,
+            speaker_is_the_opportunity=speaker_opportunity,
+        )
+        return {"availability": str(status), "reason": reason}
+
     return {
         "url": target["url"],
         "attempt": attempt,
-        "elapsed_ms": int((time.perf_counter() - started) * 1000),
-        "cost_usd": res.usage.cost_usd,
-        "reasoning_tokens": res.usage.reasoning_tokens,
+        **usage,
         "raw": raw,
         "normalized": grounded.model_dump(mode="json"),
         "downgraded": grounded.deadline_kind != parsed.deadline_kind,
+        "raw_kind": parsed.deadline_kind.value,
         "evidence_notes": evidence.check(grounded, content),
-        "availability": str(status),
-        "availability_reason": reason,
+        "speaker_opportunity": speaker_opportunity,
+        # **日付が進んでも誤って閉じないかを見る。**
+        "at": {label: at(when) for label, when in _TIME_POINTS.items()},
         "content": content,
     }
 
@@ -282,7 +297,10 @@ def _report(results: list[dict]) -> None:
         if r["evidence_notes"]:
             print(f"    **入力と合わない点**: {r['evidence_notes']}")
         print()
-        print(f"  受付状況  {r['availability']}  {r['availability_reason'] or ''}")
+        if r["speaker_opportunity"]:
+            print("  **登壇機会そのもの**と判定 -> 登壇締切が行動を閉ざす")
+        for label, out in r["at"].items():
+            print(f"  受付状況 {label}  {out['availability']}  {out['reason'] or ''}")
         print(
             f"  画面表示  日程 {_date_label(n, 'start_at')} / "
             f"{_deadline_label(n)} / 参加費 {_cost_label(n)}"
@@ -355,10 +373,17 @@ def _judge(r: dict, exp: Expectation) -> None:
         want = exp.must["start_at"]
         if not got or datetime.fromisoformat(got) != want:
             fails.append(f"開始日時が {got}（期待 {want.isoformat()}）")
-    if "availability" in exp.must and r["availability"] != str(exp.must["availability"]):
-        fails.append(f"受付状況が {r['availability']}（期待 {exp.must['availability']}）")
-    if exp.must_not_close and r["availability"] == str(availability.Availability.CLOSED):
-        fails.append("**一般参加の機会を閉じた**")
+    closed = str(availability.Availability.CLOSED)
+    if "availability" in exp.must:
+        # **終了した機会を除外できたか。** 全時点で closed であること。
+        bad = [k for k, v in r["at"].items() if v["availability"] != str(exp.must["availability"])]
+        if bad:
+            fails.append(f"受付状況が期待と違う時点: {bad}（期待 {exp.must['availability']}）")
+    if exp.must_not_close:
+        # **誤除外を防げたか。** どの時点でも閉じないこと。
+        bad = [k for k, v in r["at"].items() if v["availability"] == closed]
+        if bad:
+            fails.append(f"**一般参加の機会を閉じた時点**: {bad}")
     if exp.must.get("no_invented_times") and r["evidence_notes"]:
         fails.append(f"入力に無い値: {r['evidence_notes']}")
 
@@ -373,6 +398,10 @@ def _judge(r: dict, exp: Expectation) -> None:
         if not ok:
             notes.append(f"{key} は {got}（望ましいのは {want}）")
 
+    # **unknown は受付中ではない。** 誤除外を防げたことと、受付中と確認できた
+    # ことは別。ここで言えるのは前者だけ。
+    if exp.must_not_close and not fails:
+        print("  （誤除外は防げた。**受付中と確認できたわけではない**）")
     print(f"  判定: {'**不合格**' if fails else '合格'}")
     for f in fails:
         print(f"    x {f}")

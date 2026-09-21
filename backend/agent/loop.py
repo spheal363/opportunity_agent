@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from agent import stub_data
 from agent.state import AgentState
-from ai import availability, cost
+from ai import availability, cost, evidence
 from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
 from ai.extraction import extract_many
@@ -578,6 +578,9 @@ def _drop_before_evaluation(
             # 参加はできる。ここを渡さないと全部を申込締切として閉じてしまう。
             deadline_kind=row.deadline_kind,
             deadline_is_date_only=bool(row.deadline_is_date_only),
+            # **登壇機会そのものなら、登壇締切が行動を閉ざす。**
+            # 一般参加の機会なら閉じない。同じ締切でも扱いが変わる。
+            speaker_is_the_opportunity=evidence.is_a_call_for_speakers(row.title, row.description),
         )
         if status is availability.Availability.CLOSED:
             _set_availability(row, status, reason, source=None)
