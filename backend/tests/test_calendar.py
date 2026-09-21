@@ -8,6 +8,7 @@ import pytest
 from google.auth.exceptions import RefreshError
 from googleapiclient.errors import HttpError
 
+from api.deps import PAGE_REQUEST_HEADER_VALUE
 from config import Settings
 from db.session import SessionLocal
 from models import Opportunity
@@ -292,11 +293,14 @@ def test_not_connected_is_reported_with_its_own_code(client, monkeypatch, tmp_pa
 
 # --- 予定追加（#46） ----------------------------------------------------------
 
+# 画面（frontend/src/api/client.ts）が付けるヘッダー
+PAGE = {"X-Requested-With": PAGE_REQUEST_HEADER_VALUE}
+
 
 def test_add_event_creates_it_and_moves_to_next_steps(client, service):
     oid = _seed()
 
-    res = client.post(f"/api/opportunities/{oid}/calendar")
+    res = client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     assert res.status_code == 200
     assert res.json()["data"] == {"calendar_event_id": event_id_for(oid), "status": "created"}
@@ -313,9 +317,9 @@ def test_add_event_creates_it_and_moves_to_next_steps(client, service):
 
 def test_pressing_twice_does_not_duplicate(client, service):
     oid = _seed()
-    client.post(f"/api/opportunities/{oid}/calendar")
+    client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
-    res = client.post(f"/api/opportunities/{oid}/calendar")
+    res = client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     assert res.json()["data"]["status"] == "already_exists"
     assert len(service.store) == 1
@@ -325,7 +329,7 @@ def test_event_deleted_in_google_is_restored(client, service):
     oid = _seed()
     service.store[event_id_for(oid)] = {"id": event_id_for(oid), "status": "cancelled"}
 
-    res = client.post(f"/api/opportunities/{oid}/calendar")
+    res = client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     assert res.json()["data"]["status"] == "created"
     assert service.store[event_id_for(oid)]["status"] == "confirmed"
@@ -334,7 +338,7 @@ def test_event_deleted_in_google_is_restored(client, service):
 def test_known_end_is_used_and_not_marked_as_placeholder(client, service):
     oid = _seed(end_at=datetime(2026, 10, 10, 18, 0, tzinfo=UTC))
 
-    client.post(f"/api/opportunities/{oid}/calendar")
+    client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     body = service.store[event_id_for(oid)]
     assert body["end"] == {"dateTime": "2026-10-10T18:00:00+00:00"}
@@ -344,7 +348,7 @@ def test_known_end_is_used_and_not_marked_as_placeholder(client, service):
 def test_non_http_url_is_not_written_to_the_event(client, service):
     oid = _seed(url="javascript:alert(1)")
 
-    client.post(f"/api/opportunities/{oid}/calendar")
+    client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     assert "javascript:" not in service.store[event_id_for(oid)]["description"]
 
@@ -352,7 +356,7 @@ def test_non_http_url_is_not_written_to_the_event(client, service):
 def test_attended_is_not_moved_back(client, service):
     oid = _seed(status="attended")
 
-    client.post(f"/api/opportunities/{oid}/calendar")
+    client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     assert _status(oid) == "attended"
 
@@ -362,11 +366,24 @@ def test_failed_add_keeps_status(client, monkeypatch, tmp_path):
     settings = Settings(google_token_path=str(tmp_path / "missing.json"))
     monkeypatch.setattr(calendar_tools, "get_client", lambda: GoogleCalendarClient(settings))
 
-    res = client.post(f"/api/opportunities/{oid}/calendar")
+    res = client.post(f"/api/opportunities/{oid}/calendar", headers=PAGE)
 
     assert res.status_code == 503
     assert _status(oid) == "interested"
 
 
 def test_add_for_missing_opportunity_is_404(client, service):
-    assert client.post("/api/opportunities/nope/calendar").status_code == 404
+    assert client.post("/api/opportunities/nope/calendar", headers=PAGE).status_code == 404
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-Requested-With": "XMLHttpRequest"}])
+def test_add_without_page_header_is_refused(client, service, headers):
+    # 別サイトの form 送信はこのヘッダーを付けられない。ボタンを押していないので書き込まない。
+    oid = _seed()
+
+    res = client.post(f"/api/opportunities/{oid}/calendar", headers=headers)
+
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "FORBIDDEN"
+    assert service.store == {}
+    assert _status(oid) == "interested"

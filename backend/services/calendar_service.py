@@ -64,6 +64,7 @@ def add_event(db: Session, opportunity_id: str) -> CalendarEventCreated | None:
     )
     # ここへ来るのは POST /opportunities/{id}/calendar、つまりユーザーが画面で
     # 追加内容を確認してボタンを押したときだけ。その操作を承認として扱う。
+    # 画面以外（別サイトの form など）からの要求は route で止める（api/deps.py）。
     # Agent Loop からは approved=True で呼ばない。
     inserted: InsertedEvent = registry.invoke("add_calendar_event", approved=True, event=draft).data
 

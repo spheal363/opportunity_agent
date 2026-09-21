@@ -21,6 +21,7 @@ Base URL: `/api`
 | --- | --- | --- |
 | `NOT_FOUND` | 404 | 対象が存在しない |
 | `VALIDATION_ERROR` | 422 | リクエスト形式が不正 |
+| `FORBIDDEN` | 403 | 画面以外からの操作（`X-Requested-With` が無い）。Calendar への追加で使う |
 | `SCHEDULE_UNKNOWN` | 422 | 開催日時が分からないため、Calendar で確認・追加できない |
 | `CALENDAR_NOT_CONNECTED` | 503 | Google Calendar と未連携、または連携が切れている（`backend/README.md`） |
 | `CALENDAR_ERROR` | 502 | Google Calendar 側のエラー・接続失敗 |
@@ -95,6 +96,9 @@ Backend がユーザーの Google Calendar を読み書きする。連携の手�
 | `GET /api/calendar/availability` | その機会の時間帯に重なる予定を返す。読み取りだけなので自動で呼んでよい |
 | `POST /api/opportunities/{id}/calendar` | 予定を追加し、`status` を `registered`（次の一歩）にする。**ユーザーが追加内容を見てボタンを押したときだけ呼ぶ**。この操作を承認として扱う |
 
+- `POST .../calendar` は **`X-Requested-With: opportunity-agent` ヘッダーが必須**（無ければ `FORBIDDEN`）。
+  body が無いため、別サイトの form からも送れてしまう。独自ヘッダーを付けるとブラウザが事前確認し、
+  許可していない Origin は CORS で止まる。Frontend は `src/api/client.ts` で全リクエストに付けている
 - 時間帯は `start_at`〜`end_at`。**`end_at` が無いときは仮に 1 時間**で、予定の説明にも「仮」と書く
 - `start_at` が `null` の機会は確認も追加もしない（`SCHEDULE_UNKNOWN`）。推測で埋めない
 - 予定に入れるのはタイトル・日時・場所・公式ページの URL だけ。AI の評価（`score` / `reason`）は入れない
