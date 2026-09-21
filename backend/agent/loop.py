@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
-from agent import stub_data
+from agent import demo_attack, stub_data
 from agent.state import AgentState
 from ai import cost, guard
 from ai.concurrency import map_parallel
@@ -194,6 +194,8 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
             row = _upsert_opportunity(db, state, raw)
             ids.append(row.opportunity_id)
             time.sleep(0.4)  # 探索中画面が見えるように少しずつ進める
+        if get_settings().demo_injection:
+            _demo_attack_without_llm(db, state)
         state.discovered_ids = ids
         return ids
 
@@ -218,6 +220,11 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
             _log(db, state, AgentStep.SEARCHING, f"「{direction.query}」は既出のみでした")
             continue
         candidates.extend((direction, r) for r in fresh)
+
+    if get_settings().demo_injection and state.search_directions:
+        # 攻撃デモ（#52）。以降の検知・除去・推薦から外す判断は本番と同じ経路を通る。
+        candidates.append((state.search_directions[0], demo_attack.search_result()))
+        _log(db, state, AgentStep.SEARCHING, demo_attack.LOG_MESSAGE)
 
     if not candidates:
         state.discovered_ids = []
@@ -265,8 +272,10 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
 
 
 def _guard_candidates(
-    db: Session, state: AgentState, candidates: list[tuple[SearchDirection, SearchResult]]
-) -> list[tuple[SearchDirection, SearchResult]]:
+    db: Session,
+    state: AgentState,
+    candidates: list[tuple[SearchDirection | None, SearchResult]],
+) -> list[tuple[SearchDirection | None, SearchResult]]:
     """検索結果の本文を検査し、指示らしき文を取り除いた候補を返す（#27）。
 
     **LLM に届く前に取り除く。** プロンプトの規則だけに頼らない。
@@ -298,6 +307,25 @@ def _guard_candidates(
         # 本文は出さない。種類と件数だけ残す。
         logger.warning("guard.flagged count=%d kinds=%s", len(flagged), sorted(kinds))
     return guarded
+
+
+def _demo_attack_without_llm(db: Session, state: AgentState) -> None:
+    """固定データの経路（AGENT_STUB_MODE）で攻撃デモを見せる（#52）。
+
+    LLM を呼ばない経路なので抽出と評価は無いが、**検知と「推薦しない」判断は
+    本番と同じコード**（`_guard_candidates`）で行う。API が使えない場でも
+    防御の流れを見せられるようにするため。
+    """
+    _log(db, state, AgentStep.SEARCHING, demo_attack.LOG_MESSAGE)
+    page = demo_attack.search_result()
+    _guard_candidates(db, state, [(None, page)])
+    if page.url in state.flagged_urls:
+        _log(
+            db,
+            state,
+            AgentStep.SEARCHING,
+            f"「{demo_attack.TITLE}」は指示らしき文を含むページから取ったため、推薦から外しました",
+        )
 
 
 def _save_extracted(
