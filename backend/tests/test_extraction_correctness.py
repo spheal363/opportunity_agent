@@ -853,3 +853,37 @@ def test_the_title_line_is_omitted_when_there_is_none():
 
     user = prompt.build_user("https://e.jp/a", "本文")
     assert "取得元のページタイトル" not in user
+
+
+def test_a_submission_deadline_counts_as_an_application_deadline():
+    """**実測で落とした。** ハッカソンの「提出締切」は応募の締切。
+
+    語彙に無いと、正しい分類が `unknown` に落ちて締切が効かなくなる。
+    """
+    page = "### 応募方法\n\n提出締切: 2026 年 2 月 15 日（日）\n"
+    item = _grounded(
+        {
+            "title": "Agentic AI Hackathon",
+            "type": "hackathon",
+            "deadline": "2026-02-15T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "application",
+            "deadline_quote": "2026 年 2 月 15 日（日）",
+            "deadline_context": "提出締切: 2026 年 2 月 15 日（日）",
+        },
+        page,
+    )
+    assert item.deadline_kind is DeadlineKind.APPLICATION
+
+
+def test_the_word_deadline_alone_is_not_enough():
+    """**「締切」単体は語彙に入れない。**
+
+    早割にも登壇募集にも付く。入れると支持の検査がほぼ素通りになる。
+    """
+    from ai import evidence
+
+    supported, _ = evidence.context_supports_kind(
+        "締切 2026年10月1日", DeadlineKind.APPLICATION, "締切 2026年10月1日"
+    )
+    assert supported is False

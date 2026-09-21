@@ -77,7 +77,18 @@ def time_is_in_source(value: datetime | None, page_content: str) -> bool | None:
 # 区分の定義ではない。語が見つからないことは、区分が誤っている証拠では
 # なく、**根拠が示されていない**ということ。
 _KIND_MARKERS: dict[DeadlineKind, tuple[str, ...]] = {
-    DeadlineKind.APPLICATION: ("応募", "申込", "申し込み", "エントリー", "募集締切", "受付"),
+    # 「提出」は実測で落とした。ハッカソンの「提出締切」は応募の締切。
+    # **「締切」単体は入れない。** 早割にも登壇募集にも付くので、
+    # 入れると支持の検査がほぼ素通りになる。
+    DeadlineKind.APPLICATION: (
+        "応募",
+        "申込",
+        "申し込み",
+        "エントリー",
+        "募集締切",
+        "受付",
+        "提出",
+    ),
     DeadlineKind.REGISTRATION: ("参加登録", "申込", "申し込み", "登録", "受付", "チケット"),
     DeadlineKind.EARLY_BIRD: ("早割", "早期割引", "早期申込", "先行販売", "先行予約"),
     DeadlineKind.SPEAKER: ("登壇", "発表者", "スピーカー", "出展", "ピッチ", "講演"),

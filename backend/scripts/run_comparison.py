@@ -107,6 +107,18 @@ PROFILE = {
 }
 
 
+# 停止条件。**言うだけでなく、実際に止める。**
+#
+# 超えたら例外を投げる。run は失敗として記録され、そこまでの記録は残る。
+MAX_LLM_REQUESTS = 80  # A の実測は 42
+MAX_ACTUAL_USD = 0.50  # 約 ¥75（為替 150 の仮定）
+MAX_JEV_FAILURES = 3
+
+
+class BudgetExceededError(RuntimeError):
+    """停止条件に達した。**そこまでの記録は残す。**"""
+
+
 class Capture:
     """LLM / Tool / Jev の呼び出しと、粗選別の結果を記録する。
 
@@ -119,11 +131,27 @@ class Capture:
         self.jev: list[dict] = []
         # **C が読まなかった候補。** 取りこぼし監査の入力になる。
         self.prefilter: dict | None = None
+        self.llm_requests = 0
+        self.spent_usd = 0.0
+        self.jev_failures = 0
+        self.stopped: str | None = None
+
+    def _guard(self) -> None:
+        if self.llm_requests > MAX_LLM_REQUESTS:
+            self.stopped = f"LLM 実リクエストが {MAX_LLM_REQUESTS} 回を超えた"
+        elif self.spent_usd > MAX_ACTUAL_USD:
+            self.stopped = f"実費が ${MAX_ACTUAL_USD} を超えた"
+        elif self.jev_failures >= MAX_JEV_FAILURES:
+            self.stopped = f"Jev が {MAX_JEV_FAILURES} 回続けて失敗した"
+        if self.stopped:
+            raise BudgetExceededError(self.stopped)
 
     def wrap_llm(self) -> None:
         original = OrcaRouterClient.chat
 
         def chat(client_self, messages, **kwargs):
+            self.llm_requests += 1
+            self._guard()
             started = time.perf_counter()
             error = None
             res = None
@@ -149,6 +177,9 @@ class Capture:
                         "error": error,
                     }
                 )
+                actual = getattr(getattr(res, "usage", None), "cost_usd", None)
+                if actual:
+                    self.spent_usd += actual
 
         OrcaRouterClient.chat = chat  # type: ignore[method-assign]
 
@@ -159,8 +190,14 @@ class Capture:
         original = JevClient.ask
 
         def ask(client_self, state, questions, **kwargs):
+            self._guard()
             started = time.perf_counter()
-            res = original(client_self, state, questions, **kwargs)
+            try:
+                res = original(client_self, state, questions, **kwargs)
+            except Exception:
+                self.jev_failures += 1
+                raise
+            self.jev_failures = 0  # 連続でなければ数え直す
             self.jev.append(
                 {
                     "at": datetime.now(UTC).isoformat(),
@@ -351,9 +388,15 @@ def main() -> int:
     capture.wrap_prefilter()
 
     print(f"=== 実行開始 {run_id} ===")
+    print(
+        f"  停止条件: LLM {MAX_LLM_REQUESTS} 回 / 実費 ${MAX_ACTUAL_USD} /"
+        f" Jev 連続失敗 {MAX_JEV_FAILURES} 回"
+    )
     started = time.perf_counter()
     loop.run_agent(run_id, USER_ID)
     total_ms = int((time.perf_counter() - started) * 1000)
+    if capture.stopped:
+        print(f"=== **停止条件に達した**: {capture.stopped} ===")
     print(f"=== 実行終了 {total_ms} ms ===\n")
 
     _save(run_id, total_ms, capture, settings)
@@ -386,6 +429,7 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
             "max_promotions": loop.MAX_PROMOTIONS,
         },
         "profile": PROFILE,
+        "stopped": capture.stopped,
         "status": run.status if run else None,
         "selected_ids": run.selected_ids if run else None,
         "shortfall_reason": run.shortfall_reason if run else None,
@@ -412,6 +456,14 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
                 "availability_reason": r.availability_reason,
                 "availability_checked_at": _iso(r.availability_checked_at),
                 "availability_source": r.availability_source,
+                # **何に対する締切・料金かの区分。** 出力から漏れていた。
+                "deadline_kind": r.deadline_kind,
+                "deadline_quote": r.deadline_quote,
+                "deadline_context": getattr(r, "deadline_context", None),
+                "cost_kind": r.cost_kind,
+                "deadline_is_date_only": r.deadline_is_date_only,
+                "start_at_is_date_only": r.start_at_is_date_only,
+                "cost": r.cost,
                 "status": r.status,
             }
             for r in rows
