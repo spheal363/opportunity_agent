@@ -93,7 +93,13 @@ SYSTEM = (
 ) + UNTRUSTED_DATA_RULE
 
 
-def build_user(source_url: str, page_content: str, *, today: date | None = None) -> str:
+def build_user(
+    source_url: str,
+    page_content: str,
+    *,
+    today: date | None = None,
+    source_title: str | None = None,
+) -> str:
     """抽出対象のページを user メッセージに組み立てる。
 
     ページ内容は `untrusted_block` で囲む。**これは防御ではなく境界の明示。**
@@ -107,5 +113,16 @@ def build_user(source_url: str, page_content: str, *, today: date | None = None)
     置くと、URL 文字列に仕込んだ指示が system 直後の位置に並ぶ。
     """
     today = today or date.today()
-    source = f"取得元 URL: {source_url}\n\n{page_content}"
+    # **取得元が持っているタイトルを捨てない。**
+    #
+    # 本文の抜粋は、ページの見出しを含まないことがある。実測で、催しの
+    # 名称が「GenAI/SUM事務局」という組織名の一部としてしか現れない入力が
+    # あり、title が null になって Schema を通らなかった。
+    # 検索結果・取得結果は title を持っているので、それも渡す。
+    #
+    # これも外部から取得したデータで、`untrusted_block` の中に入れる。
+    header = f"取得元 URL: {source_url}"
+    if source_title:
+        header += f"\n取得元のページタイトル: {source_title}"
+    source = f"{header}\n\n{page_content}"
     return f"今日の日付: {today.isoformat()}\n\n{untrusted_block('page_content', source)}"

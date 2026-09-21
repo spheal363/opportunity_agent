@@ -713,3 +713,143 @@ def test_the_window_does_not_reach_across_a_whole_page():
     )
     assert supported is False
     assert why and "示す語がありません" in why
+
+
+# --- まだ過ぎていない締切を「過ぎている」と書かない --------------------------
+
+EARLY_BIRD_DATE = datetime(2026, 9, 30, tzinfo=JST)
+BEFORE_EARLY_BIRD = datetime(2026, 9, 21, 12, tzinfo=UTC)
+
+
+def _early_bird_reason(now: datetime) -> str | None:
+    _, reason = availability.from_dates(
+        opportunity_type="event",
+        deadline=EARLY_BIRD_DATE,
+        end_at=None,
+        now=now,
+        deadline_kind=DeadlineKind.EARLY_BIRD,
+        deadline_is_date_only=True,
+    )
+    return reason
+
+
+def test_a_future_early_bird_date_is_not_described_as_passed():
+    """**9/30 が来ていないのに「過ぎている」と書かない。**"""
+    reason = _early_bird_reason(BEFORE_EARLY_BIRD)
+    assert "過ぎて" not in reason
+    assert "早割" in reason
+
+
+def test_the_wording_differs_before_and_after():
+    """前後で説明を分ける。**同じ文面を使い回さない。**"""
+    assert _early_bird_reason(BEFORE_EARLY_BIRD) != _early_bird_reason(AFTER_EARLY_BIRD)
+    assert "過ぎて" in _early_bird_reason(AFTER_EARLY_BIRD)
+
+
+def test_a_participation_deadline_not_yet_passed_needs_no_excuse():
+    """**参加の締切そのものなら、説明は要らない。** まだ過ぎていないだけ。"""
+    _, reason = availability.from_dates(
+        opportunity_type="event",
+        deadline=datetime(2026, 12, 1, tzinfo=JST),
+        end_at=None,
+        now=BEFORE_EARLY_BIRD,
+        deadline_kind=DeadlineKind.APPLICATION,
+    )
+    assert reason is None
+
+
+# --- 窓が別の募集の見出しを拾わないか ---------------------------------------
+#
+# 窓を広げたぶん、近くの別の募集を拾いうる。**拾った側の誤りは `unknown` に
+# 落ちて閉じない**ので、安全な方向に外れる。そこを確かめる。
+
+
+def test_a_nearby_early_bird_heading_blocks_a_wrong_application_claim():
+    """近くに早割の見出しがあれば、申込締切とは認めない。"""
+    page = "### 早割チケットのご案内\n\n2026年10月1日まで\n\n### CONCEPT\n"
+    item = _grounded(
+        {
+            "title": "t",
+            "type": "event",
+            "deadline": "2026-10-01T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "application",
+            "deadline_quote": "2026年10月1日",
+            "deadline_context": "2026年10月1日まで",
+        },
+        page,
+    )
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
+
+
+def test_two_adjacent_calls_make_the_claim_unprovable():
+    """**登壇募集と一般参加が隣り合うページは、区分を確かめられない。**
+
+    窓が両方を含むため、食い違いとして退ける。閉じないので安全側だが、
+    **正しい締切でも通らない。** これは取りこぼしとして残る限界。
+    """
+    page = "### 登壇者募集\n応募締切 2026年8月21日\n\n### 一般参加\n申込締切 2026年10月1日\n"
+    item = _grounded(
+        {
+            "title": "t",
+            "type": "event",
+            "deadline": "2026-10-01T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "registration",
+            "deadline_quote": "2026年10月1日",
+            "deadline_context": "申込締切 2026年10月1日",
+        },
+        page,
+    )
+    assert item.deadline_kind is DeadlineKind.UNKNOWN
+
+    # **閉じない。** 誤って除外するより、確認できていないと示す。
+    status, _ = _avail(item, now=AFTER_EARLY_BIRD)
+    assert availability.is_actionable(status) is True
+
+
+def test_a_clean_page_still_validates():
+    """**一律に疑わない。** 紛らわしい語が無ければ通す。"""
+    page = "### お申し込み\n\n申込締切 2026年10月1日\n\n### アクセス\n東京都千代田区\n"
+    item = _grounded(
+        {
+            "title": "t",
+            "type": "event",
+            "deadline": "2026-10-01T00:00:00+09:00",
+            "deadline_is_date_only": True,
+            "deadline_kind": "registration",
+            "deadline_quote": "2026年10月1日",
+            "deadline_context": "申込締切 2026年10月1日",
+        },
+        page,
+    )
+    assert item.deadline_kind is DeadlineKind.REGISTRATION
+
+
+# --- 取得元のタイトルを捨てない ---------------------------------------------
+
+
+def test_the_source_title_is_given_to_the_model():
+    """**実測で Schema 不通過の原因になった。**
+
+    本文の抜粋に催しの名称が見出しとして無く、「GenAI/SUM事務局」という
+    組織名の一部としてしか現れない入力があった。検索結果は title を
+    持っていたのに、モデルへ渡していなかった。
+    """
+    from ai.prompts import extraction as prompt
+
+    user = prompt.build_user(
+        "https://www.xsum.jp/gai",
+        "定価\n:   ¥20,000\n",
+        source_title="GenAI/SUM 2026 (生成AIサミット)",
+    )
+    assert "GenAI/SUM 2026" in user
+    # **これも外部から取得したデータ。** 境界の中に入れる。
+    assert user.index("<page_content>") < user.index("GenAI/SUM 2026")
+
+
+def test_the_title_line_is_omitted_when_there_is_none():
+    from ai.prompts import extraction as prompt
+
+    user = prompt.build_user("https://e.jp/a", "本文")
+    assert "取得元のページタイトル" not in user

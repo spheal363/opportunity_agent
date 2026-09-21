@@ -42,6 +42,7 @@ def extract_opportunity(
     *,
     today: date | None = None,
     tier: ModelTier = ModelTier.STANDARD,
+    source_title: str | None = None,
 ) -> ExtractedOpportunity:
     """1 ページから Opportunity の事実を抽出する。
 
@@ -51,7 +52,7 @@ def extract_opportunity(
     result = generate_structured(
         schema=ExtractedOpportunity,
         system=prompt.SYSTEM,
-        user=prompt.build_user(source_url, content, today=today),
+        user=prompt.build_user(source_url, content, today=today, source_title=source_title),
         # Untrusted Data を読ませるため CHEAP は使わない
         tier=tier,
         max_tokens=EXTRACTION_MAX_TOKENS,
@@ -92,7 +93,15 @@ def extract_many(
         if not content:
             return src.url, None
         try:
-            return src.url, extract_opportunity(src.url, content, today=today, tier=tier)
+            return src.url, extract_opportunity(
+                src.url,
+                content,
+                today=today,
+                tier=tier,
+                # **取得元のタイトルを捨てない。** 本文の抜粋に見出しが
+                # 無いことがあり、実測でそれが Schema 不通過の原因になった。
+                source_title=getattr(src, "title", None),
+            )
         except LLMError as exc:
             # 例外メッセージにページ本文を載せない（_safe_reason 済みのものだけ）
             logger.warning("extraction.failed url=%s reason=%s", src.url, exc)

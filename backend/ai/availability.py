@@ -99,7 +99,39 @@ def from_dates(
         return Availability.CLOSED, "開催が終了しています"
 
     # 締切が未来でも「受付中」とは限らない（満員・中止がある）。
+    #
+    # **まだ過ぎていない締切を「過ぎている」と書かない。** 早割の期限が
+    # 分かっていても、それは参加の締切ではないので、受付状況の説明としては
+    # 「参加の締切を確認できていない」が正しい。
+    if deadline is not None:
+        gating, _ = _deadline_gates_action(
+            deadline_kind, speaker_is_the_opportunity=speaker_is_the_opportunity
+        )
+        # **参加の締切そのものなら、説明は要らない。** まだ過ぎていないだけ。
+        # 参加の締切でないものしか分かっていないときに、そう書く。
+        if not gating:
+            return Availability.UNKNOWN, _NOT_YET_REASON.get(
+                _kind_or_none(deadline_kind), "参加の締切を確認できていません"
+            )
     return Availability.UNKNOWN, None
+
+
+def _kind_or_none(deadline_kind: str | None) -> DeadlineKind | None:
+    if deadline_kind is None:
+        return None
+    try:
+        return DeadlineKind(deadline_kind)
+    except ValueError:
+        return None
+
+
+# 締切が**まだ過ぎていない**ときの説明。前後で文面を分ける。
+_NOT_YET_REASON = {
+    DeadlineKind.EARLY_BIRD: "参加の締切を確認できていません（分かっているのは早割の期限です）",
+    DeadlineKind.SPEAKER: "参加の締切を確認できていません（分かっているのは登壇者募集の締切です）",
+    DeadlineKind.OTHER: "参加の締切を確認できていません",
+    DeadlineKind.UNKNOWN: "締切が何に対するものか特定できませんでした",
+}
 
 
 def _is_past(deadline: datetime, now: datetime, *, date_only: bool) -> bool:
