@@ -5,13 +5,19 @@ LLM / Web Search を実装するまでの間、Frontend が
 frontend/src/api/mock.ts と内容を合わせてある。
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
-_BASE = datetime.now(UTC).replace(microsecond=0)
+_JST = timezone(timedelta(hours=9))
 
 
-def _iso(days: int, hour: int) -> str:
-    return (_BASE + timedelta(days=days)).replace(hour=hour, minute=0, second=0).isoformat()
+def _jst(month: int, day: int, hour: int) -> str:
+    """日本時間の日時を UTC で表す。
+
+    日付は固定する。起動日からの相対にすると、起動し直すたびに同じ機会の日付がずれ、
+    カレンダーへ入れた予定と食い違う。
+    SQLite は tz を捨てて保存するため、+09:00 のままではなく UTC に直して渡す。
+    """
+    return datetime(2026, month, day, hour, tzinfo=_JST).astimezone(UTC).isoformat()
 
 
 STUB_GOAL_ANALYSIS = {
@@ -58,9 +64,9 @@ STUB_OPPORTUNITIES = [
         "description": "AIと音楽をテーマにプロダクトを開発する2日間のハッカソン。",
         "url": "https://example.com/ai-music-hackathon",
         "source": "Web Search",
-        "start_at": _iso(21, 10),
-        "end_at": _iso(22, 18),
-        "deadline": _iso(16, 23),
+        "start_at": _jst(10, 12, 10),
+        "end_at": _jst(10, 13, 18),
+        "deadline": _jst(10, 7, 23),
         "location": "Tokyo",
         "format": "offline",
         "eligibility": "AI・音楽・プロダクト開発に興味がある人",
@@ -84,9 +90,9 @@ STUB_OPPORTUNITIES = [
         "description": "AI領域で起業を目指すエンジニア・ファウンダーが集まる月次コミュニティ。",
         "url": "https://example.com/tokyo-ai-startup-builders",
         "source": "Web Search",
-        "start_at": _iso(10, 19),
-        "end_at": _iso(10, 21),
-        "deadline": _iso(8, 23),
+        "start_at": _jst(10, 1, 19),
+        "end_at": _jst(10, 1, 21),
+        "deadline": _jst(9, 29, 23),
         "location": "Tokyo",
         "format": "hybrid",
         "eligibility": "起業・AI開発に関心のあるエンジニア",
@@ -109,9 +115,9 @@ STUB_OPPORTUNITIES = [
         "description": "海外アクセラレータのリモート参加枠。英語でのメンタリングとデモデイつき。",
         "url": "https://example.com/global-ai-founders",
         "source": "Web Search",
-        "start_at": _iso(45, 9),
+        "start_at": _jst(11, 5, 9),
         "end_at": None,
-        "deadline": _iso(30, 23),
+        "deadline": _jst(10, 21, 23),
         "location": "Remote / San Francisco",
         "format": "online",
         "eligibility": "プロトタイプがあるチーム・個人",
