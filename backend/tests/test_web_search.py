@@ -680,3 +680,36 @@ def test_has_valid_tld_boundaries(host, expected):
     from tools.page_reader import _has_valid_tld
 
     assert _has_valid_tld(host) is expected
+
+
+# --- 地域・言語の指定（#65）------------------------------------------------
+#
+# 公式（docs.tavily.com）で確認した仕様:
+#   country   その国の結果を**押し上げる**（topic が general のときだけ）
+#   language  その言語の結果を**押し上げる**
+# **Serper の gl / hl と同じ意味ではない。** あちらはロケール指定。
+
+
+def test_locale_is_not_sent_by_default():
+    """**既定の挙動を変えない。** 指定が無ければパラメータを足さない。"""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json=_body())
+
+    _provider(handler).search("q")
+    assert "country" not in seen
+    assert "language" not in seen
+
+
+def test_locale_is_sent_when_given():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json=_body())
+
+    _provider(handler).search("q", country="japan", language="ja")
+    assert seen["country"] == "japan"
+    assert seen["language"] == "ja"

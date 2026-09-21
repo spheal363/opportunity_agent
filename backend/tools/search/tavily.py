@@ -75,7 +75,23 @@ class TavilyProvider(SearchProvider):
         *,
         limit: int = 10,
         include_raw_content: bool = False,
+        country: str | None = None,
+        language: str | None = None,
     ) -> list[SearchResult]:
+        """`country` / `language` は**既定では送らない**（#65 の比較用）。
+
+        公式（docs.tavily.com の /search）で確認した仕様:
+
+          country   その国の結果を**押し上げる**。`topic` が general のときだけ
+          language  その言語の結果を**押し上げる**。ISO 639-1 か英語名
+          filter_by_language  押し上げではなく**絞り込む**。既定 false
+
+        **Serper の `gl` / `hl` と同じ意味ではない。** あちらは Google の
+        ロケール指定で、こちらは既定では順位付けへの加点にとどまる。
+
+        一律に日本へ寄せると、**海外開催のオンライン機会や英語の募集を
+        落とす**恐れがある。既定は変えず、比較のときだけ渡す。
+        """
         if not self._settings.search_api_key:
             raise SearchError("SEARCH_API_KEY が設定されていません")
 
@@ -95,6 +111,11 @@ class TavilyProvider(SearchProvider):
             "max_results": limit,
             "include_raw_content": include_raw_content,
         }
+        # **指定が無ければ送らない。** 既定の挙動を変えない。
+        if country is not None:
+            payload["country"] = country
+        if language is not None:
+            payload["language"] = language
         headers = {
             "Authorization": f"Bearer {self._settings.search_api_key}",
             "Content-Type": "application/json",
