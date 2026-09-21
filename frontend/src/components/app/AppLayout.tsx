@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { usePageChrome } from '../../hooks/usePageChrome';
 import { useAppState } from '../../state/context';
+import { clearProfileDraft } from '../../state/persistence';
 import type { UserProfileInput } from '../../types';
 import { AppFooter, AppHeader, Sidebar, Toast } from './Chrome';
 import { DetailDialog } from './DetailDialog';
@@ -42,6 +43,8 @@ export default function AppLayout() {
     setSubmitError(null);
     try {
       const runId = await saveProfileAndStart(input);
+      // 保存できた内容は下書きとして残さない。次に開くときは保存済みの内容から。
+      clearProfileDraft();
       closeGoal();
       navigate(`/app/explore?run_id=${runId}`);
     } catch (err) {

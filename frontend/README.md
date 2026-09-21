@@ -104,13 +104,33 @@ src/
 ## 既知の制約
 
 - **「気になる」の解除**と**「次の一歩」への追加**に対応する API がまだ無い。
-  そのぶんはこのブラウザの中だけで保持しており、リロードすると Backend の `status` に戻る。
+  そのぶんはこのブラウザの中だけで保持している（`src/state/persistence.ts`）。
+  localStorage に残すのでリロードしても消えないが、**別の端末やブラウザには引き継がれない**。
   `POST /api/opportunities/{id}/calendar`（docs/api.md の 8）が実装されたら
   `src/state/AppStateProvider.tsx` の `markAsStep` をその結果に置き換える。
 - **`status` は1つ**なので、「次の一歩」に進めた機会は「気になる」から外れる。
 - 探索中の**一時停止は画面の更新を止めるだけ**で、Agent の実行は止まらない。
   実行を止める API が無いため。
 - 一覧の Schema に `cost` が無いので、参加費は詳細ダイアログにだけ出る。
+
+## このブラウザに残すもの
+
+サーバーに置き場所が無い値だけを localStorage に残す（key は `opportunity-agent.v1.*`）。
+何を残すかと、読み込み時の検証は `src/state/persistence.ts` に集約している。
+
+| key | 中身 |
+| --- | --- |
+| `status-overrides` | 「気になる」の解除と「次の一歩」。対応する API が無いぶん |
+| `reactions` | 送信済みの 👍 / 👎。どちらを押したかを返す API が無いぶん |
+| `registration-urls` | `POST /interest` が返した登録先 |
+| `notes` | 参加準備の自己紹介メモ。外部には送っていない |
+| `profile-draft` | 目標・興味ダイアログの入力途中。保存が通ったら消す |
+
+Web 上の事実（日時・場所・費用）と AI の評価（score / reason）は**残さない**。
+サーバーが正で、キャッシュすると古い値を事実として見せてしまうため。
+
+読み出した値は検証し、知らない値・壊れた値は捨てる。
+保存する形を変えるときは `src/utils/storage.ts` の `PREFIX` の `v1` を上げる。
 
 ## 注意
 

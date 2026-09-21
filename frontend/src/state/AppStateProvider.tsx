@@ -9,6 +9,7 @@ import {
   sendFeedback,
   startAgentRun,
 } from '../api';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { useToast } from '../hooks/useToast';
 import { isSaved, isStep } from '../utils/display';
 import type {
@@ -19,11 +20,18 @@ import type {
   UserProfileInput,
 } from '../types';
 import { AppStateContext, type AppState } from './context';
+import {
+  STORAGE_KEY,
+  reviveNotes,
+  reviveReactions,
+  reviveRegistrationUrls,
+  reviveStatusOverrides,
+} from './persistence';
 
 const message = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 
 /**
- * 解除する API が無いため、この画面でだけ「未保存」に戻すときの値。
+ * 解除する API が無いため、このブラウザの中でだけ「未保存」に戻すときの値。
  *
  * サーバーが最初から interested を返していた場合、元の status を書き戻すだけでは
  * 実効状態が interested のままで解除にならない。
@@ -37,18 +45,35 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [opportunitiesError, setOpportunitiesError] = useState<string | null>(null);
 
   /**
-   * この画面で行った操作の結果。サーバーの status に重ねて表示する。
+   * この端末で行った操作の結果。サーバーの status に重ねて表示する。
    *
    * 「気になる」は POST /opportunities/{id}/interest が status を更新するが、
    * 解除する API と「次の一歩」に進める API（POST .../calendar）はまだ無いため、
    * そのぶんはこのブラウザの中だけで保持する。docs/api.md の 7/8 が実装されたら
    * ここをサーバーの値に置き換える。
+   *
+   * サーバーに置き場所が無い値なので、失うと操作がやり直しになる。
+   * 再読み込みでも残るよう localStorage に保存する（このブラウザの中だけ）。
    */
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, OpportunityStatus>>({});
-  const [reactions, setReactions] = useState<Record<string, Reaction>>({});
+  const [statusOverrides, setStatusOverrides] = usePersistedState<
+    Record<string, OpportunityStatus>
+  >(STORAGE_KEY.statusOverrides, {}, reviveStatusOverrides);
+  const [reactions, setReactions] = usePersistedState<Record<string, Reaction>>(
+    STORAGE_KEY.reactions,
+    {},
+    reviveReactions,
+  );
   /** POST /interest が返す登録先。Verification 後の最新値なので url より優先する。 */
-  const [registrationUrls, setRegistrationUrls] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [registrationUrls, setRegistrationUrls] = usePersistedState<Record<string, string>>(
+    STORAGE_KEY.registrationUrls,
+    {},
+    reviveRegistrationUrls,
+  );
+  const [notes, setNotes] = usePersistedState<Record<string, string>>(
+    STORAGE_KEY.notes,
+    {},
+    reviveNotes,
+  );
 
   const [goalOpen, setGoalOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -109,9 +134,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     async (opportunity: Opportunity) => {
       const id = opportunity.opportunity_id;
       if (isSaved(statusOf(opportunity))) {
-        // 解除する API が無いので、この画面の表示だけ未保存に戻す。
+        // 解除する API が無いので、このブラウザの表示だけ未保存に戻す。
         setStatusOverrides((prev) => ({ ...prev, [id]: LOCALLY_CLEARED }));
-        toast.show('「気になる」から外しました（この画面でのみ。再読み込みで戻ります）');
+        toast.show('「気になる」から外しました（このブラウザの中だけ）');
         return;
       }
       try {
@@ -126,13 +151,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         toast.show(message(err, '保存できませんでした'));
       }
     },
-    [statusOf, toast],
+    [statusOf, setStatusOverrides, setRegistrationUrls, toast],
   );
 
-  const markAsStep = useCallback((opportunityId: string) => {
-    // TODO: POST /api/opportunities/{id}/calendar 実装後はその結果を使う。
-    setStatusOverrides((prev) => ({ ...prev, [opportunityId]: 'registered' }));
-  }, []);
+  const markAsStep = useCallback(
+    (opportunityId: string) => {
+      // TODO: POST /api/opportunities/{id}/calendar 実装後はその結果を使う。
+      setStatusOverrides((prev) => ({ ...prev, [opportunityId]: 'registered' }));
+    },
+    [setStatusOverrides],
+  );
 
   const sendReaction = useCallback(
     async (opportunityId: string, reaction: Reaction) => {
@@ -144,7 +172,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         toast.show(message(err, 'フィードバックを送れませんでした'));
       }
     },
-    [toast],
+    [setReactions, toast],
   );
 
   const value: AppState = {
