@@ -291,12 +291,16 @@ def _choose_what_to_read(db: Session, state: AgentState, candidates: list) -> tu
         return candidates, []
 
     goal = state.goal_analysis
+    # **探索方向を渡す。** 渡さないと関連性順だけで並び、方向がまるごと
+    # 消える（実測で 4 方向のうち 2 方向が 1 件も読まれなかった）。
+    order = {id(d): i for i, d in enumerate(state.search_directions)}
     with cost.step("prefilter"):
         selected, rest = rank_for_reading(
             [r for _, r in candidates],
             goal_summary=goal.goal_summary if goal else "",
             interest_connections=goal.interest_connections if goal else [],
             limit=limit,
+            directions=[order[id(d)] for d, _ in candidates],
         )
 
     _log(

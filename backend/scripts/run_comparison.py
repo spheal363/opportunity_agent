@@ -41,6 +41,9 @@ from pathlib import Path
 # 既定の .env は触らない。ここで環境変数を上書きするだけにする。
 _ARGS = [a for a in sys.argv[1:] if not a.startswith("-")]
 _CONFIRM = "--confirm" in sys.argv
+# **検索計画を共有する。** 検索語が run ごとに変わると、構成の差と
+# 検索語の差が混ざる。1 度だけ生成して両構成で使う。
+_PLAN_PATH = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--plan=")), None)
 _CONFIG = (_ARGS[0] if _ARGS else "A").upper()
 _CONFIGS = {
     # 基準線。**本番の既定と同じ構成。**
@@ -78,6 +81,7 @@ _experiment.apply_recording_settings()
 from agent import loop  # noqa: E402
 from ai import cost  # noqa: E402
 from ai.orcarouter import OrcaRouterClient  # noqa: E402
+from ai.schemas import SearchDirection  # noqa: E402
 from config import get_settings  # noqa: E402
 from db.base import Base  # noqa: E402
 from db.session import SessionLocal, engine  # noqa: E402
@@ -121,6 +125,8 @@ class Capture:
         self.jev: list[dict] = []
         # **C が読まなかった候補。** 取りこぼし監査の入力になる。
         self.prefilter: dict | None = None
+        self.plan_source: str | None = None
+        self.plan_generated_ms: int | None = None
         # **停止条件は共通モジュールが持つ。** 実験ごとに書くと、実費が
         # 取れない回を 0 として素通りさせる形が混ざる（実際に混ざった）。
         self.budget = _experiment.Budget()
@@ -173,6 +179,33 @@ class Capture:
                     self.budget.schema_failures += 1
 
         OrcaRouterClient.chat = chat  # type: ignore[method-assign]
+
+    def wrap_plan(self) -> None:
+        """検索計画を共有する。
+
+        **無ければ作って保存し、あれば読んで使う。** 生成にかかった費用と
+        時間は、共有ぶんとして別に記録する（片方の run だけに乗せない）。
+        """
+        if _PLAN_PATH is None:
+            return
+        path = Path(_PLAN_PATH)
+        original = loop._plan_search
+
+        def plan(state, profile):
+            if path.exists():
+                self.plan_source = "読み込み（**この run では生成していない**）"
+                return [SearchDirection(**d) for d in json.loads(path.read_text())]
+            started = time.perf_counter()
+            directions = original(state, profile)
+            self.plan_generated_ms = int((time.perf_counter() - started) * 1000)
+            self.plan_source = "生成（**費用と時間は共有ぶん**）"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps([d.model_dump() for d in directions], ensure_ascii=False, indent=2)
+            )
+            return directions
+
+        loop._plan_search = plan  # type: ignore[assignment]
 
     def wrap_jev(self) -> None:
         """Jev の使用量を別に数える。**LLM と混ぜない。**"""
@@ -399,6 +432,7 @@ def main() -> int:
     db.close()
 
     capture = Capture()
+    capture.wrap_plan()
     capture.wrap_llm()
     capture.wrap_tools()
     capture.wrap_jev()
@@ -445,6 +479,11 @@ def _save(run_id: str, total_ms: int, capture: Capture, settings) -> None:
         },
         "profile": PROFILE,
         "budget": capture.budget.to_dict(),
+        "search_plan": {
+            "shared_file": _PLAN_PATH,
+            "source": capture.plan_source,
+            "generated_ms": capture.plan_generated_ms,
+        },
         "status": run.status if run else None,
         "selected_ids": run.selected_ids if run else None,
         "shortfall_reason": run.shortfall_reason if run else None,

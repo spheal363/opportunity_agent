@@ -198,3 +198,100 @@ def test_slot_counts_are_documented_as_hypotheses():
     """枠の数は仮説。**固定の正解ではない。** 比較で決める。"""
     assert SERENDIPITY_SLOTS >= 1
     assert UNCLEAR_SLOTS >= 1
+
+
+# --- 探索方向ごとの枠（#65）-------------------------------------------------
+#
+# **実測で踏んだ。** 方向を見ずに関連性順だけで並べた結果、4 方向のうち
+# 2 方向（音楽・勉強会）が **1 件も読まれずに丸ごと消えた。**
+# 目標と興味から方向を立てた意味が、本文を読む前に失われていた。
+
+
+def _ordered(verdict_specs, *, limit, directions=None):
+    """(relevance, serendipity, is_opportunity, sufficient) から順序を作る。"""
+    from ai.jev.prefilter import Verdict
+
+    verdicts = [
+        Verdict(
+            index=i,
+            relevance=r,
+            serendipity=s,
+            is_opportunity=o,
+            snippet_sufficient=u,
+        )
+        for i, (r, s, o, u) in enumerate(verdict_specs)
+    ]
+    from ai.jev.prefilter import _order
+
+    return _order(verdicts, limit=limit, directions=directions)
+
+
+def test_each_direction_gets_one_slot():
+    """**各方向から 1 件ずつ、読む機会を確保する。**"""
+    # 方向 0 が関連性で上位を独占している
+    specs = [(90, 10, 0.9, 1.0), (85, 10, 0.9, 1.0), (80, 10, 0.9, 1.0), (20, 10, 0.9, 1.0)]
+    directions = [0, 0, 0, 1]
+
+    picked, slots = _ordered(specs, limit=2, directions=directions)
+    read = picked[:2]
+
+    assert 3 in read, "関連性が低い方向が 1 件も読まれない"
+    assert slots[3] == "direction:1"
+
+
+def test_without_directions_a_whole_direction_can_disappear():
+    """方向を渡さない現行の並べ方では、丸ごと消える。**これが実測の状態。**"""
+    specs = [(90, 10, 0.9, 1.0), (85, 10, 0.9, 1.0), (80, 10, 0.9, 1.0), (20, 10, 0.9, 1.0)]
+    picked, _ = _ordered(specs, limit=2)
+
+    assert 3 not in picked[:2]
+
+
+def test_a_direction_with_only_articles_is_not_forced():
+    """**明確に対象外しかない方向は、無理に枠を埋めない。**"""
+    specs = [(90, 10, 0.9, 1.0), (85, 10, 0.9, 1.0), (70, 10, 0.02, 1.0)]
+    directions = [0, 0, 1]
+
+    picked, slots = _ordered(specs, limit=2, directions=directions)
+
+    assert picked[:2] == [0, 1]
+    assert slots.get(2) != "direction:1"
+
+
+def test_an_unclear_snippet_still_earns_the_direction_slot():
+    """**抜粋から日時や適格性が不明なだけでは、対象外としない。**"""
+    specs = [(90, 10, 0.9, 1.0), (85, 10, 0.9, 1.0), (40, 10, 0.9, 0.1)]
+    directions = [0, 0, 1]
+
+    picked, slots = _ordered(specs, limit=2, directions=directions)
+
+    assert 2 in picked[:2]
+    assert slots[2] == "direction:1"
+
+
+def test_the_remaining_slots_still_use_the_existing_rules():
+    """**残りは既存の選別で埋める。** 方向枠だけにしない。"""
+    # 方向 0 に意外性の高い候補、方向 1 に 1 件
+    specs = [(90, 10, 0.9, 1.0), (30, 95, 0.9, 1.0), (50, 10, 0.9, 1.0)]
+    directions = [0, 0, 1]
+
+    _, slots = _ordered(specs, limit=3, directions=directions)
+
+    assert set(slots.values()) >= {"direction:0", "direction:1", "serendipity"}
+
+
+def test_every_candidate_is_still_ordered():
+    """**候補は落とさない。** 順序を変えるだけ。"""
+    specs = [(90, 10, 0.9, 1.0), (85, 10, 0.9, 1.0), (20, 10, 0.02, 1.0)]
+    picked, _ = _ordered(specs, limit=1, directions=[0, 1, 2])
+
+    assert sorted(picked) == [0, 1, 2]
+
+
+def test_the_slot_for_each_read_candidate_is_recorded():
+    """**なぜ読んだかを残す。** 後から説明できるように。"""
+    specs = [(90, 10, 0.9, 1.0), (20, 10, 0.9, 1.0)]
+    _, slots = _ordered(specs, limit=2, directions=[0, 1])
+
+    assert slots[0] == "direction:0"
+    assert slots[1] == "direction:1"

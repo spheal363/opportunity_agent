@@ -81,11 +81,19 @@ def rank_for_reading(
     interest_connections: list[str],
     limit: int,
     client: JevClient | None = None,
+    directions: list[int] | None = None,
 ) -> tuple[list[int], list[int]]:
     """読む順に並べる。戻り値は (読む index, 残りの index)。
 
     **残りも順に並べて返す。** 本文を読んだ結果として候補が足りなくなった
     ときに、先頭から追加で読めるようにするため。
+
+    `directions` は候補ごとの探索方向の番号。渡すと、**各方向から原則
+    1 件ずつ読む枠を先に確保する。**
+
+    実測（#65）で、方向を見ずに関連性順だけで並べた結果、4 方向のうち
+    2 方向（音楽・勉強会）が **1 件も読まれずに丸ごと消えた。**
+    目標と興味から方向を立てた意味が、本文を読む前に失われていた。
     """
     if not results:
         return [], []
@@ -102,8 +110,17 @@ def rank_for_reading(
         ),
     )
 
-    order = _order(verdicts, limit=limit)
+    order, slots = _order(verdicts, limit=limit, directions=directions)
     selected, rest = order[:limit], order[limit:]
+    # **なぜ読んだか / 読まなかったかを残す。** 後から説明できるように。
+    rank_for_reading.last = {  # type: ignore[attr-defined]
+        "slots": {i: slots.get(i, "") for i in selected},
+        "deferred_reason": {
+            i: ("記事らしい" if verdicts[i].looks_like_article else "上限に入らなかった")
+            for i in rest
+        },
+        "verdicts": [vars(v) for v in verdicts],
+    }
     logger.info(
         "jev.prefilter total=%d selected=%d articles=%d unclear=%d",
         len(results),
@@ -114,8 +131,10 @@ def rank_for_reading(
     return selected, rest
 
 
-def _order(verdicts: list[Verdict], *, limit: int) -> list[int]:
-    """枠を分けて並べる。
+def _order(
+    verdicts: list[Verdict], *, limit: int, directions: list[int] | None = None
+) -> tuple[list[int], dict[int, str]]:
+    """枠を分けて並べる。戻り値は (順序, 枠の割り当て)。
 
     **記事らしいものは最後に回す。外しはしない。**
     """
@@ -125,34 +144,54 @@ def _order(verdicts: list[Verdict], *, limit: int) -> list[int]:
     by_relevance = sorted(live, key=lambda v: v.relevance, reverse=True)
     picked: list[int] = []
     taken: set[int] = set()
+    # どの枠で選ばれたかを残す。**後から「なぜ読んだか」を説明できるように。**
+    slots: dict[int, str] = {}
 
-    def take(v: Verdict) -> None:
+    def take(v: Verdict, slot: str) -> None:
         if v.index not in taken:
             taken.add(v.index)
             picked.append(v.index)
+            slots[v.index] = slot
+
+    # --- 各探索方向から 1 件ずつ確保する ------------------------------------
+    #
+    # **方向ごとに、本文を読んで判断する機会を作る。**
+    # 音楽の候補を必ず推薦に入れるためではない。読む前に丸ごと消える状態を
+    # なくすため。読んだ結果として落ちるのは構わない。
+    #
+    # **明確に対象外の方向は埋めない。** 記事しか無い方向に枠は使わない。
+    # ただし「抜粋から日時や適格性が分からない」だけでは対象外としない。
+    if directions is not None:
+        for direction in dict.fromkeys(directions):
+            same = [v for v in by_relevance if directions[v.index] == direction]
+            if not same:
+                continue  # 記事しか無い方向。枠を使わない
+            take(same[0], f"direction:{direction}")
 
     # --- 意外性の枠を先に取る -----------------------------------------------
     # 後回しにすると関連性上位で埋まり、枠の意味が無くなる。
     serendipity_first = sorted(live, key=lambda v: v.serendipity, reverse=True)
-    for v in serendipity_first[:SERENDIPITY_SLOTS]:
+    for v in serendipity_first:
+        if len([s for s in slots.values() if s == "serendipity"]) >= SERENDIPITY_SLOTS:
+            break
         if v.serendipity >= 0:
-            take(v)
+            take(v, "serendipity")
 
     # --- 抜粋だけでは判断できない枠 -----------------------------------------
     # **抜粋に情報が無いことを、無関係の根拠にしない。**
     unclear = [v for v in by_relevance if v.snippet_is_unclear and v.index not in taken]
     for v in unclear[:UNCLEAR_SLOTS]:
-        take(v)
+        take(v, "unclear")
 
     # --- 残りは関連性順 ------------------------------------------------------
     for v in by_relevance:
-        take(v)
+        take(v, "relevance")
 
     # 記事らしいものは最後。候補が尽きたときだけ読む。
     for v in sorted(articles, key=lambda x: x.relevance, reverse=True):
-        take(v)
+        take(v, "article")
 
-    return picked
+    return picked, slots
 
 
 def _one(
