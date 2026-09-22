@@ -10,15 +10,14 @@ export function AppHeader() {
   const { openGoal } = useAppState();
   return (
     <header className="h-[88px] border-b border-line flex items-center px-[44px] gap-[22px] bg-[#fffefa] lte850:h-[72px] lte850:px-[23px] lte620:h-[68px] lte620:px-[18px] lte620:gap-[10px]">
-      <Link
-        to="/"
-        className="text-[29px] tracking-[-.045em] font-semibold flex items-center font-en lte620:text-[24px]"
-      >
-        <span className="text-[40px] text-green mr-[11px] leading-none lte620:text-[33px] lte620:mr-[6px]">
-          ✳
-        </span>
-        opportunity
-        <span className="text-[#bf8065]">.</span>
+      <Link to="/" className="shrink-0" aria-label="Opportunity トップへ">
+        <img
+          src="/assets/logo.png"
+          alt="Opportunity"
+          width={2048}
+          height={768}
+          className="block w-[200px] h-auto lte620:w-[160px]"
+        />
       </Link>
       <span className="ml-auto text-[12px] text-muted tracking-[.04em] border border-line rounded-[5px] px-[10px] py-[4px] lte620:px-[5px] lte620:py-[3px]">
         {DATA_SOURCE_LABEL}
