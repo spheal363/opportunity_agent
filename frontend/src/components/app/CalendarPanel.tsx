@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 
-import { addToCalendar, ApiRequestError, checkCalendarAvailability } from '../../api';
+import {
+  addToCalendar,
+  ApiRequestError,
+  checkCalendarAvailability,
+  fetchCalendarPreview,
+} from '../../api';
 import { useAppState } from '../../state/context';
 import type { CalendarConflict, CalendarEventPreview, OpportunityDetail } from '../../types';
 import { formatDateTime } from '../../utils/date';
@@ -47,6 +52,13 @@ export function CalendarPanel({ item, blockedReason, onProceed }: Props) {
     // 開催日時が無い機会は Backend も確認しない（推測で埋めない）。
     if (!hasStart) return;
     let cancelled = false;
+    fetchCalendarPreview(item.opportunity_id)
+      .then((e) => {
+        if (!cancelled) setPreview(e);
+      })
+      .catch(() => {
+        // 確認内容が取れなくても空き確認は続ける。**推測で埋めない。**
+      });
     checkCalendarAvailability(item.opportunity_id)
       .then((res) => {
         if (cancelled) return;

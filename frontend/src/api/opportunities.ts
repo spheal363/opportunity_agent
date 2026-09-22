@@ -1,5 +1,6 @@
 import type {
   CalendarAvailability,
+  CalendarEventPreview,
   CalendarEventCreated,
   FeedbackInput,
   InterestResult,
@@ -47,6 +48,30 @@ export async function sendFeedback(id: string, input: FeedbackInput) {
 }
 
 // --- Calendar（docs/api.md の 7 / 8） ---
+
+/**
+ * 登録する内容だけを取る。**Google へは触らない。**
+ *
+ * 空き確認は Google を呼ぶので未連携だと落ちる。そのとき「何が登録されるのか」
+ * まで見られなくなるのを避けるため、確認の表示はこちらで取る。
+ */
+export async function fetchCalendarPreview(id: string): Promise<CalendarEventPreview> {
+  if (USE_MOCK) {
+    return {
+      title: 'AI × Music Hackathon',
+      start_at: '2026-10-11T10:00:00Z',
+      end_at: '2026-10-11T18:00:00Z',
+      all_day: false,
+      timezone: 'Asia/Tokyo',
+      end_is_placeholder: false,
+      location: 'Tokyo',
+      source_url: 'https://example.com/ai-music-hackathon',
+    };
+  }
+  return api.get<CalendarEventPreview>(
+    `/calendar/preview?opportunity_id=${encodeURIComponent(id)}`,
+  );
+}
 
 /** その機会の時間帯に重なる予定。読み取りだけなので、画面を開いたときに自動で呼んでよい。 */
 export async function checkCalendarAvailability(id: string): Promise<CalendarAvailability> {
