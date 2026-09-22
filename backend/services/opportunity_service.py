@@ -108,5 +108,7 @@ def record_feedback(
     elif payload.reaction == "dislike":
         row.status = OpportunityStatus.DISMISSED
     db.commit()
-    # TODO(agent): Reflection を実行して Agent Memory を更新する。
+    # Reflection（Feedback から Agent Memory を更新する）はここでは行わない。
+    # 次の run の冒頭で行う（agent/reflection.py、別ブランチで実装中）。
+    # 👎が重なったときに探し直すかどうかは services/auto_explore.py が決める。
     return True

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
+from agent.loop import run_agent
 from api.deps import current_user_id, require_page_request
 from api.errors import NotFound
 from db.session import get_db
@@ -8,7 +9,7 @@ from schemas.calendar import CalendarEventCreated
 from schemas.common import ApiSuccess, ok
 from schemas.feedback import FeedbackCreate, FeedbackResult
 from schemas.opportunity import InterestResult, OpportunityDetail, OpportunitySummary
-from services import calendar_service, opportunity_service
+from services import auto_explore, calendar_service, opportunity_service
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -75,9 +76,20 @@ def add_to_calendar(
 def post_feedback(
     opportunity_id: str,
     payload: FeedbackCreate,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
     user_id: str = Depends(current_user_id),
 ) -> dict:
+    """👍 / 👎 / 参加した を記録する。
+
+    最新の推薦の過半数に👎が付いたら、Agent が探し直すことがある（#84。
+    既定オフ。判定と上限は services/auto_explore.py）。始めた run は
+    `GET /api/agent/runs/latest` で分かる。レスポンスの形は変えない。
+    """
     if not opportunity_service.record_feedback(db, opportunity_id, payload, user_id):
         raise NotFound("指定された Opportunity が見つかりません")
+    run_id = auto_explore.start_after_feedback(db, user_id, payload.reaction)
+    if run_id is not None:
+        # POST /api/agent/runs と同じ形。リクエストの寿命の外で走る
+        background.add_task(run_agent, run_id, user_id)
     return ok(FeedbackResult(opportunity_id=opportunity_id))

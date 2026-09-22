@@ -18,6 +18,8 @@ export async function fetchAgentRun(runId: string): Promise<AgentRun> {
       error: null,
       cost_jpy: 0,
       expensive_model_calls: 0,
+      trigger: 'manual',
+      trigger_reason: null,
     };
   }
   return api.get<AgentRun>(`/agent/runs/${runId}`);

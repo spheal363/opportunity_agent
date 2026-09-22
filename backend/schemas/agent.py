@@ -24,6 +24,19 @@ class AgentStep(StrEnum):
     COMPLETED = "completed"
 
 
+class AgentRunTrigger(StrEnum):
+    """探索を始めたきっかけ（#84）。**manual 以外は Agent が自分で始めた。**
+
+    自動にするのは発見だけ。Calendar への書き込みなど外部への操作は人のまま。
+    判定と上限は services/auto_explore.py。
+    """
+
+    MANUAL = "manual"  # ボタン・目標の保存（POST /api/agent/runs）
+    FEEDBACK = "feedback"  # 最新の推薦の過半数に👎が付いた
+    STALE = "stale"  # 推薦中・保存中の機会が締切切れで減った
+    SCHEDULED = "scheduled"  # 前回の探索から一定時間たった
+
+
 class AgentRunCreated(BaseModel):
     run_id: str
     status: AgentRunStatus
@@ -44,6 +57,12 @@ class AgentRunState(BaseModel):
     # 「全件を高性能モデルへ投げていない」ことを示すために出す。
     cost_jpy: float = Field(default=0.0, ge=0)
     expensive_model_calls: int = Field(default=0, ge=0)
+
+    # 何がきっかけで始まったか。manual 以外は Agent が自分で始めた探索で、
+    # trigger_reason に「なぜ始めたか」が入る。**決まった文面と数値だけ**で、
+    # Web 由来の文は入らない。manual では null。
+    trigger: AgentRunTrigger = AgentRunTrigger.MANUAL
+    trigger_reason: str | None = None
 
 
 class AgentRunResult(BaseModel):
