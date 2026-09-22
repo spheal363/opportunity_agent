@@ -11,6 +11,10 @@ const day = (offset: number, hour: number) => {
   return d.toISOString();
 };
 
+/** 日本時間の日時。開催日などは固定する（stub_data.py の _jst と同じ値）。 */
+const jst = (month: number, date: number, hour: number) =>
+  new Date(Date.UTC(2026, month - 1, date, hour - 9)).toISOString();
+
 export const MOCK_PROFILE: UserProfile = {
   user_id: 'user_001',
   name: 'Naoya',
@@ -32,9 +36,9 @@ export const MOCK_OPPORTUNITIES: OpportunityDetail[] = [
     description: 'AIと音楽をテーマにプロダクトを開発する2日間のハッカソン。',
     url: 'https://example.com/ai-music-hackathon',
     source: 'Web Search',
-    start_at: day(21, 10),
-    end_at: day(22, 18),
-    deadline: day(16, 23),
+    start_at: jst(10, 12, 10),
+    end_at: jst(10, 13, 18),
+    deadline: jst(10, 7, 23),
     location: 'Tokyo',
     format: 'offline',
     eligibility: 'AI・音楽・プロダクト開発に興味がある人',
@@ -68,9 +72,9 @@ export const MOCK_OPPORTUNITIES: OpportunityDetail[] = [
     description: 'AI領域で起業を目指すエンジニア・ファウンダーが集まる月次コミュニティ。',
     url: 'https://example.com/tokyo-ai-startup-builders',
     source: 'Web Search',
-    start_at: day(10, 19),
-    end_at: day(10, 21),
-    deadline: day(8, 23),
+    start_at: jst(10, 1, 19),
+    end_at: jst(10, 1, 21),
+    deadline: jst(9, 29, 23),
     location: 'Tokyo',
     format: 'hybrid',
     eligibility: '起業・AI開発に関心のあるエンジニア',
@@ -104,9 +108,9 @@ export const MOCK_OPPORTUNITIES: OpportunityDetail[] = [
     description: '海外アクセラレータのリモート参加枠。英語でのメンタリングとデモデイつき。',
     url: 'https://example.com/global-ai-founders',
     source: 'Web Search',
-    start_at: day(45, 9),
+    start_at: jst(11, 5, 9),
     end_at: null,
-    deadline: day(30, 23),
+    deadline: jst(10, 21, 23),
     location: 'Remote / San Francisco',
     format: 'online',
     eligibility: 'プロトタイプがあるチーム・個人',

@@ -103,11 +103,12 @@ src/
 
 ## 既知の制約
 
-- **「気になる」の解除**と**「次の一歩」への追加**に対応する API がまだ無い。
-  そのぶんはこのブラウザの中だけで保持している（`src/state/persistence.ts`）。
-  localStorage に残すのでリロードしても消えないが、**別の端末やブラウザには引き継がれない**。
-  `POST /api/opportunities/{id}/calendar`（docs/api.md の 8）が実装されたら
-  `src/state/AppStateProvider.tsx` の `markAsStep` をその結果に置き換える。
+- **「気になる」の解除**に対応する API がまだ無い。そのぶんはこのブラウザの中だけで
+  保持している（`src/state/persistence.ts`）。localStorage に残すのでリロードしても消えないが、
+  **別の端末やブラウザには引き継がれない**。
+- 「次の一歩」への追加は、カレンダーに入れたときだけサーバーにも残る
+  （`POST /api/opportunities/{id}/calendar` が `status` を `registered` にする）。
+  カレンダーに入れずに進めた場合は、このブラウザの中だけで保持する。
 - **`status` は1つ**なので、「次の一歩」に進めた機会は「気になる」から外れる。
 - 探索中の**一時停止は画面の更新を止めるだけ**で、Agent の実行は止まらない。
   実行を止める API が無いため。

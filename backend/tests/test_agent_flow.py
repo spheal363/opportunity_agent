@@ -4,16 +4,19 @@ PUT /profile -> POST /agent/runs -> GET /agent/runs/{id} -> GET /opportunities
 -> GET /opportunities/{id} -> POST /interest -> POST /feedback
 """
 
+# 画面（frontend/src/api/client.ts）が付けるヘッダー。状態を変える API に必須（#80）
+PAGE = {"X-Requested-With": "opportunity-agent"}
+
 
 def test_agent_run_requires_profile(client):
-    res = client.post("/api/agent/runs")
+    res = client.post("/api/agent/runs", headers=PAGE)
     assert res.status_code == 404
 
 
 def test_full_mvp_flow(client, profile_payload):
-    assert client.put("/api/profile", json=profile_payload).status_code == 200
+    assert client.put("/api/profile", json=profile_payload, headers=PAGE).status_code == 200
 
-    res = client.post("/api/agent/runs")
+    res = client.post("/api/agent/runs", headers=PAGE)
     assert res.status_code == 200
     run_id = res.json()["data"]["run_id"]
 
@@ -41,13 +44,14 @@ def test_full_mvp_flow(client, profile_payload):
     assert detail["opportunity_id"] == opportunity_id
     assert detail["reason"]
 
-    res = client.post(f"/api/opportunities/{opportunity_id}/interest")
+    res = client.post(f"/api/opportunities/{opportunity_id}/interest", headers=PAGE)
     assert res.status_code == 200
     assert res.json()["data"]["status"] == "interested"
 
     res = client.post(
         f"/api/opportunities/{opportunity_id}/feedback",
         json={"reaction": "like", "attended": True, "outcome_score": 5},
+        headers=PAGE,
     )
     assert res.status_code == 200
 

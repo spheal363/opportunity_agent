@@ -871,7 +871,8 @@ def test_the_source_title_is_given_to_the_model():
     )
     assert "GenAI/SUM 2026" in user
     # **これも外部から取得したデータ。** 境界の中に入れる。
-    assert user.index("<page_content>") < user.index("GenAI/SUM 2026")
+    # 囲みのタグは毎回変わる（#76）ので、開始タグの先頭だけで位置を見る。
+    assert user.index("<page_content_") < user.index("GenAI/SUM 2026")
 
 
 def test_the_title_line_is_omitted_when_there_is_none():

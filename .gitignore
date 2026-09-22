@@ -228,6 +228,13 @@ frontend/dist/
 .env.*
 !.env.example
 
+# Google OAuth。クライアントのシークレットと、認証で得たトークン（#43）
+# トークンはカレンダーへ書き込める権限そのもの。人に渡さない。
+credentials.json
+client_secret*.json
+token.json
+.google_token.json
+
 # SQLite（MVP のローカル DB）
 *.db
 *.db-journal
@@ -235,6 +242,9 @@ frontend/dist/
 
 # OS
 .DS_Store
+
+# ローカルのプロトタイプ
+/opportunity-prototype/
 
 # エディタ / ツール固有の設定
 # .claude/ 配下は共有する（CLAUDE.md / rules / skills / agents / hooks / settings.json）。

@@ -44,21 +44,35 @@ def list_recommended(
     return [OpportunitySummary.model_validate(r, from_attributes=True) for r in rows]
 
 
-def get_detail(db: Session, opportunity_id: str) -> OpportunityDetail | None:
+def get_owned(db: Session, opportunity_id: str, user_id: str) -> Opportunity | None:
+    """その人の Opportunity だけを返す（#69）。他人のものは存在しないのと同じに扱う。
+
+    id を知っていれば誰のものでも読める・書ける状態にしない（IDOR）。
+    MVP は単一ユーザーなので今は挙動が変わらないが、認証を入れた時点で
+    `current_user_id` を差し替えるだけで効くようにしておく。
+    **403 ではなく 404** にするのは、他人の id が存在するかを漏らさないため。
+    """
     row = db.get(Opportunity, opportunity_id)
+    if row is None or row.user_id != user_id:
+        return None
+    return row
+
+
+def get_detail(db: Session, opportunity_id: str, user_id: str) -> OpportunityDetail | None:
+    row = get_owned(db, opportunity_id, user_id)
     if row is None:
         return None
     return OpportunityDetail.model_validate(row, from_attributes=True)
 
 
-def mark_interested(db: Session, opportunity_id: str) -> InterestResult | None:
+def mark_interested(db: Session, opportunity_id: str, user_id: str) -> InterestResult | None:
     """「参加したい」。
 
     status を interested にする。
     TODO(agent): ここで Verification（公式ページの再取得と差分確認）を実行する。
     外部サービスへの登録は Agent が代行せず、登録ページへの誘導までを担当する。
     """
-    row = db.get(Opportunity, opportunity_id)
+    row = get_owned(db, opportunity_id, user_id)
     if row is None:
         return None
     row.status = OpportunityStatus.INTERESTED
@@ -77,7 +91,7 @@ def record_feedback(
     payload: FeedbackCreate,
     user_id: str = DEFAULT_USER_ID,
 ) -> bool:
-    row = db.get(Opportunity, opportunity_id)
+    row = get_owned(db, opportunity_id, user_id)
     if row is None:
         return False
     db.add(

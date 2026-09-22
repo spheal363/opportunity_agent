@@ -75,6 +75,7 @@ npm run format
 | --- | --- |
 | API のエンドポイント・封筒・実装状況 | `docs/api.md` |
 | アーキテクチャ / Agent Loop / Security 方針 | `docs/architecture.md` |
+| Security の対策・実測・限界 | `docs/security.md` |
 | UserProfile / Opportunity / AgentRun の項目 | `backend/schemas/*.py` ↔ `frontend/src/types/*.ts` |
 | AI 各処理の Input / Output | `backend/ai/schemas/*.py` |
 | Tool と権限レベル | `backend/tools/base.py` |

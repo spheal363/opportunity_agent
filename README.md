@@ -101,12 +101,12 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Reflection / Agent Memory | 未実装（テーブルのみ） |
 | コスト記録 | 実装済み（見積もり。1 探索あたり約 1 円。実単価が出たら差し替える） |
 | DB Migration | ツールは無いが、`init_db` が不足列を足す（冪等・既存データを消さない） |
-| Calendar API | 未実装（501 を返す） |
+| Calendar API | 実装済み（空き確認と予定追加。連携手順は `backend/README.md`） |
 | OrcaRouter / LLM | 実装済み（接続・Schema Validation・Retry・Fallback・コスト記録） |
 | Web Search | 実装済み（Tavily。provider 差し替え可能） |
 | ページ取得 | 実装済み（Tavily extract。一部失敗しても残りを返す） |
 | Opportunity 構造化 | 実装済み（LLM 抽出。日時は tz 必須、不明な項目は null） |
-| Prompt Injection 対策 | 未実装（外部データを囲む仕組みのみ。cheap モデルは突破される。#27 で対応） |
+| Prompt Injection 対策 | 実装済み（LLM の手前で指示らしき文を除去し、疑わしいページは推薦しない。実測と限界は `docs/security.md`） |
 | Retry / Fallback | 実装済み（tier ごとに Retry し、駄目なら上の tier へ Fallback） |
 
 Frontend 側は `VITE_USE_MOCK=true` にすると Backend なしで画面を作れる。

@@ -71,9 +71,16 @@ class Settings(BaseSettings):
 
     google_client_id: str | None = None
     google_client_secret: str | None = None
+    # scripts/google_auth.py が書き出すトークン。リフレッシュトークンを含む Secret。
+    # backend/ からの相対パス。.gitignore 済み。
+    google_token_path: str = ".google_token.json"
 
     # LLM を呼ばずモックデータで Agent Loop を流すモード。
     agent_stub_mode: bool = True
+
+    # 攻撃を仕込んだページを検索結果に 1 件混ぜる（Prompt Injection のデモ, #52）。
+    # 検知と除去は本番と同じコードが行う。本番の探索では false のまま。
+    demo_injection: bool = False
 
     @property
     def cors_origins(self) -> list[str]:

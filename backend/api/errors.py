@@ -8,10 +8,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from logging_config import get_logger
+from logging_config import describe_exception, get_logger
 from schemas.common import err
+from services.calendar_service import CalendarError
 
 logger = get_logger(__name__)
+
+# Calendar の失敗。Frontend は code で「未連携」「日時不明」「Google 側の失敗」を分けて出す。
+# 表にない code（CALENDAR_ERROR）は Google 側の失敗として 502。
+_CALENDAR_STATUS = {"CALENDAR_NOT_CONNECTED": 503, "SCHEDULE_UNKNOWN": 422}
 
 
 class ApiError(Exception):
@@ -33,6 +38,12 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=err(exc.code, exc.message))
+
+    @app.exception_handler(CalendarError)
+    async def _calendar_error(_: Request, exc: CalendarError) -> JSONResponse:
+        return JSONResponse(
+            status_code=_CALENDAR_STATUS.get(exc.code, 502), content=err(exc.code, exc.message)
+        )
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -57,8 +68,9 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
-        # 内部の詳細はレスポンスへ出さず、ログ側にだけ残す。
-        logger.exception("unhandled error path=%s", request.url.path)
+        # 内部の詳細はレスポンスへ出さない。ログにも例外の文字列は出さず、型と場所だけ残す
+        # （例外の文字列には SQL のパラメータ、つまりプロフィール本文が入りうる）。
+        logger.error("unhandled error path=%s %s", request.url.path, describe_exception(exc))
         return JSONResponse(
             status_code=500,
             content=err("INTERNAL_ERROR", "Unexpected error occurred"),

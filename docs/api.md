@@ -21,8 +21,23 @@ Base URL: `/api`
 | --- | --- | --- |
 | `NOT_FOUND` | 404 | 対象が存在しない |
 | `VALIDATION_ERROR` | 422 | リクエスト形式が不正 |
-| `NOT_IMPLEMENTED` | 501 | 未実装の機能（Calendar など） |
+| `FORBIDDEN` | 403 | 画面以外からの操作（`X-Requested-With` が無い）。状態を変える API（POST / PUT）すべてで使う |
+| `SCHEDULE_UNKNOWN` | 422 | 開催日時が分からないため、Calendar で確認・追加できない |
+| `CALENDAR_NOT_CONNECTED` | 503 | Google Calendar と未連携、または連携が切れている（`backend/README.md`） |
+| `CALENDAR_ERROR` | 502 | Google Calendar 側のエラー・接続失敗 |
+| `NOT_IMPLEMENTED` | 501 | 未実装の機能 |
 | `INTERNAL_ERROR` | 500 | 想定外のエラー |
+
+## 状態を変える API のヘッダー
+
+**POST / PUT はすべて `X-Requested-With: opportunity-agent` ヘッダーが必須**（無ければ `FORBIDDEN`）。
+GET は不要。
+
+body の無い POST や `text/plain` の POST は、別サイトの form や fetch からブラウザの
+事前確認（preflight）なしに送れてしまう。独自ヘッダーを付けた要求はブラウザが事前確認し、
+許可していない Origin は CORS で止まる。探索の開始（`POST /api/agent/runs`）は LLM の費用が
+かかるため、別サイトを開いただけで走らせられないようにしている（#80）。
+Frontend は `src/api/client.ts` で全リクエストに付けている。
 
 ## MVP の基本フロー
 
@@ -61,8 +76,8 @@ POST /api/opportunities/{id}/feedback
 | 4 | `GET /api/opportunities` | 実装済み |
 | 5 | `GET /api/opportunities/{opportunity_id}` | 実装済み |
 | 6 | `POST /api/opportunities/{opportunity_id}/interest` | 実装済み（Verification 未接続） |
-| 7 | `GET /api/calendar/availability` | 未実装（501） |
-| 8 | `POST /api/opportunities/{opportunity_id}/calendar` | 未実装（501） |
+| 7 | `GET /api/calendar/availability` | 実装済み（Google Calendar） |
+| 8 | `POST /api/opportunities/{opportunity_id}/calendar` | 実装済み（Google Calendar） |
 | 9 | `POST /api/opportunities/{opportunity_id}/feedback` | 実装済み（Reflection 未接続） |
 | | `GET /api/health` | 実装済み |
 
@@ -130,6 +145,24 @@ unknown  どちらとも確認できていない
 すべて ISO 8601 の **UTC**（`2026-10-10T10:00:00Z`）で返す。
 表示側のタイムゾーン変換は Frontend が行う（`frontend/src/utils/date.ts`）。
 Web から取得できなかった日時は推測せず `null`。
+
+### Calendar（7 / 8）
+
+Backend がユーザーの Google Calendar を読み書きする。連携の手順は `backend/README.md`。
+
+| | 動き |
+| --- | --- |
+| `GET /api/calendar/availability` | その機会の時間帯に重なる予定を返す。読み取りだけなので自動で呼んでよい |
+| `POST /api/opportunities/{id}/calendar` | 予定を追加し、`status` を `registered`（次の一歩）にする。**ユーザーが追加内容を見てボタンを押したときだけ呼ぶ**。この操作を承認として扱う |
+
+- `POST .../calendar` も他の POST と同じく `X-Requested-With` ヘッダーが必須（「状態を変える API のヘッダー」）。
+  このヘッダーの付いた要求だけを、ユーザーの承認として扱う
+- 時間帯は `start_at`〜`end_at`。**`end_at` が無いときは仮に 1 時間**で、予定の説明にも「仮」と書く
+- `start_at` が `null` の機会は確認も追加もしない（`SCHEDULE_UNKNOWN`）。推測で埋めない
+- 予定に入れるのはタイトル・日時・場所・公式ページの URL だけ。AI の評価（`score` / `reason`）は入れない
+- 同じ機会は何度押しても 1 件。2 回目以降の `status` は `already_exists`（`created` / `already_exists`）
+- `conflicts` に含めないもの: 「予定なし」にした予定、辞退した招待、この機会についてすでに入れた予定
+- 追加に失敗したときは `status` を変えない。`attended` の機会は `registered` に戻さない
 
 ## Schema の対応
 
