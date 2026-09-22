@@ -109,7 +109,10 @@ export default function ResultsPage() {
       {/* **期間との関係で分ける。** 0 件なら 0 件と言い、別枠で埋めない。 */}
       <CandidateSections selected={selected} others={others} hasWindow={win !== null} />
       {/* 検索で見つかった候補すべて。**開いても外部 API は呼ばない。** */}
-      <SearchCandidateList items={result?.search_candidates ?? []} />
+      <SearchCandidateList
+        items={result?.search_candidates ?? []}
+        recommendedUrls={items.map((o) => o.url ?? '').filter(Boolean)}
+      />
       <BottomNote />
     </>
   );

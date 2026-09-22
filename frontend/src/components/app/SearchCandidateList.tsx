@@ -21,6 +21,14 @@ import { EYEBROW, TEXT_BUTTON } from './styles';
 
 type Props = {
   items: SearchCandidate[];
+  /**
+   * **画面上部のおすすめ欄に実際に出している URL。**
+   *
+   * run の最終選定（`recommended`）をそのまま使うと、上部に出していない
+   * 候補にまで「おすすめ」が付く。実測で、期間の判定で上部から外れた
+   * 候補が一覧では「おすすめ」のままだった。**表示を一致させる。**
+   */
+  recommendedUrls: string[];
 };
 
 /** 開催日の「日」だけ。**時刻は使わない**（並び替えと見出しのため）。 */
@@ -60,7 +68,8 @@ function statusLabels(c: SearchCandidate): string[] {
   return out;
 }
 
-export function SearchCandidateList({ items }: Props) {
+export function SearchCandidateList({ items, recommendedUrls }: Props) {
+  const shown = new Set(recommendedUrls);
   const [open, setOpen] = useState(false);
   if (items.length === 0) return null;
 
@@ -96,11 +105,18 @@ export function SearchCandidateList({ items }: Props) {
       {open ? (
         <div className="mt-[14px]">
           {byDay.map((g) => (
-            <Group key={g.day} heading={dayLabel(g.items[0].start_at as string)} items={g.items} />
+            <Group
+              key={g.day}
+              heading={dayLabel(g.items[0].start_at as string)}
+              items={g.items}
+              shown={shown}
+            />
           ))}
-          {ongoing.length ? <Group heading="開催中（期間より前に開始）" items={ongoing} /> : null}
-          {undated.length ? <Group heading="日程未確認" items={undated} /> : null}
-          {ended.length ? <Group heading="終了済み" items={ended} muted /> : null}
+          {ongoing.length ? (
+            <Group heading="開催中（期間より前に開始）" items={ongoing} shown={shown} />
+          ) : null}
+          {undated.length ? <Group heading="日程未確認" items={undated} shown={shown} /> : null}
+          {ended.length ? <Group heading="終了済み" items={ended} shown={shown} muted /> : null}
         </div>
       ) : null}
     </section>
@@ -110,10 +126,12 @@ export function SearchCandidateList({ items }: Props) {
 function Group({
   heading,
   items,
+  shown,
   muted = false,
 }: {
   heading: string;
   items: SearchCandidate[];
+  shown: Set<string>;
   muted?: boolean;
 }) {
   return (
@@ -130,7 +148,7 @@ function Group({
             }`}
           >
             <p className="m-0">
-              {c.recommended ? (
+              {shown.has(c.url) ? (
                 <span className="inline-block bg-[#e4ecdf] text-[#3d5734] rounded-[4px] px-[6px] py-[1px] text-[12px] mr-[6px]">
                   おすすめ
                 </span>

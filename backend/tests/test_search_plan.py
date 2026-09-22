@@ -46,7 +46,8 @@ def test_system_prompt_carries_untrusted_rule():
 
 
 def test_system_prompt_requires_serendipity():
-    assert "serendipity が true の方向を最低 1 つ含める" in prompt.SYSTEM
+    # **枠が余ったときだけ作る**に変えた（#47）。希望を交差点で潰さないため。
+    assert "serendipity が true の方向は、枠が余ったときだけ作る" in prompt.SYSTEM
 
 
 def test_system_prompt_shows_query_examples():
@@ -259,3 +260,13 @@ def test_plan_search_passes_the_wishes_through(monkeypatch):
     )
 
     assert "ポケモンのイベント" in seen["user"]
+
+
+def test_a_wish_is_not_replaced_by_a_crossing():
+    """**実測で「ポケモンのイベント」が「ポケモン ゲーム開発 コンテスト」になった。**
+
+    交差点（Engineering × Gaming）を希望の方向へ混ぜた結果、ゲーム開発の
+    求人・コンテストばかりが返った。希望はそのまま探す。
+    """
+    assert "希望を交差点で置き換えない" in prompt.SYSTEM
+    assert "枠を使い切るなら" in prompt.SYSTEM
