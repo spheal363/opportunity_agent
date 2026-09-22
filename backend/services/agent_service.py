@@ -4,9 +4,16 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from ai import interstitial
 from ai import window as search_window
 from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity
-from schemas.agent import AgentLogEntry, AgentRunResult, AgentRunState, AgentRunStatus
+from schemas.agent import (
+    AgentLogEntry,
+    AgentRunResult,
+    AgentRunState,
+    AgentRunStatus,
+    SearchCandidate,
+)
 from schemas.opportunity import OpportunitySummary
 
 
@@ -83,6 +90,7 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
         recorded=True,
         selected=selected,
         others=others,
+        search_candidates=_search_candidates(db, run, chosen, win),
         shortfall_reason=run.shortfall_reason,
         search_window=({**win.to_dict(), "days": win.days} if win else None),
         # **失敗の理由を隠さない。** 設定不足なら直せる。
@@ -106,4 +114,73 @@ def _summary(row: Opportunity, win: "search_window.SearchWindow | None") -> Oppo
     )
     out.window_status = status.value
     out.window_note = search_window.label(status, win)
+    return out
+
+
+def _search_candidates(
+    db: Session, run: AgentRun, chosen: set[str], win: "search_window.SearchWindow | None"
+) -> list[SearchCandidate]:
+    """検索で見つかった候補を一覧にする。**外部 API は呼ばない。**
+
+    保存済みの検索候補と、抽出できた Opportunity 行を URL で突き合わせる。
+
+    **読んでいない候補に日時や受付状況を付けない。** 検索結果の公開日や
+    抜粋中の日付を開催日として流用しない。分からないものは分からないまま返す。
+
+    この列が付く前の run では空を返す。**件数を水増ししない。**
+    """
+    rows_all = (
+        db.query(Opportunity)
+        .filter(Opportunity.run_id == run.run_id, Opportunity.user_id == run.user_id)
+        .all()
+    )
+    saved = run.search_candidates or []
+    if not saved:
+        # **この列が付く前の run。** 検索候補そのものは残っていない。
+        # 読んで抽出できた分だけは Opportunity から復元できるので、それを出す。
+        # **読まなかった候補は復元できない。** 件数を 20 に水増ししない。
+        saved = [{"title": r.title, "url": r.url} for r in rows_all if r.url]
+
+    rows = {r.url: r for r in rows_all if r.url}
+    out: list[SearchCandidate] = []
+    seen: set[str] = set()
+    for item in saved:
+        url = (item or {}).get("url")
+        if not url or url in seen:
+            # **同じ URL を 2 度出さない。**
+            continue
+        seen.add(url)
+        row = rows.get(url)
+        # **取得失敗の中間ページは通常の候補として出さない（#47）。**
+        # 古い run にはフィルタを通す前の行が残っている。
+        if interstitial.looks_like_interstitial(
+            title=(row.title if row is not None else item.get("title")),
+            content=(row.description if row is not None else None),
+        ):
+            continue
+        if row is None:
+            out.append(SearchCandidate(title=(item.get("title") or url)[:200], url=url, read=False))
+            continue
+        out.append(
+            SearchCandidate(
+                title=row.title or item.get("title") or url,
+                url=url,
+                read=True,
+                recommended=row.opportunity_id in chosen,
+                start_at=row.start_at,
+                start_at_is_date_only=row.start_at_is_date_only,
+                window_status=(
+                    search_window.classify(
+                        opportunity_type=row.type,
+                        start_at=row.start_at,
+                        end_at=row.end_at,
+                        window=win,
+                    ).value
+                    if win
+                    else None
+                ),
+                availability=row.availability,
+                verified=bool(row.verified),
+            )
+        )
     return out

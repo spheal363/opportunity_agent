@@ -49,6 +49,28 @@ export const AGENT_STEP_LABEL: Record<AgentStep, string> = {
  * `GET /api/opportunities`（保存一覧の母集合）とは別物。あちらは status で
  * 絞った最新の一覧で、こちらは**その run が選んだものを順位順**に返す。
  */
+/**
+ * 検索で見つかった候補 1 件（#47）。
+ *
+ * **「読んでいない」と「日程が無い」と「終了した」を混ぜない。**
+ * 読んでいない候補を受付中として扱わない。
+ */
+export type SearchCandidate = {
+  title: string;
+  url: string;
+  /** 本文を読んで抽出できたか。false なら日時も受付状況も分からない */
+  read: boolean;
+  /** おすすめ（この run の最終選定）に入っているか */
+  recommended: boolean;
+  /** 抽出できた開催日だけ。**検索結果の公開日は使わない** */
+  start_at: string | null;
+  start_at_is_date_only: boolean | null;
+  window_status: string | null;
+  /** 読んでいない候補では null（unknown とも書かない） */
+  availability: string | null;
+  verified: boolean;
+};
+
 export type AgentRunResult = {
   run_id: string;
   status: AgentRunStatus;
@@ -67,6 +89,11 @@ export type AgentRunResult = {
    * 同じ扱いにしないため。一覧を開くだけでは外部 API を呼ばない。
    */
   others: Opportunity[];
+  /**
+   * 検索で見つかった候補すべて（#47）。読んだ分も読んでいない分も入る。
+   * この列が付く前の run では、読んだ分だけ復元して返る（水増ししない）。
+   */
+  search_candidates: SearchCandidate[];
   /** 失敗した理由。**「記録されていません」だけでは原因が分からない。** */
   error: string | null;
 };

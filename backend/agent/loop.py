@@ -270,6 +270,11 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         state.discovered_ids = []
         return []
 
+    # **検索で見つかった候補を run に残す（#47）。**
+    # 粗選別より前に保存するので、読まなかった分も含めて全件が残る。
+    # 結果画面の一覧がこれを使う。**本文は保存しない。**
+    _save_search_candidates(db, state, candidates)
+
     # --- ② 本文の指示らしき文を取り除く -------------------------------------
     # **LLM に渡す前にコードで取り除く（#27）。** 読む候補を選ぶ Jev も
     # 検索結果の文を読むので、優先順位を付けるより先に通す。
@@ -413,6 +418,24 @@ def _with_bodies(results: list[SearchResult]) -> list[SearchResult | PageContent
         page = pages.get(r.url)
         merged.append(page if page is not None else r)
     return merged
+
+
+def _save_search_candidates(db: Session, state: AgentState, candidates: list) -> None:
+    """検索で見つかった候補を run に残す。**タイトルと URL だけ。**
+
+    再読み込みしても一覧を出せるようにするため。本文を残すと、取得元の
+    利用条件に関わるうえ DB も膨らむので、残さない。
+    """
+    order = {id(d): i for i, d in enumerate(state.search_directions)}
+    rows = [
+        {"title": r.title, "url": r.url, "direction": order.get(id(direction))}
+        for direction, r in candidates
+    ]
+    run = db.get(AgentRun, state.run_id)
+    if run is not None:
+        run.search_candidates = rows
+        db.commit()
+    _log(db, state, AgentStep.SEARCHING, f"検索で{len(rows)}件の候補が見つかりました")
 
 
 def _guard_bodies(

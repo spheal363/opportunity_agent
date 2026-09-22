@@ -40,6 +40,7 @@ export async function fetchAgentRunResult(runId: string): Promise<AgentRunResult
       // Mock でも期間を返す。**画面側に「期間が無いとき」の分岐を増やさない。**
       search_window: { start: '2026-09-22', end: '2026-11-21', tz: 'Asia/Tokyo', days: 60 },
       others: [],
+      search_candidates: [],
       error: null,
     };
   }

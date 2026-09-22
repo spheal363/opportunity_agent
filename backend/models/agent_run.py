@@ -37,6 +37,11 @@ class AgentRun(Base):
     # **run 開始時に確定した値をそのまま残す。** 後から今日の日付で作り直さない。
     search_window: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # 検索で見つかった候補（#47）。[{title, url, direction}]。
+    # **本文を読んだかどうかに関わらず全件。** 読んだ分だけが Opportunity 行になる。
+    # 保存するのはタイトルと URL だけで、**本文は残さない**。
+    search_candidates: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     # コスト計測（OrcaRouter のモデル振り分けを見せるため）
     cost_jpy: Mapped[float] = mapped_column(Float, default=0.0)
     expensive_model_calls: Mapped[int] = mapped_column(Integer, default=0)

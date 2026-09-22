@@ -254,7 +254,11 @@ def test_logs_are_human_readable(db, state, real_mode, monkeypatch):
     )
     loop._search_and_extract(db, state)
 
-    assert _logs(db) == ["「AI hackathon Tokyo」から1件を読み取りました"]
+    # 検索候補の件数を出す行が先に入る（#47）。方向ごとの行はその後。
+    assert _logs(db) == [
+        "検索で1件の候補が見つかりました",
+        "「AI hackathon Tokyo」から1件を読み取りました",
+    ]
 
 
 # --- 申込先 URL の信頼の起点（レビュー指摘 High）--------------------------
@@ -571,3 +575,57 @@ def test_duplicate_queries_do_not_merge_their_counts(db, state, real_mode, monke
         "「AI hackathon」から1件を読み取りました",
         "「AI hackathon」から1件を読み取りました",
     ]
+
+
+# --- 検索候補を run に残す（#47）-------------------------------------------
+
+
+def test_all_search_candidates_are_saved_including_the_unread(db, state, real_mode, monkeypatch):
+    """**読まなかった候補も残す。** 結果画面の一覧がこれを使う。
+
+    保存は粗選別より前なので、抽出できたかどうかに関わらず全件入る。
+    """
+    state.search_directions = [_direction("q")]
+    hits = [_hit(f"https://a.com/{i}") for i in range(5)]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult(hits, external=True),
+        # 抽出できるのは 1 件だけ。残り 4 件は Opportunity 行にならない。
+        extract=lambda src, **k: ([("https://a.com/0", _item())], []),
+    )
+    loop._search_and_extract(db, state)
+
+    run = db.get(loop.AgentRun, state.run_id)
+    assert len(run.search_candidates) == 5, "読まなかった候補が落ちている"
+    assert {c["url"] for c in run.search_candidates} == {f"https://a.com/{i}" for i in range(5)}
+    # **本文は残さない。**
+    assert all(set(c) <= {"title", "url", "direction"} for c in run.search_candidates)
+
+
+def test_the_saved_candidates_reach_the_result_api(db, state, real_mode, monkeypatch):
+    """再読み込みしても一覧を出せる。**未読は read=False で返る。**"""
+    from services import agent_service
+
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult(
+            [_hit("https://a.com/read"), _hit("https://a.com/unread")], external=True
+        ),
+        extract=lambda src, **k: ([("https://a.com/read", _item())], []),
+    )
+    ids = loop._search_and_extract(db, state)
+    run = db.get(loop.AgentRun, state.run_id)
+    run.selected_ids = ids
+    db.commit()
+
+    out = agent_service.get_result(db, state.run_id)
+    by_url = {c.url: c for c in out.search_candidates}
+
+    assert len(by_url) == 2
+    assert by_url["https://a.com/read"].read is True
+    unread = by_url["https://a.com/unread"]
+    assert unread.read is False
+    # **未読だから受付中とは扱わない。** 受付も日程も付けない。
+    assert unread.availability is None
+    assert unread.start_at is None

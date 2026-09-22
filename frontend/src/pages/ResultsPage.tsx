@@ -16,6 +16,7 @@ import { CardGrid, ResultsHead } from '../components/app/CardGrid';
 import { ResultWelcome } from '../components/app/ResultWelcome';
 import ErrorMessage from '../components/ErrorMessage';
 import { CandidateSections } from '../components/app/CandidateSections';
+import { SearchCandidateList } from '../components/app/SearchCandidateList';
 import { useRunResult } from '../hooks/useRunResult';
 import { splitCandidates } from '../utils/candidates';
 import { useAppState } from '../state/context';
@@ -107,6 +108,8 @@ export default function ResultsPage() {
       <CardGrid items={items} isResult />
       {/* **期間との関係で分ける。** 0 件なら 0 件と言い、別枠で埋めない。 */}
       <CandidateSections selected={selected} others={others} hasWindow={win !== null} />
+      {/* 検索で見つかった候補すべて。**開いても外部 API は呼ばない。** */}
+      <SearchCandidateList items={result?.search_candidates ?? []} />
       <BottomNote />
     </>
   );

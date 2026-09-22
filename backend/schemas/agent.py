@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from schemas.opportunity import OpportunitySummary
+from schemas.opportunity import OpportunitySummary, Timestamp
 
 
 class AgentRunStatus(StrEnum):
@@ -46,6 +46,30 @@ class AgentRunState(BaseModel):
     expensive_model_calls: int = Field(default=0, ge=0)
 
 
+class SearchCandidate(BaseModel):
+    """検索で見つかった候補 1 件（#47）。
+
+    **「読んでいない」と「日程が無い」と「終了した」を混ぜない。**
+    読んでいない候補を受付中として扱わない。
+    """
+
+    title: str
+    url: str
+    # 本文を読んで抽出できたか。False の候補は日時も受付状況も分からない。
+    read: bool = False
+    # おすすめ（この run の最終選定）に入っているか。
+    recommended: bool = False
+    # **抽出できた開催日だけ。** 検索結果の公開日や抜粋中の日付は使わない。
+    start_at: Timestamp = None
+    # 出典に時刻が書かれていたか。True なら時刻を表示しない。
+    start_at_is_date_only: bool | None = None
+    # 期間との関係。読んでいない候補では None。
+    window_status: str | None = None
+    # 受付状況。**読んでいない候補では None**（unknown とも書かない）。
+    availability: str | None = None
+    verified: bool = False
+
+
 class AgentRunResult(BaseModel):
     """GET /api/agent/runs/{run_id}/result。**この run の最終選定。**
 
@@ -66,6 +90,9 @@ class AgentRunResult(BaseModel):
     shortfall_reason: str | None = None
     # この run が対象にした期間（#47）。{'start','end','tz','days'}
     search_window: dict | None = None
+    # **検索で見つかった候補すべて。** 読んだ分も読んでいない分も入る。
+    # この列が付く前の run では空（水増ししない）。
+    search_candidates: list[SearchCandidate] = Field(default_factory=list)
     # **推薦しなかったが、本文まで読んで抽出できた候補。**
     # 検索しただけで未読の候補は入らない（確認済みの推薦と同じ扱いにしない）。
     others: list[OpportunitySummary] = Field(default_factory=list)
