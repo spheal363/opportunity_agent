@@ -71,6 +71,8 @@ _SOCIAL = (
 
 # 一覧と見なすための、同じ深さのリンクの数。**仮説であって正解ではない。**
 LISTING_MIN_LINKS = 6
+# LLM へ見せるリンクの上限。**プロンプトが膨らみすぎないように。**
+MAX_LINKS_OFFERED = 40
 
 
 @dataclass(frozen=True)
@@ -126,13 +128,19 @@ def extract_links(content: str, *, base_url: str, same_host_only: bool = True) -
 
 
 def _path_shape(url: str) -> str:
-    """URL のパスを「形」にする。数字と ID を伏せて比べる。
+    """URL の「形」。数字と ID を伏せて比べる。
 
     `/events/123` と `/events/456` は同じ形。一覧に同じ形のリンクが
     たくさん並ぶことを手がかりにする。
+
+    **クエリの鍵も形に含める。** 含めないと、絞り込みリンク
+    （`/events/?hmls_date=today`, `?hmls_date=tomorrow` …）が
+    すべて `/events/` に潰れ、**イベント本体より数で勝ってしまう**（実測）。
     """
-    path = urlparse(url).path or "/"
-    return re.sub(r"\d+", "#", path)
+    parsed = urlparse(url)
+    shape = re.sub(r"\d+", "#", parsed.path or "/")
+    keys = sorted({kv.split("=")[0] for kv in parsed.query.split("&") if kv})
+    return f"{shape}?{','.join(keys)}" if keys else shape
 
 
 def may_be_listing(content: str, *, base_url: str, links: list[Link] | None = None) -> bool:
@@ -163,15 +171,32 @@ def may_be_listing(content: str, *, base_url: str, links: list[Link] | None = No
     return max(shapes.values()) >= LISTING_MIN_LINKS
 
 
-def same_shape_links(links: list[Link], *, limit: int | None = None) -> list[Link]:
+def same_shape_links(
+    links: list[Link], *, base_url: str | None = None, limit: int | None = None
+) -> list[Link]:
     """一覧の中で**いちばん多い形**のリンクだけを返す。
 
     ヘッダやサイドバーの雑多なリンクを外し、並んでいるイベントの列を取る。
+
+    **同じページの絞り込みは外す。** 実測で、`housemusiclovers.net/events/` の
+    「今日 / 明日 / 今週末 / 来月 …」がイベント本体より数で勝ち、
+    選ぶ相手がフィルタだけになった。**自分と同じパスのリンクは子ではない。**
     """
     if not links:
         return []
+    base_path = re.sub(r"\d+", "#", urlparse(base_url).path or "/") if base_url else None
     shapes: dict[str, list[Link]] = {}
     for link in links:
+        if base_path is not None:
+            path = re.sub(r"\d+", "#", urlparse(link.url).path or "/")
+            if path.rstrip("/") == base_path.rstrip("/"):
+                continue
         shapes.setdefault(_path_shape(link.url), []).append(link)
-    best = max(shapes.values(), key=len)
-    return best[:limit] if limit else best
+    if not shapes:
+        return []
+    # **いちばん多い形を先頭に置き、残りも渡す。** 形で切り捨てると、
+    # 1 ページに数件しか載らない一覧のイベントを丸ごと落とす（実測）。
+    # どれを読むかは本文を見た LLM が選ぶ。
+    ordered = sorted(shapes.values(), key=len, reverse=True)
+    out = [link for group in ordered for link in group]
+    return out[: limit or MAX_LINKS_OFFERED]

@@ -51,7 +51,7 @@ class ExploreResult:
 def links_from(page: PageContent) -> list[listing.Link]:
     """一覧ページの本文から、実在するリンクだけを取り出す。"""
     found = listing.extract_links(page.content, base_url=page.url)
-    return listing.same_shape_links(found)
+    return listing.same_shape_links(found, base_url=page.url)
 
 
 EXCERPT_CHARS = 1500

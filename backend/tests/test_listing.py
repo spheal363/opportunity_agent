@@ -130,3 +130,52 @@ def test_the_prefilter_question_counts_a_listing_as_an_opportunity():
     assert "個別の開催へたどれる" in q.IS_OPPORTUNITY
     # 記事は従来どおり該当しない。
     assert "解説記事" in q.IS_OPPORTUNITY
+
+
+# --- 絞り込みリンクを子と間違えない（#47）----------------------------------
+
+
+def test_same_page_filters_are_not_children():
+    """**実測で、絞り込みリンクがイベント本体より数で勝った。**
+
+    `housemusiclovers.net/events/` の「今日 / 明日 / 今週末 / 来月 …」は
+    すべて `/events/?hmls_date=…` で、パスが同じ。**自分と同じパスは子ではない。**
+    """
+    base = "https://housemusiclovers.net/events/"
+    body = "\n".join(
+        [f"[{w}]({base}?hmls_date={w})" for w in ("today", "tomorrow", "weekend", "month")]
+        + [f"[Event {i}](https://housemusiclovers.net/events/party-{i})" for i in range(3)]
+    )
+    picked = listing.same_shape_links(listing.extract_links(body, base_url=base), base_url=base)
+
+    assert picked, "子リンクが 1 つも残っていない"
+    assert all("hmls_date" not in link.url for link in picked)
+
+
+def test_the_query_key_is_part_of_the_shape():
+    """クエリを無視すると、別々の絞り込みが同じ形に潰れる。"""
+    a = listing._path_shape("https://x/events/?date=today")
+    b = listing._path_shape("https://x/events/?view=calendar")
+    assert a != b
+
+
+def test_links_of_other_shapes_are_still_offered():
+    """**形で切り捨てない。** 1 ページに数件しか載らない一覧を落とさない。"""
+    base = "https://x/events/"
+    body = "\n".join(
+        [f"[A{i}](https://x/events/a-{i})" for i in range(8)] + ["[B](https://x/special/one)"]
+    )
+    urls = {
+        link.url
+        for link in listing.same_shape_links(
+            listing.extract_links(body, base_url=base), base_url=base
+        )
+    }
+    assert "https://x/special/one" in urls
+
+
+def test_the_number_of_links_offered_is_capped():
+    base = "https://x/events/"
+    body = "\n".join(f"[E{i}](https://x/events/e-{i})" for i in range(100))
+    picked = listing.same_shape_links(listing.extract_links(body, base_url=base), base_url=base)
+    assert len(picked) == listing.MAX_LINKS_OFFERED
