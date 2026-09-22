@@ -19,39 +19,42 @@ export function Brand({ size, markSize }: BrandProps) {
 
 export function SiteHeader({ onStart }: { onStart: () => void }) {
   return (
-    <header
-      className={
-        'h-[94px] max-w-[1360px] px-[60px] mx-auto flex items-center justify-between gap-[22px] ' +
-        'lte1250:px-[35px] lte900:h-[82px] lte900:px-[25px] ' +
-        'lte640:h-[76px] lte640:px-[20px]'
-      }
-    >
-      <Link to="/" className="shrink-0" aria-label="Opportunity トップへ">
-        <img
-          src="/assets/logo.png"
-          alt="Opportunity"
-          width={2048}
-          height={768}
-          className="block w-[200px] h-auto lte640:w-[160px]"
-        />
-      </Link>
-      <nav
-        aria-label="ページ内ナビゲーション"
-        className="flex gap-[30px] items-center text-[14px] lte900:gap-[18px] lte640:gap-[12px]"
+    // The sticky band spans the full width so content never shows beside the 1360px row.
+    <header className="sticky top-0 z-10 bg-home-paper border-b border-home-line">
+      <div
+        className={
+          'h-[94px] max-w-[1360px] px-[60px] mx-auto flex items-center justify-between gap-[22px] ' +
+          'lte1250:px-[35px] lte900:h-[82px] lte900:px-[25px] ' +
+          'lte640:h-[76px] lte640:px-[20px]'
+        }
       >
-        <a href="#how" className="text-[#667060] hover:text-[#a26745] lte900:hidden">
-          サービスの使い方
-        </a>
-        <a href="#possibilities" className="text-[#667060] hover:text-[#a26745] lte900:hidden">
-          見つかる機会
-        </a>
-        <Link to="/app" className="text-[#667060] hover:text-[#a26745] lte640:hidden">
-          アプリを開く
+        <Link to="/" className="shrink-0" aria-label="Opportunity トップへ">
+          <img
+            src="/assets/logo.png"
+            alt="Opportunity"
+            width={2048}
+            height={768}
+            className="block w-[200px] h-auto lte640:w-[160px]"
+          />
         </Link>
-        <button type="button" onClick={onStart} className={BUTTON_SMALL}>
-          はじめる ↗
-        </button>
-      </nav>
+        <nav
+          aria-label="ページ内ナビゲーション"
+          className="flex gap-[30px] items-center text-[14px] lte900:gap-[18px] lte640:gap-[12px]"
+        >
+          <a href="#how" className="text-[#667060] hover:text-[#a26745] lte900:hidden">
+            サービスの使い方
+          </a>
+          <a href="#possibilities" className="text-[#667060] hover:text-[#a26745] lte900:hidden">
+            見つかる機会
+          </a>
+          <Link to="/app" className="text-[#667060] hover:text-[#a26745] lte640:hidden">
+            アプリを開く
+          </Link>
+          <button type="button" onClick={onStart} className={BUTTON_SMALL}>
+            はじめる ↗
+          </button>
+        </nav>
+      </div>
     </header>
   );
 }

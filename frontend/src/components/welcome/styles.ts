@@ -10,7 +10,7 @@
 const BUTTON_BASE =
   'inline-flex items-center justify-center bg-home-green text-white border border-home-green ' +
   'rounded-[7px] leading-[1.5] font-medium tracking-[.04em] ' +
-  'transition-[background-color,box-shadow] duration-200 ' +
+  'transition-[background-color,box-shadow,translate] duration-200 ' +
   'hover:bg-[#3c543d] hover:shadow-[0_6px_15px_#35512d1a]';
 
 export const BUTTON = `${BUTTON_BASE} gap-[30px] px-[23px] py-[15px] text-[16px]`;
