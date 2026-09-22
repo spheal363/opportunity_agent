@@ -3,13 +3,19 @@
 run の `error` は GET /api/agent/runs/{id} でそのまま画面に返る。
 """
 
+import logging
+
 import pytest
+from fastapi.testclient import TestClient
 
 from agent import loop
 from ai.llm import LLMValidationError
 from db.session import SessionLocal
+from logging_config import describe_exception
+from main import app
 from models import DEFAULT_USER_ID, AgentRun, UserProfile
 from schemas.agent import AgentRunStatus
+from services import profile_service
 from tools.search.base import SearchError
 
 # DB のエラーは SQL とパラメータ（プロフィール本文）を含みうる
@@ -67,7 +73,48 @@ def test_api_does_not_return_the_exception_text(client, monkeypatch, run_id):
     assert "自己紹介" not in res.text
 
 
-def test_details_stay_in_the_server_log(monkeypatch, run_id, caplog):
-    """原因を追えるよう、サーバーのログには残す（画面には出さない）。"""
-    _run_failing_with(monkeypatch, run_id, RuntimeError("接続が切れました"))
+def test_log_keeps_the_type_and_place_but_not_the_text(monkeypatch, run_id, caplog):
+    """原因を追えるよう、例外の型と場所はサーバーのログに残す。文字列は残さない。
+
+    例外の文字列には SQL のパラメータ（プロフィール本文）が入りうる
+    （.claude/rules/security.md「プロフィール本文を Log に出さない」）。
+    """
+    with caplog.at_level(logging.INFO):
+        _run_failing_with(monkeypatch, run_id, RuntimeError(SECRET))
+
     assert "agent run failed run_id=run_err" in caplog.text
+    assert "type=RuntimeError" in caplog.text
+    assert "boom" in caplog.text  # 例外が起きた関数
+    assert "自己紹介" not in caplog.text
+    assert "SELECT" not in caplog.text
+
+
+def test_api_error_log_does_not_carry_the_text(monkeypatch, caplog):
+    """API の想定外エラーも同じ。レスポンスにもログにも例外の文字列を出さない。"""
+
+    def boom(*_, **__):
+        raise RuntimeError(SECRET)
+
+    monkeypatch.setattr(profile_service, "get_profile", boom)
+    with caplog.at_level(logging.INFO), TestClient(app, raise_server_exceptions=False) as c:
+        res = c.get("/api/profile")
+
+    assert res.status_code == 500
+    assert "自己紹介" not in res.text
+    assert "unhandled error path=/api/profile type=RuntimeError" in caplog.text
+    assert "自己紹介" not in caplog.text
+
+
+def test_describe_exception_names_the_wrapped_cause():
+    """包まれた元の例外も、型だけ添える。"""
+    try:
+        try:
+            raise TimeoutError(SECRET)
+        except TimeoutError as inner:
+            raise RuntimeError(SECRET) from inner
+    except RuntimeError as exc:
+        text = describe_exception(exc)
+
+    assert text.startswith("type=RuntimeError at=test_run_errors.py:")
+    assert text.endswith("cause=TimeoutError")
+    assert "自己紹介" not in text

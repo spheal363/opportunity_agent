@@ -36,7 +36,7 @@ from ai.search_plan import plan_search
 from ai.verification import verify_with_page
 from config import get_settings
 from db.session import SessionLocal
-from logging_config import get_logger
+from logging_config import describe_exception, get_logger
 from models import AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import AgentRunStatus, AgentStep
 from schemas.opportunity import OpportunityStatus
@@ -129,7 +129,8 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         state.status = AgentRunStatus.COMPLETED
         _step(db, state, AgentStep.COMPLETED, "探索が完了しました")
     except Exception as exc:  # Agent 全体を落とさず run を failed にする
-        logger.exception("agent run failed run_id=%s", run_id)
+        # 例外の文字列はログにも出さない。型と場所だけ残す（describe_exception）。
+        logger.error("agent run failed run_id=%s %s", run_id, describe_exception(exc))
         db.rollback()
         _fail(db, AgentState(run_id=run_id, user_id=user_id), _public_error(exc))
 
@@ -139,7 +140,7 @@ def _public_error(exc: Exception) -> str:
 
     run の `error` は GET /api/agent/runs/{id} でそのまま返る。例外の文字列には
     SQL とパラメータ（プロフィール本文）や外部 API の応答が入りうるため、
-    種類ごとの決まった文言にする。詳細はサーバーのログ（上の logger.exception）だけに残す。
+    種類ごとの決まった文言にする。原因を追うための例外の型と場所は、サーバーのログにだけ残す。
     """
     if isinstance(exc, LLMError):
         return "AI の呼び出しに失敗しました。時間をおいて再度お試しください"

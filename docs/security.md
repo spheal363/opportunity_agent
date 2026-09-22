@@ -142,7 +142,7 @@ LLM も外部 API も呼ばない。`backend/` で `.venv/bin/pytest -q`。
 | `tests/test_llm.py` | 囲みタグが毎回変わる。本文中の閉じタグで囲みが破れない |
 | `tests/test_ownership.py` | 他人の Opportunity / run を id だけで読み書きできない（404） |
 | `tests/test_page_request.py` | 別サイトの form から探索開始・状態変更ができない（403） |
-| `tests/test_run_errors.py` | 失敗理由に例外の文字列（SQL・プロフィール本文）を出さない |
+| `tests/test_run_errors.py` | 失敗理由にもサーバーのログにも、例外の文字列（SQL・プロフィール本文）を出さない |
 | `tests/test_demo_attack.py` | 攻撃デモの流れ |
 | `tests/test_web_search.py` | 内部アドレス・難読化した IP を取りに行かない（SSRF） |
 | `tests/test_tools.py` | Tool の権限。APPROVAL の Tool は承認なしで動かない |
@@ -153,7 +153,7 @@ LLM も外部 API も呼ばない。`backend/` で `.venv/bin/pytest -q`。
 | # | 脅威 | この実装での対策 | 限界 |
 | --- | --- | --- | --- |
 | LLM01 | Prompt Injection | 上の層 1〜7。実測とテストあり | 言い換えは正規表現で拾えない |
-| LLM02 | 機密情報の漏えい | API キー・プロフィール本文・ページ本文をログに出さない（テストで固定）。API のエラーと run の失敗理由は決まった文言（`api/errors.py`、#81）。他人のデータは 404（#69） | 認証は未実装（単一ユーザー） |
+| LLM02 | 機密情報の漏えい | API キー・プロフィール本文・ページ本文をログに出さない（テストで固定）。想定外のエラーも、ログに残すのは例外の型と場所だけ（`logging_config.describe_exception`）。API のエラーと run の失敗理由は決まった文言（`api/errors.py`、#81）。他人のデータは 404（#69） | 認証は未実装（単一ユーザー） |
 | LLM03 | サプライチェーン | 依存はバージョン固定（`requirements.txt` / `package-lock.json`）。Agent の枠組み（LangChain など）を入れず自前実装 | 依存の脆弱性スキャンは CI に入っていない |
 | LLM04 | データ・モデルの汚染 | 学習はしない。Web の内容は常に Untrusted として扱う | Reflection / Agent Memory（未実装）を作るときは、Feedback を指示として扱わないこと |
 | LLM05 | 出力の不適切な扱い | LLM の出力は必ず Schema で検証（score は 0-100、enum は閉じる）。自由文から連絡先を除く（#77）。React は文字列をエスケープ。リンクは `http(s)` のみ（Frontend の `safeHttpUrl`） | - |

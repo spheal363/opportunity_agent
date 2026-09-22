@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from logging_config import get_logger
+from logging_config import describe_exception, get_logger
 from schemas.common import err
 from services.calendar_service import CalendarError
 
@@ -68,8 +68,9 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
-        # 内部の詳細はレスポンスへ出さず、ログ側にだけ残す。
-        logger.exception("unhandled error path=%s", request.url.path)
+        # 内部の詳細はレスポンスへ出さない。ログにも例外の文字列は出さず、型と場所だけ残す
+        # （例外の文字列には SQL のパラメータ、つまりプロフィール本文が入りうる）。
+        logger.error("unhandled error path=%s %s", request.url.path, describe_exception(exc))
         return JSONResponse(
             status_code=500,
             content=err("INTERNAL_ERROR", "Unexpected error occurred"),
