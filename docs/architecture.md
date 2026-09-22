@@ -73,6 +73,39 @@ State は `backend/agent/state.py`、DB 同期は `agent_runs` テーブル。
 
 🚧 **再探索ループ（十分？ → NO）は未実装。** 現在は 1 周で終わる。
 `AgentState.max_iterations` は用意してあるが誰も見ていない（タスク22）。
+run の中で探し直すことはしないが、**前回までの反応は次の run に反映する**（下の ⑧ Reflection）。
+
+### ⑧ Reflection（次の run への学習）
+
+**振り返りは各 run の冒頭で行う**（フィードバックを受けた時点ではない）。
+`backend/agent/reflection.py` が、そのユーザーの全フィードバックと Opportunity の `status` を
+**LLM を使わずに**集計し直し、`agent_memories` の preference / insight を置き換える。
+毎回すべての反応から作り直すので、付け直しや途中で落ちた run で値がずれない（冪等）。
+
+| 1 件の候補から読む信号 | 重み |
+| --- | --- |
+| 👍 / 「気になる」 | +1 |
+| 予定に追加 / 参加した | +2 |
+| 👎（最新の反応を採る） | −1 |
+
+- 同じ候補の信号は足し合わせず、最も強いもの 1 つにする（最新が 👎 なら −1）。
+  👎 が立てる `status=dismissed` は数えない（二重に数えない）
+- 鍵は `type:<OpportunityType>` と `format:<OpportunityFormat>` だけ。`type:other` は除く。
+  **タイトル・説明・ドメインは鍵にしない**（Web 由来の文が Memory に入ると以後の全 run に
+  効き続ける = memory poisoning。集約サイトのドメインは広すぎる）
+- 鍵ごとの重みは ±3 で切る
+
+| 反映先 | 反映のしかた | 必要な根拠 |
+| --- | --- | --- |
+| ② 探索計画 | enum の値と件数だけで作った「これまでの反応」を渡し、反応の悪い種類を減らし良い種類を増やす。**Serendipity の方向は必ず残す**（規則と `_ensure_serendipity`） | 同じ向きの反応が 2 件以上の候補 |
+| ⑤ 順位付け | 種類は重み 1 あたり 3 点、形式はその半分、前の run で推薦して無反応なら −3 点。1 件あたり ±10 点まで | 反応 1 件から |
+| ⑤ 意外性の重み | 反応した候補の `serendipity_score` の傾向で、既定 0.3 を 0.2〜0.45 の範囲で動かす | 反応 2 件以上 |
+
+- **`score` 列は書き換えない。** 補正は並べ替えにだけ使う（AI の評価と学習結果を混ぜない）。
+  評価の出力の後に足すので、評価器（LLM / Jev）に依存しない
+- **UserProfile は書き換えない。** 学んだことは Agent Memory にだけ置く
+- `AgentStep` は増やさず、`analyzing_profile` / `planning` / `evaluating` の Log として出す
+- stub（`AGENT_STUB_MODE=true`）でも振り返りの Log と順位の補正は効く。計画は固定のまま
 
 ## データの分離
 
@@ -133,7 +166,7 @@ MVP は SQLite + SQLAlchemy。PostgreSQL へ移す場合も `DATABASE_URL` の�
 | `agent_runs` | Agent 実行の状態・コスト |
 | `agent_logs` | Agent が何を考え何をしたか |
 | `feedbacks` | 👍 / 👎 / 参加した / 結果 |
-| `agent_memories` | 🚧 Reflection で学習した内容（テーブルのみ。書き込み経路なし） |
+| `agent_memories` | Reflection で学習した内容（preference: 種類・形式ごとの重みと件数、意外性の重み / insight: 学んだことの文）。毎 run 作り直す |
 
 **Migration ツールは入れていない。** `db/session.py` の `init_db()` が
 `create_all` でテーブルを作る。列を追加したらローカルの
