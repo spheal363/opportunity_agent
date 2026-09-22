@@ -27,9 +27,14 @@ def plan_search(
     goal_directions: list[str],
     interest_connections: list[str],
     location: str | None = None,
+    feedback_summary: str | None = None,
     tier: ModelTier = ModelTier.STANDARD,
 ) -> list[SearchDirection]:
-    """検索方向を組み立てる。"""
+    """検索方向を組み立てる。
+
+    `feedback_summary` があれば、前回までの反応を計画に反映させる（#50）。
+    反応の良い種類に寄せても **Serendipity の方向は `_ensure_serendipity` が必ず残す。**
+    """
     result = generate_structured(
         schema=SearchPlanOutput,
         system=prompt.SYSTEM,
@@ -38,6 +43,7 @@ def plan_search(
             goal_directions=goal_directions,
             interests=interest_connections,
             location=location,
+            feedback_summary=feedback_summary,
         ),
         tier=tier,
         max_tokens=SEARCH_PLAN_MAX_TOKENS,

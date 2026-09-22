@@ -36,14 +36,19 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from math import copysign
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from ai.evaluation import _SERENDIPITY_WEIGHT, SERENDIPITY_WEIGHT_RANGE
-from models import AgentMemory, Feedback, Opportunity
+from ai.evaluation import (
+    _SERENDIPITY_WEIGHT,
+    MAX_LEARNED_ADJUSTMENT,
+    SERENDIPITY_WEIGHT_RANGE,
+)
+from models import AgentMemory, AgentRun, Feedback, Opportunity
+from schemas.agent import AgentRunStatus
 from schemas.feedback import Reaction
 from schemas.opportunity import OpportunityFormat, OpportunityStatus, OpportunityType
 
@@ -72,6 +77,29 @@ SERENDIPITY_MIN_SAMPLES = 2
 # 平均で 50 点ずれると ±0.15（既定 0.3 → 0.45 / 0.15）。範囲は SERENDIPITY_WEIGHT_RANGE で切る。
 _SERENDIPITY_STEP = 0.003
 _SERENDIPITY_NEUTRAL = 50
+
+# --- 順位付けへの反映（`adjustments`）---
+#
+# 重み 1 あたりの補正（score と同じ 0-100 の尺度）。👍👎 1 回で 3 点、上限の重み 3 で 9 点。
+# 評価の意外性の項（最大 0.3 × 100 = 30 点）よりずっと小さく、1 回のクリックで振れすぎない。
+# それでも 👎 2 件で 6 点下がるので、評価が近い候補同士なら順位が入れ替わる。
+# 1 件あたりの合計は ±MAX_LEARNED_ADJUSTMENT（10 点）で切る。
+POINTS_PER_WEIGHT = 3.0
+# 開催形式は種類の半分だけ効かせる。
+# 👎 の理由が形式とは限らない（内容が合わなかっただけかもしれない）。
+FORMAT_FACTOR = 0.5
+# 前の run で推薦したのに反応が無かった候補を下げる点数。
+# 同じ候補を出し続けず、新しい候補に場所を譲る。
+# 見ていないだけかもしれないので、👎 1 回と同じ程度に留める。
+IGNORED_PENALTY = 3.0
+
+# --- 探索計画への反映（`plan_summary`）---
+#
+# **計画は探す対象そのものを変える**ので、順位の補正より多くの根拠を求める。
+# 同じ向きの反応が 2 件以上の候補にあり、重みが 2 以上の鍵だけを計画に書く。
+# 1 回のクリック、1 件の予定追加だけでは計画を変えない。
+PLAN_MIN_EVIDENCE = 2
+PLAN_MIN_WEIGHT = 2.0
 
 _TYPES = frozenset(t.value for t in OpportunityType if t is not OpportunityType.OTHER)
 _FORMATS = frozenset(f.value for f in OpportunityFormat)
@@ -156,6 +184,8 @@ class Learned:
     serendipity_samples: int = 0
     # 反応があった候補の数（種類を特定できなかったものも含む）。
     reacted: int = 0
+    # 前の run で推薦したのに反応が無かった候補。Memory には置かない（`collect_ignored`）。
+    ignored_ids: frozenset[str] = frozenset()
 
     @property
     def by_key(self) -> dict[str, Preference]:
@@ -362,15 +392,159 @@ def save(db: Session, user_id: str, learned: Learned) -> None:
     db.commit()
 
 
-def reflect(db: Session, user_id: str) -> Learned:
+def collect_ignored(
+    db: Session, user_id: str, *, exclude_run_id: str | None = None
+) -> frozenset[str]:
+    """前の run で推薦したのに、何の反応も無かった候補。
+
+    推薦したかどうかは `AgentRun.selected_ids` で見る。`Opportunity.run_id` は同じ URL を
+    再発見すると上書きされ、前の run で推薦したことが分からなくなるため。
+
+      - 👍👎 が 1 つでも付いた候補は含めない（👎 は評価の前に外れる）
+      - status が推薦のままの候補だけ。「気になる」・予定・参加はユーザーの反応
+
+    **Memory には置かない。** 学んだ好みではなく「もう見せた」という事実で、
+    run の履歴として既に DB にある。写すと二重に持つことになる。
+    """
+    query = db.query(AgentRun.selected_ids).filter(
+        AgentRun.user_id == user_id, AgentRun.status == AgentRunStatus.COMPLETED
+    )
+    if exclude_run_id is not None:
+        query = query.filter(AgentRun.run_id != exclude_run_id)
+    shown: set[str] = set()
+    for (selected,) in query:
+        shown.update(i for i in selected or [] if isinstance(i, str))
+    if not shown:
+        return frozenset()
+
+    reacted = {i for (i,) in db.query(Feedback.opportunity_id).filter(Feedback.user_id == user_id)}
+    rows = db.query(Opportunity.opportunity_id).filter(
+        Opportunity.user_id == user_id,
+        Opportunity.opportunity_id.in_(shown - reacted),
+        Opportunity.status == OpportunityStatus.RECOMMENDED,
+    )
+    return frozenset(i for (i,) in rows)
+
+
+def reflect(db: Session, user_id: str, *, run_id: str | None = None) -> Learned:
     """前回までの反応を振り返り、Agent Memory に残す。run の冒頭で 1 回だけ呼ぶ。
 
-    **保存した内容をそのまま返す。** 毎回すべての反応から作り直すので、
-    読み戻しても同じ値になる。
+    **保存した内容をそのまま使う。** 毎回すべての反応から作り直すので、読み戻しても
+    同じ値になる。そこへ「前の run で推薦して反応が無かった候補」（Memory には置かない）を
+    足して返す。`run_id`（今回の run）は「前の run」から除く。
     """
     learned = learn(collect(db, user_id))
     save(db, user_id, learned)
-    return learned
+    return replace(learned, ignored_ids=collect_ignored(db, user_id, exclude_run_id=run_id))
+
+
+# --------------------------------------------------------------------------
+# 順位付けへの反映（純粋関数、#50）
+# --------------------------------------------------------------------------
+
+
+def adjustments(
+    candidates: Iterable[tuple[str, str | None, str | None]], learned: Learned
+) -> dict[str, float]:
+    """候補ごとの順位の補正（点）。`(opportunity_id, type, format)` を受け取る。
+
+    **並べ替えにだけ使う。score 列には書かない**（AI の評価と学習結果を混ぜない）。
+    補正が 0 の候補は入れない。
+    """
+    prefs = learned.by_key
+    out: dict[str, float] = {}
+    for opportunity_id, opportunity_type, opportunity_format in candidates:
+        total = 0.0
+        if p := prefs.get(f"type:{opportunity_type}"):
+            total += p.weight * POINTS_PER_WEIGHT
+        if p := prefs.get(f"format:{opportunity_format}"):
+            total += p.weight * POINTS_PER_WEIGHT * FORMAT_FACTOR
+        if opportunity_id in learned.ignored_ids:
+            total -= IGNORED_PENALTY
+        if total := _clamp(total, MAX_LEARNED_ADJUSTMENT):
+            out[opportunity_id] = total
+    return out
+
+
+def reasons(
+    opportunity_id: str,
+    opportunity_type: str | None,
+    opportunity_format: str | None,
+    learned: Learned,
+    *,
+    raised: bool,
+) -> str:
+    """順位を動かした理由。例: 「ハッカソンに👎2件」。**enum の名前と件数だけ。**"""
+    prefs = learned.by_key
+    parts: list[str] = []
+    for key in keys_of(opportunity_type, opportunity_format):
+        p = prefs.get(key)
+        if p is not None and (p.weight > 0 if raised else p.weight < 0):
+            parts.append(f"{p.label}に{_counts_text(p.counts)}")
+    if not raised and opportunity_id in learned.ignored_ids:
+        parts.append("前回推薦して反応が無かったため")
+    return "、".join(parts)
+
+
+def serendipity_note(learned: Learned) -> str | None:
+    """意外性の重みを動かしたことを伝える Log。動かしていなければ None。"""
+    weight = learned.serendipity_weight
+    if weight is None or weight == _SERENDIPITY_WEIGHT:
+        return None
+    if weight > _SERENDIPITY_WEIGHT:
+        change, why = "上げました", "意外性の高い候補への反応が良い傾向"
+    else:
+        change, why = "下げました", "目標に近い候補への反応が良い傾向"
+    return (
+        f"学習結果を反映し、意外性の重みを{_SERENDIPITY_WEIGHT:.2f}から{weight:.2f}に{change}"
+        f"（{why}）"
+    )
+
+
+# --------------------------------------------------------------------------
+# 探索計画への反映（#50）
+# --------------------------------------------------------------------------
+
+
+def _plan_preferences(learned: Learned) -> list[Preference]:
+    return [
+        p
+        for p in learned.preferences
+        if p.evidence >= PLAN_MIN_EVIDENCE and abs(p.weight) >= PLAN_MIN_WEIGHT
+    ]
+
+
+def plan_summary(learned: Learned) -> str | None:
+    """探索計画（`plan_search`）に渡す「これまでの反応」。反映するものが無ければ None。
+
+    **enum の値・名前・件数だけ**で組み立てる（Web 由来の文を計画の LLM に届けない）。
+    計画の LLM は category を enum の値で返すので、値も併記する。
+    """
+    lines: list[str] = []
+    for p in _plan_preferences(learned):
+        kind, _, value = p.key.partition(":")
+        axis = "種類（category）" if kind == "type" else "開催形式"
+        tone = "反応が良かった" if p.weight > 0 else "反応が悪かった"
+        lines.append(f"- {tone}{axis}: {value}（{p.label}、{_counts_text(p.counts)}）")
+    return "\n".join(lines) or None
+
+
+def plan_note(learned: Learned) -> str | None:
+    """探索計画に反映したことを伝える Log。
+
+    例: 「これまでの反応をもとに、ハッカソンを減らし、イベントを増やすよう計画します
+    （意外性のある方向は残します）」
+    """
+    prefs = _plan_preferences(learned)
+    fewer = "・".join(p.label for p in prefs if p.weight < 0)
+    more = "・".join(p.label for p in prefs if p.weight > 0)
+    if fewer and more:
+        action = f"{fewer}を減らし、{more}を増やす"
+    elif fewer or more:
+        action = f"{fewer}を減らす" if fewer else f"{more}を増やす"
+    else:
+        return None
+    return f"これまでの反応をもとに、{action}よう計画します（意外性のある方向は残します）"
 
 
 # --------------------------------------------------------------------------
@@ -410,7 +584,8 @@ def describe(learned: Learned) -> str | None:
         return None
     if not learned.preferences:
         return (
-            "前回までの反応を振り返りました（種類を特定できない候補のみのため、今回は反映しません）"
+            "前回までの反応を振り返りました"
+            "（種類を特定できる候補が無いため、種類の好みは学習しません）"
         )
     shown = learned.preferences[:_MAX_LOGGED_KEYS]
     text = "、".join(f"{p.label}に{_counts_text(p.counts)}" for p in shown)

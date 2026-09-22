@@ -12,6 +12,8 @@
 そこから決められる。全件に推薦理由を書かせるのも無駄なので TOP3 に絞る。
 """
 
+from collections.abc import Mapping
+
 from ai import cost
 from ai.concurrency import map_parallel
 from ai.jev.client import JevError
@@ -37,6 +39,10 @@ _SERENDIPITY_WEIGHT = 0.3
 # 学習（agent/reflection.py）が意外性の重みを動かしてよい範囲。
 # **狭く取る。** 反応が偏っても、王道ばかり・遠いものばかりにはしない。
 SERENDIPITY_WEIGHT_RANGE = (0.2, 0.45)
+# 学習が 1 件の候補の並べ替えに足し引きしてよい点数の上限（score と同じ 0-100 の尺度）。
+# 2 件の差は最大でも 20 点しか動かない。
+# 評価の差が大きい候補同士の順位は、学習だけでは入れ替わらない。
+MAX_LEARNED_ADJUSTMENT = 10.0
 
 
 def evaluate(
@@ -146,7 +152,13 @@ def evaluate_many(
     return done, failed
 
 
-def select_top(evaluated: list[tuple[str, EvaluationOutput]], *, limit: int = TOP_N) -> list[str]:
+def select_top(
+    evaluated: list[tuple[str, EvaluationOutput]],
+    *,
+    limit: int = TOP_N,
+    adjustments: Mapping[str, float] | None = None,
+    serendipity_weight: float | None = None,
+) -> list[str]:
     """TOP3 を選ぶ。
 
     **LLM に投げない。** score と serendipity_score が既にあるので、
@@ -154,12 +166,30 @@ def select_top(evaluated: list[tuple[str, EvaluationOutput]], *, limit: int = TO
 
     score だけで並べると王道の求人ばかりになる。serendipity を重みづけで
     混ぜ、意外性のあるものが上位に来る余地を残す。
+
+    `adjustments` と `serendipity_weight` は前回までの反応から学んだ補正
+    （`agent/reflection.py`）。
+
+      - **並べ替えにだけ使い、score は書き換えない。** AI の評価と学習結果を混ぜない
+        （.claude/rules/architecture.md の「3 つのデータ分離」）
+      - 評価の出力（score / serendipity_score）の後に足すので、評価器が Jev でも LLM でも同じに効く
+      - **ここでも上限で切る。** 呼び出し側の値が壊れていても、学習が評価を覆さない
     """
-    ranked = sorted(
-        evaluated,
-        key=lambda pair: (pair[1].score + _SERENDIPITY_WEIGHT * pair[1].serendipity_score),
-        reverse=True,
+    adjustments = adjustments or {}
+    low, high = SERENDIPITY_WEIGHT_RANGE
+    weight = (
+        _SERENDIPITY_WEIGHT
+        if serendipity_weight is None
+        else min(max(serendipity_weight, low), high)
     )
+
+    def key(pair: tuple[str, EvaluationOutput]) -> float:
+        opportunity_id, out = pair
+        bonus = adjustments.get(opportunity_id, 0.0)
+        bonus = max(-MAX_LEARNED_ADJUSTMENT, min(MAX_LEARNED_ADJUSTMENT, bonus))
+        return out.score + weight * out.serendipity_score + bonus
+
+    ranked = sorted(evaluated, key=key, reverse=True)
     return [opportunity_id for opportunity_id, _ in ranked[:limit]]
 
 
