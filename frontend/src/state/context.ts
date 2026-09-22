@@ -37,7 +37,7 @@ export interface AppState {
   /** 今のプロフィールのまま探索を開始する。run_id を返す。 */
   startRun: () => Promise<string>;
 
-  /** いちばん新しい run（GET /agent/runs/latest）。ホームと👎の後に取り直す。 */
+  /** いちばん新しい run（GET /agent/runs/latest）。アプリ内の各画面と👎の後に取り直す。 */
   latestRun: AgentRun | null;
   /** 最新の run を取り直す。取れなければ null（知らせのための取得なので、失敗しても止めない）。 */
   refreshLatestRun: () => Promise<AgentRun | null>;

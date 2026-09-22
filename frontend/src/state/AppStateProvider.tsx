@@ -50,6 +50,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // 最後に実行した run。結果画面を直接開いたときの既定にする。
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   const [opportunitiesError, setOpportunitiesError] = useState<string | null>(null);
+  const opportunitiesRequestRef = useRef(0);
 
   /**
    * この端末で行った操作の結果。サーバーの status に重ねて表示する。
@@ -108,11 +109,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshOpportunities = useCallback(async () => {
+    const requestId = ++opportunitiesRequestRef.current;
     try {
       const items = await fetchOpportunities();
+      // 初回取得と自動探索後の更新が重なっても、古い応答で戻さない。
+      if (requestId !== opportunitiesRequestRef.current) return;
       setOpportunities(items);
       setOpportunitiesError(null);
     } catch (err) {
+      if (requestId !== opportunitiesRequestRef.current) return;
       setOpportunitiesError(message(err, '機会を取得できませんでした'));
     }
   }, []);
@@ -141,11 +146,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       latestRef.current = run;
       setLatestRun(run);
       // Agent が自分で始めた探索が終わったら、おすすめを取り直す。
-      // ホームのカードが古い推薦のまま残らないように。初回の取得では取り直さない
-      // （おすすめは画面を開いたときに取ってある）。
+      // ホームのカードが古い推薦のまま残らないように。ホーム以外にいる間に
+      // 完了したこともあるので、最新 run の初回取得でも取り直す。
       const finished = run !== null && run.trigger !== 'manual' && run.status === 'completed';
       const changed = previous?.run_id !== run?.run_id || previous?.status !== run?.status;
-      if (finished && previous !== null && changed) void refreshOpportunities();
+      if (finished && changed) void refreshOpportunities();
       return run;
     } catch {
       // 知らせのための取得。失敗しても画面の操作は止めない（次の取得でやり直す）。

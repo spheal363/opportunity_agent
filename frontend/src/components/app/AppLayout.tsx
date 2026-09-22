@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { usePageChrome } from '../../hooks/usePageChrome';
+import { useLatestRunWatch } from '../../hooks/useLatestRunWatch';
 import { useAppState } from '../../state/context';
 import { clearProfileDraft } from '../../state/persistence';
 import type { UserProfileInput } from '../../types';
@@ -15,7 +16,23 @@ export default function AppLayout() {
 
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { profile, goalOpen, openGoal, closeGoal, saveProfileAndStart, openDetail } = useAppState();
+  const {
+    profile,
+    goalOpen,
+    openGoal,
+    closeGoal,
+    saveProfileAndStart,
+    openDetail,
+    refreshLatestRun,
+    latestRun,
+  } = useAppState();
+
+  // 結果・詳細を見ている間も自動探索の完了を検知する。通知を閉じても監視は続ける。
+  useLatestRunWatch(
+    refreshLatestRun,
+    latestRun?.trigger !== 'manual' &&
+      (latestRun?.status === 'queued' || latestRun?.status === 'running'),
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
