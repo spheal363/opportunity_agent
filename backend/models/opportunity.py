@@ -32,7 +32,35 @@ class Opportunity(Base):
     eligibility: Mapped[str | None] = mapped_column(Text, nullable=True)
     cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # --- 検索専用モデル経路（#47）-----------------------------------------
+    # **どの希望から出た候補か。** 分割後のラベルと、**元の入力そのまま**を両方持つ。
+    # 要約だけを残すと、元の希望が失われる（実測）。
+    wish: Mapped[str | None] = mapped_column(String, nullable=True)
+    wish_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # **検索時の元データ。** 詳細確認で値を直しても、こちらは残す。
+    # 引用 URL との対応や、解析前の生文字列もここに入れる。
+    searched_values: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # **訂正の履歴。上書きしない。** {field, before, after, source, checked_at}
+    corrections: Mapped[list] = mapped_column(JSON, default=list)
+    # 詳細確認で**実際に確認できた項目名**。verified=True だけでは
+    # 何が確認できたのか分からない。
+    confirmed_fields: Mapped[list] = mapped_column(JSON, default=list)
+    # 評価で挙がった「判断に必要だが未確認のこと」。**推測で埋めない（#47）。**
+    unknowns: Mapped[list] = mapped_column(JSON, default=list)
+    # 会期の途中 1 日で参加できるのか、全日必須なのか。
+    # **根拠が無ければ null（不明）。開始と終了だけから決めない。**
+    participation_span: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 詳細確認 1 件ぶんの使用量と実費。**初回探索の費用と混ぜない。**
+    detail_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 詳細確認を実行した時刻。**同じ候補への連打で二重に走らせないため。**
+    detail_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # --- ② AI が生成した評価 ---
+    # **評価したかどうか。** 一覧表示に LLM 評価を必須にしないので、
+    # 未評価の候補が出る。**未評価を 0 点や架空の点数として見せない。**
+    evaluated: Mapped[bool] = mapped_column(Boolean, default=False)
     score: Mapped[int] = mapped_column(Integer, default=0)
     serendipity_score: Mapped[int] = mapped_column(Integer, default=0)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
