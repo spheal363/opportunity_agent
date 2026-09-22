@@ -27,7 +27,16 @@ SYSTEM = (
     '  "location": str|null,   // 開催場所\n'
     '  "format": str|null,     // offline / online / hybrid\n'
     '  "eligibility": str|null,// 参加条件\n'
-    '  "cost": int|null        // 参加費（円）\n'
+    '  "cost": int|null,       // 参加費（円）\n'
+    '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
+    '  "recommended_action": str|null, // 本人が取れる行動（例: 応募する）\n'
+    '  "deadline_kind": str,   // application / registration / submission /\n'
+    "                          // early_bird / speaker / other / unknown\n"
+    '  "deadline_quote": str|null,     // deadline の日付そのものの表記\n'
+    '  "deadline_context": str|null,   // 何の期限か分かる周辺の一文（原文のまま）\n'
+    '  "start_at_is_date_only": bool|null, // 時刻が無く日付だけなら true\n'
+    '  "end_at_is_date_only": bool|null,\n'
+    '  "deadline_is_date_only": bool|null\n'
     "}\n"
     "\n"
     "規則:\n"
@@ -45,11 +54,67 @@ SYSTEM = (
     "4. 年が書かれていない日付は、今日以降で最も近い年として解釈する。\n"
     "5. **ページが催しや募集の告知ではなく、記事・ブログ・解説の場合は "
     'type を "other" にする。** 記事の題名を催しの名称のように扱わない。\n'
-    "6. 出力は JSON のみ。説明文を付けない。"
+    "6. **時刻が書かれていない日付に、時刻を作らない。** "
+    "「10月7日」としか書かれていないのに 09:00 や 17:00 を入れてはならない。"
+    "日付だけのときは、その日の 00:00 に開催地のオフセットを付けたうえで、"
+    "対応する *_is_date_only を true にする。時刻まで書かれていれば false。"
+    "**対応する日時が null のときは *_is_date_only も null にする。**\n"
+    "7. **締切は「何に対するものか」を deadline_kind で区別する。** "
+    "同じページに複数の締切が並ぶ。\n"
+    "   application  応募締切・参加申込の締切（**推薦する行動に対応する**）\n"
+    "   registration 参加登録・チケット申込の期限（同上）\n"
+    "   submission   **作品・提出物の締切。申込の締切とは別。**\n"
+    "   early_bird   早割・先行販売の期限（**過ぎても参加できる**）\n"
+    "   speaker      登壇者・発表者・出展者の募集締切（**参加とは別の行動**）\n"
+    "   other        上のどれでもない締切\n"
+    "   unknown      何に対する締切か特定できない\n"
+    "   deadline には **deadline_kind に対応する日付だけ**を入れる。"
+    "早割の期限を申込締切として入れてはならない。"
+    "参加・応募の締切が読み取れないなら deadline は null、"
+    'deadline_kind は "unknown" にする。\n'
+    "   deadline_quote には、その日付の表記をそのまま写す（例:「2026年8月21日」）。\n"
+    "   deadline_context には、**何の期限か分かる周辺の一文**を"
+    "**原文のまま**写す。日付だけを写してはならない。\n"
+    "     正:「応募締め切り：2026年8月21日(金)17時（日本時間）」\n"
+    "     正:「定価2万円のチケットの早割価格での提供となります。（9月30日まで）」\n"
+    "     誤:「9月30日まで」（何の期限か分からない）\n"
+    "   **原文に無い文を書いてはならない。** 要約も言い換えもしない。"
+    "該当する一文が見つからないなら、deadline は null、"
+    'deadline_kind は "unknown" にする。\n'
+    "8. **取り消し線や「募集を締め切りました」「延長しました」は、"
+    "どの募集に付いているかを見る。** 登壇者募集が終了していても、"
+    "一般参加が受付中のことがある。ページ全体を一括で終了と判断しない。\n"
+    "9. **一部の区分が無料でも、機会全体を無料としない。**\n"
+    "   free           全体が無料と明記されている\n"
+    "   paid           有料の記載がある\n"
+    "   partially_free 一部の区分・条件だけ無料（学生無料、関係者無料など）\n"
+    "   unknown        参加費の記載が無い（**無料ではない**）\n"
+    "   cost に金額を入れてよいのは、その金額が"
+    "「この機会に参加するために誰もが払う額」である場合のみ。"
+    "区分によって額が違うなら cost は null にする。\n"
+    "10. **本人が取れる行動を特定できるときだけ recommended_action を入れる。**\n"
+    "   入れてよい例: 応募する / 参加登録する / 申し込む / 入会する / 問い合わせる\n"
+    "   **対象は url に書く。** 別の欄は設けない。\n"
+    "   **null にする例**（本人が直接応募・参加できないページ）:\n"
+    "     他人の投稿作品・提出物のページ\n"
+    "     終了した催しの開催レポート\n"
+    "     仕組みや事例の解説記事\n"
+    "     検索結果・イベント一覧のページそのもの\n"
+    "   **type だけで決めない。** 解説記事でも、本文に具体的な募集先が"
+    "書かれていれば行動を特定できる。その場合は recommended_action を入れる。"
+    "   一覧ページから 1 件を取り出した場合は、その 1 件の url を書く。"
+    "**一覧そのものを対象にしない。**\n"
+    "11. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 
 
-def build_user(source_url: str, page_content: str, *, today: date | None = None) -> str:
+def build_user(
+    source_url: str,
+    page_content: str,
+    *,
+    today: date | None = None,
+    source_title: str | None = None,
+) -> str:
     """抽出対象のページを user メッセージに組み立てる。
 
     ページ内容は `untrusted_block` で囲む。**これは防御ではなく境界の明示。**
@@ -63,5 +128,16 @@ def build_user(source_url: str, page_content: str, *, today: date | None = None)
     置くと、URL 文字列に仕込んだ指示が system 直後の位置に並ぶ。
     """
     today = today or date.today()
-    source = f"取得元 URL: {source_url}\n\n{page_content}"
+    # **取得元が持っているタイトルを捨てない。**
+    #
+    # 本文の抜粋は、ページの見出しを含まないことがある。実測で、催しの
+    # 名称が「GenAI/SUM事務局」という組織名の一部としてしか現れない入力が
+    # あり、title が null になって Schema を通らなかった。
+    # 検索結果・取得結果は title を持っているので、それも渡す。
+    #
+    # これも外部から取得したデータで、`untrusted_block` の中に入れる。
+    header = f"取得元 URL: {source_url}"
+    if source_title:
+        header += f"\n取得元のページタイトル: {source_title}"
+    source = f"{header}\n\n{page_content}"
     return f"今日の日付: {today.isoformat()}\n\n{untrusted_block('page_content', source)}"

@@ -220,10 +220,11 @@ def test_verification_page_is_cleaned(db, state, real_mode, monkeypatch):
             type="hackathon",
             title="AI Hackathon",
             url="https://evil.example/a",
+            recommended_action="申し込む",
         )
     )
     db.commit()
-    state.selected_ids = ["opp_v"]
+    state.ranked_ids = ["opp_v"]
     seen: list[str] = []
 
     def verify_with_page(*, opportunity, url, fetch_page):
@@ -233,7 +234,7 @@ def test_verification_page_is_cleaned(db, state, real_mode, monkeypatch):
     monkeypatch.setattr(loop, "_fetch_page", lambda url: ATTACK)
     monkeypatch.setattr(loop, "verify_with_page", verify_with_page)
 
-    loop._verify(db, state)
+    loop._verify_and_finalize(db, state)
 
     assert seen and "無視" not in seen[0]
     assert "https://evil.example/a" in state.flagged_urls
@@ -389,14 +390,16 @@ def test_user_decided_status_is_kept_when_flagged(db, eval_state, real_mode, mon
 def test_links_in_reason_are_not_saved(db, eval_state, real_mode, monkeypatch):
     """LLM が推薦理由に URL を書いても、画面には出さない。"""
     ids = _seed(db, "opp_a")
-    monkeypatch.setattr(loop, "evaluate_many", lambda **k: ([("opp_a", _eval())], []))
+    row = db.get(Opportunity, "opp_a")
+    row.score, row.serendipity_score = 80, 50
+    db.commit()
     monkeypatch.setattr(
         loop,
         "recommend",
         lambda **k: RecommendationOutput(reason="目標に合います。申込は https://evil.example へ"),
     )
 
-    loop._evaluate_and_select(db, eval_state, ids)
+    loop._write_reasons(db, eval_state, ids)
 
     reason = db.get(Opportunity, "opp_a").reason
     assert "evil.example" not in reason
@@ -529,10 +532,11 @@ def test_page_flagged_at_verification_is_dropped(db, state, real_mode, monkeypat
             title="AI Hackathon",
             url="https://evil.example/a",
             status=OpportunityStatus.RECOMMENDED,
+            recommended_action="申し込む",
         )
     )
     db.commit()
-    state.selected_ids = ["opp_v"]
+    state.ranked_ids = ["opp_v"]
 
     def verify_with_page(*, opportunity, url, fetch_page):
         fetch_page(url)
@@ -541,7 +545,7 @@ def test_page_flagged_at_verification_is_dropped(db, state, real_mode, monkeypat
     monkeypatch.setattr(loop, "_fetch_page", lambda url: ATTACK)
     monkeypatch.setattr(loop, "verify_with_page", verify_with_page)
 
-    loop._verify(db, state)
+    loop._verify_and_finalize(db, state)
 
     assert state.selected_ids == []
     row = db.get(Opportunity, "opp_v")

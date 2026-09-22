@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react';
 
 import { fetchOpportunity } from '../../api';
-import { categoryLabel, costLabel, isStep, safeHttpUrl } from '../../utils/display';
+import {
+  availabilityLabel,
+  categoryLabel,
+  costLabel,
+  deadlineKindLabel,
+  deadlineLabel,
+  isStep,
+  primaryLink,
+  scheduleLabel,
+  safeHttpUrl,
+} from '../../utils/display';
 import { POSE_SLOTS } from '../../utils/poses';
 import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
@@ -58,7 +68,14 @@ export function DetailDialog() {
 
   const summary = opportunities?.find((o) => o.opportunity_id === detailId);
   /** 登録先は POST /interest の結果が最新。無ければ詳細の url に戻す。 */
-  const officialUrl = item ? safeHttpUrl(registrationUrlOf(item.opportunity_id) ?? item.url) : null;
+  // **未確認なら「申込先」と断定しない。** 検証で本文から導線を読み取れた
+  // ときだけ申込先として出す。「気になる」で得た登録 URL はそれより確か。
+  const link = item
+    ? (() => {
+        const registered = safeHttpUrl(registrationUrlOf(item.opportunity_id));
+        return registered ? { url: registered, label: '申込先' } : primaryLink(item);
+      })()
+    : { url: null, label: '' };
   const inSteps = summary ? isStep(statusOf(summary)) : false;
 
   const openPrepare = () => {
@@ -114,16 +131,30 @@ export function DetailDialog() {
 
           <dl className="grid grid-cols-[80px_1fr] gap-[10px] text-[14px] bg-[#edf0e7] p-[18px] rounded-[7px] my-[22px]">
             <dt className="text-muted">開催日時</dt>
-            <dd className="m-0">{formatDateTime(item.start_at)}</dd>
+            <dd className="m-0">{scheduleLabel(item)}</dd>
             <dt className="text-muted">開催場所</dt>
             <dd className="m-0">{item.location ?? '場所未定'}</dd>
             <dt className="text-muted">参加費</dt>
-            <dd className="m-0">{costLabel(item.cost)}</dd>
-            <dt className="text-muted">申込締切</dt>
-            <dd className="m-0">{formatDateTime(item.deadline)}</dd>
+            <dd className="m-0">{costLabel(item.cost, item.cost_kind)}</dd>
+            {/* **何に対する締切かを見出しに出す。** 早割の期限を申込締切として見せない。 */}
+            <dt className="text-muted">{deadlineKindLabel(item.deadline_kind)}</dt>
+            <dd className="m-0">
+              {deadlineLabel(item)}
+              {item.deadline_quote ? (
+                <span className="block text-muted text-[13px]">{item.deadline_quote}</span>
+              ) : null}
+            </dd>
             <dt className="text-muted">公式情報</dt>
             <dd className="m-0">
               {item.verified ? `確認済み（${formatDateTime(item.verified_at)}）` : '未確認'}
+            </dd>
+            {/* 「情報を確認できたか」と「いま申し込めるか」は別。両方を出す。 */}
+            <dt className="text-muted">受付状況</dt>
+            <dd className="m-0">
+              {availabilityLabel(item)}
+              {item.availability_reason ? (
+                <span className="block text-muted text-[13px]">{item.availability_reason}</span>
+              ) : null}
             </dd>
           </dl>
 
@@ -135,6 +166,13 @@ export function DetailDialog() {
           ) : null}
           <h3 className={H3}>参加条件</h3>
           <p className="text-[14px]">{item.eligibility ?? '記載なし'}</p>
+          {/* **条件が取れても、本人が適格とは限らない。** プロフィールとの
+              照合は行っていない。取れていない場合も「無い」ではない。 */}
+          <p className={`${MUTED} text-[13px]`}>
+            {item.eligibility
+              ? 'あなたが条件を満たすかは照合していません。ご自身で確認してください。'
+              : '参加条件は読み取れていません。**無い**という意味ではありません。'}
+          </p>
 
           <div className="flex gap-[9px] my-[20px]">
             {(['like', 'dislike'] as const).map((value) => (
@@ -171,22 +209,30 @@ export function DetailDialog() {
           <p className="text-[14px]">{item.title}</p>
           <ul className="text-[14px] p-0 list-none my-[1em]">
             <li className="checklist-item border-b border-line py-[10px]">
-              日程を確認：{formatDateTime(item.start_at)}
+              日程を確認：{scheduleLabel(item)}
             </li>
             <li className="checklist-item border-b border-line py-[10px]">
               参加条件：{item.eligibility ?? '記載なし'}
             </li>
             <li className="checklist-item border-b border-line py-[10px]">
-              申込締切：{formatDateTime(item.deadline)}
+              {/* **何に対する締切かを出す。** 早割の期限を申込締切として見せない。 */}
+              {deadlineKindLabel(item.deadline_kind)}：{deadlineLabel(item)}
             </li>
           </ul>
 
-          {officialUrl ? (
+          {/* **未確認なら「申込先」と断定しない。** 検証で本文から導線を
+              読み取れたときだけ申込先として出す。同一サイトは根拠にしない。 */}
+          {link.url ? (
             <p className="text-[14px]">
-              公式ページ：
-              <a href={officialUrl} target="_blank" rel="noreferrer" className="underline">
-                {officialUrl}
+              {link.label}：
+              <a href={link.url} target="_blank" rel="noreferrer" className="underline">
+                {link.url}
               </a>
+            </p>
+          ) : null}
+          {item.recommended_action ? (
+            <p className="text-[14px] text-muted">
+              次に取れる行動：{item.recommended_action}
             </p>
           ) : null}
 

@@ -92,13 +92,15 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Agent Loop: Web 探索 | 実装済み（検索 → 抽出 → 保存。重複は URL で除去） |
 | Agent Loop: Goal 分析 | 実装済み（プロフィール → 目標・興味の交差点） |
 | Agent Loop: 探索計画 | 実装済み（Serendipity 方向を最低 1 つ確保） |
-| Agent Loop: 評価 / TOP3選定 / 推薦理由 | 実装済み（選定は LLM 不使用。意外性を重みづけ） |
+| Agent Loop: 評価 / 順位付け | 実装済み（選定は LLM 不使用。意外性を重みづけ） |
+| Search / Page Fetch / 評価器の差し替え | 実装済み（既定は現行のまま。比較は [#65](docs/experiments/65-search-comparison.md)） |
+| 受付状況の判定 | 実装済み（`verified` とは別軸。期限切れを推薦から外す） |
 | Agent Loop: Verification | 実装済み（TOP3 の公式ページを再確認。警告を Log に出す） |
 | `interest` 時の再確認 | 未実装（探索時には検証済み。押した時点では再確認しない） |
 | 再探索・終了条件 | 未実装（1 周で終わる） |
 | Reflection / Agent Memory | 未実装（テーブルのみ） |
 | コスト記録 | 実装済み（見積もり。1 探索あたり約 1 円。実単価が出たら差し替える） |
-| DB Migration | なし（`create_all`。列追加時は DB を作り直す） |
+| DB Migration | ツールは無いが、`init_db` が不足列を足す（冪等・既存データを消さない） |
 | Calendar API | 実装済み（空き確認と予定追加。連携手順は `backend/README.md`） |
 | OrcaRouter / LLM | 実装済み（接続・Schema Validation・Retry・Fallback・コスト記録） |
 | Web Search | 実装済み（Tavily。provider 差し替え可能） |

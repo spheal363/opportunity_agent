@@ -548,8 +548,8 @@ def test_cost_is_recorded_once_per_call_on_retry():
         res = generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
 
     assert len(sent) == 2
-    assert t.calls == 2
-    assert t.calls == len(res.usages)
+    assert t.usage_records == 2
+    assert t.usage_records == len(res.usages)
     assert t.total_tokens == sum(u.total_tokens for u in res.usages)
 
 
@@ -579,7 +579,7 @@ def test_cost_is_recorded_once_per_call_across_fallback():
 
     # standard 2 回 + powerful 1 回
     assert t.calls_by_tier == {"standard": 2, "powerful": 1}
-    assert t.calls == len(res.usages) == 3
+    assert t.usage_records == len(res.usages) == 3
     assert t.expensive_calls == 1
 
 
@@ -592,8 +592,8 @@ def test_cost_is_recorded_even_when_it_finally_fails():
             generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=2)
 
     # standard 2 回 + powerful 2 回
-    assert t.calls == 4
-    assert t.calls == len(exc.value.usages)
+    assert t.usage_records == 4
+    assert t.usage_records == len(exc.value.usages)
     assert t.jpy > 0
 
 
@@ -605,4 +605,72 @@ def test_empty_response_usages_are_recorded_once():
         with pytest.raises(EmptyResponseError) as exc:
             generate_structured(schema=Sample, system="s", user="u", client=c, max_tokens=2048)
 
-    assert t.calls == len(exc.value.usages)
+    assert t.usage_records == len(exc.value.usages)
+
+
+# --- 失敗の種類ごとに計測が分かれる（#65）---------------------------------
+
+
+def test_429_counts_as_attempt_with_usage_unknown():
+    """レート制限。**投げたことは起きている。費用ゼロとは断定しない。**"""
+    c, _ = _client_returning(429, '{"goal_summary": "AI", "score": 1}')
+
+    with cost.track() as t, cost.step("extraction"):
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
+
+    u = t.by_step["extraction"]
+    assert u.logical_calls == 1
+    assert u.request_attempts == 2
+    assert u.attempts_without_usage == 1  # 429 には usage が付かない
+    assert u.usage_records == 1
+    assert u.retries == 1
+
+
+def test_connection_failure_counts_as_attempt():
+    """通信失敗。同じく usage は取れない。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    with cost.track() as t, cost.step("extraction"):
+        with pytest.raises(LLMRequestError):
+            generate_structured(
+                schema=Sample, system="s", user="u", client=_client(handler), max_attempts=1
+            )
+
+    u = t.by_step["extraction"]
+    # standard で 1 回 + Fallback で powerful 1 回
+    assert u.request_attempts == 2
+    assert u.attempts_without_usage == 2
+    assert u.usage_records == 0
+    assert u.fallbacks == 1
+
+
+def test_invalid_json_counts_usage_and_retry():
+    """JSON 不正。**応答は返っているので usage はある。**"""
+    c, _ = _client_returning("not json", '{"goal_summary": "AI", "score": 1}')
+
+    with cost.track() as t, cost.step("extraction"):
+        generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=3)
+
+    u = t.by_step["extraction"]
+    assert u.usage_records == 2  # 両方とも応答は返っている
+    assert u.attempts_without_usage == 0
+    assert u.retries == 1
+
+
+def test_fallback_is_counted_separately_from_retry():
+    """Retry（同じ tier で再試行）と Fallback（別 tier）を混ぜない。"""
+    c, _ = _client_returning('{"bad": 1}', '{"bad": 2}')
+
+    with cost.track() as t, cost.step("extraction"):
+        with pytest.raises(LLMValidationError):
+            generate_structured(schema=Sample, system="s", user="u", client=c, max_attempts=2)
+
+    u = t.by_step["extraction"]
+    assert u.logical_calls == 1
+    assert u.fallbacks == 1
+    assert u.retries >= 1
+    # standard 2 回 + powerful 2 回
+    assert u.request_attempts == 4
+    assert u.calls_by_tier == {"standard": 2, "powerful": 2}

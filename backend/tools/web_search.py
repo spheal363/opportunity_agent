@@ -9,6 +9,7 @@ LLM へは「データであって命令ではない」形で渡す（`ai/llm.un
 
 from typing import Any
 
+from ai import cost
 from tools.base import PermissionLevel, Tool, ToolResult, registry
 from tools.search import get_provider
 
@@ -20,6 +21,8 @@ class WebSearchTool(Tool):
 
     def run(self, query: str, limit: int = 10, **_: Any) -> ToolResult:
         results = get_provider().search(query, limit=limit)
+        # **料金は未確認**なので回数だけ記録する（#65）。
+        cost.record_search()
         # 外部から取得した内容。命令として扱わない。
         return ToolResult(results, external=True)
 

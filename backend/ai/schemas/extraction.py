@@ -5,9 +5,10 @@
 """
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, model_validator
 
 from schemas.opportunity import OpportunityFormat, OpportunityType
 
@@ -44,6 +45,67 @@ def _to_utc(value: datetime | None) -> datetime | None:
 AwareDatetime = Annotated[datetime | None, AfterValidator(_require_timezone)]
 
 
+class DeadlineKind(StrEnum):
+    """その締切が**何に対するもの**か。
+
+    同じページに複数の締切が並ぶ。**どれを拾ったかで意味が反対になる。**
+
+    実例（https://www.xsum.jp/gai）:
+
+        応募締め切り  2026年8月21日（取り消し線・「応募を締め切りました」）
+        早割り        9/30 迄
+        イベント      10月7日
+
+    ここで早割の 9/30 を締切として拾うと、**終了した募集が
+    「9/30 まで受付中」に見える。**
+    """
+
+    # 推薦する行動（参加・応募）に対応する締切。**これだけが受付終了の根拠になる。**
+    APPLICATION = "application"  # 応募締切
+    REGISTRATION = "registration"  # 参加申込・参加登録の期限
+
+    # **作品・提出物の締切。** 申込の締切とは別。
+    #
+    # 「提出締切」は「参加申込の締切」ではない。申込だけ先に締め切り、
+    # 提出は後、という形がある。逆に、提出さえ間に合えば飛び入り参加を
+    # 認める催しもある。**同じものとして扱わない。**
+    #
+    # ただしハッカソンやコンテストでは、**提出しなければ参加にならない。**
+    # その種類に限って、過ぎた提出締切を受付終了の根拠にする。
+    SUBMISSION = "submission"
+
+    # 過ぎても参加はできる締切。**受付終了の根拠にしない。**
+    EARLY_BIRD = "early_bird"  # 早割・先行販売
+    SPEAKER = "speaker"  # 登壇者・発表者・出展者の募集
+    OTHER = "other"
+
+    # 何に対する締切か特定できなかった。**推測しない。**
+    UNKNOWN = "unknown"
+
+
+# 推薦する行動を閉ざす締切。これ以外は過ぎていても参加できることがある。
+GATING_DEADLINES = frozenset({DeadlineKind.APPLICATION, DeadlineKind.REGISTRATION})
+
+# **提出しなければ参加にならない**種類。ここでだけ提出締切が行動を閉ざす。
+SUBMISSION_GATES_TYPES = frozenset({"hackathon", "competition"})
+
+
+class CostKind(StrEnum):
+    """参加費の区分。
+
+    **一部の区分が無料でも、機会全体が無料とは限らない。**
+
+    実例（https://www.xsum.jp/gai）: 定価 ¥20,000 / 早割 ¥8,000 と並んで
+    「無料（受付にて証明書の提示）」の区分がある。これを見て cost=0 にすると、
+    **有料のイベントが無料として推薦される。**
+    """
+
+    FREE = "free"  # 全体が無料と明記されている
+    PAID = "paid"  # 有料の記載がある
+    PARTIALLY_FREE = "partially_free"  # 一部の区分だけ無料
+    UNKNOWN = "unknown"  # 記載が無い。**無料ではない。**
+
+
 class ExtractionInput(BaseModel):
     source_url: str
     page_content: str
@@ -62,6 +124,90 @@ class ExtractedOpportunity(BaseModel):
     eligibility: str | None = None
     # 無料は 0、不明は null。混同しない。
     cost: int | None = Field(default=None, ge=0)
+
+    # --- 何に対する条件か -------------------------------------------------
+    #
+    # **ページ全体の open/closed を一括で決めない。** 同じページで
+    # 「登壇者募集は終了、一般参加は受付中」が起きる。
+
+    deadline_kind: DeadlineKind = DeadlineKind.UNKNOWN
+    # 締切の**日付**そのものの表記。これがあれば「その日付が原文にある」ことは言える。
+    deadline_quote: str | None = Field(default=None, max_length=200)
+    # **何の期限か分かる周辺の一文。**
+    #
+    # 日付だけの引用では、区分の根拠にならない。「9月30日まで」は原文に
+    # あっても、それが参加申込の期限なのか早割の期限なのかを示さない。
+    # 実測では、早割の期限を参加申込の期限として分類した。
+    #
+    # 原文のまま写させ、**原文にあることと、区分と矛盾しないこと**を確かめる。
+    deadline_context: str | None = Field(default=None, max_length=400)
+    cost_kind: CostKind = CostKind.UNKNOWN
+
+    # --- 出典に時刻が書かれていたか ---------------------------------------
+    #
+    # **書かれていない時刻を作らない。** 日付だけのときは True にし、
+    # 時刻部分はこちら側の正規化（00:00）であって出典の値ではないと示す。
+
+    # **推薦する行動と、その対象。**
+    #
+    # 「このページを見て、本人は何ができるか」。応募する・参加登録する・
+    # 入会する、など。**特定できなければ null。**
+    #
+    # 実測で、ハッカソンの投稿作品ページ（他人の提出物）や検索結果一覧が
+    # TOP に入った。どちらも本人が直接応募・参加できるものではない。
+    #
+    # **`type` で決めない。** 解説記事（type=other）の中に募集先が
+    # 書かれていることもあり、その場合は行動が特定できる。
+    recommended_action: str | None = Field(default=None, max_length=60)
+    #
+    # **対象は `url` が持つ。** 別欄（action_target）を用意していたが、
+    # `url`（申込・詳細ページ）と同じものを二重に尋ねているだけだった。
+    # 実測で 4 件とも null が返り、代わりに `url` にページ自身が入ったり
+    # 逆に null になったりした。**欄を増やしても確からしさは上がらない。**
+
+    # **`None` は「分からない」。** false（＝出典に時刻があった）とは違う。
+    #
+    # 実測で、日時が null の候補にモデルが `null` を返し、`bool` を要求して
+    # いたため Schema 検証に落ちて Retry になった（1 回ぶん余分に課金）。
+    # **不明を false へ倒して通さない。** 倒すと、確かめていない時刻を
+    # 「出典にあった」と言うことになる。
+    #
+    # 不明のときは**日付だけとして扱う**（時刻を表示せず、当日中に
+    # 締め切らない）。安全な側へ寄せる。
+    start_at_is_date_only: bool | None = None
+    end_at_is_date_only: bool | None = None
+    deadline_is_date_only: bool | None = None
+
+    @model_validator(mode="after")
+    def _guard(self) -> "ExtractedOpportunity":
+        """**モデルの申告を鵜呑みにしない。** 決定的に整合させる。
+
+        prompt で指示しても守られないことがある（実測で、時刻の無いページに
+        09:00 / 17:00 を入れた）。ここは出力を受け取ったあとの砦。
+        """
+        # 日付だけと申告したなら、時刻はこちらで 00:00 に落とす。
+        # モデルが入れた時刻をそのまま残すと、出典にある時刻と区別できない。
+        for field in ("start_at", "end_at", "deadline"):
+            # **`True`（日付だけと申告）のときだけ時刻を落とす。**
+            #
+            # `None`（不明）では落とさない。落とすと、出典にあった時刻まで
+            # 消してしまう。**分からないことと、無いことは違う。**
+            # 不明のときは値を残したうえで、表示と締切判定を保守的に扱う。
+            if getattr(self, f"{field}_is_date_only") is True and (
+                getattr(self, field) is not None
+            ):
+                value = getattr(self, field)
+                object.__setattr__(
+                    self, field, value.replace(hour=0, minute=0, second=0, microsecond=0)
+                )
+
+        # **一部が無料なだけ、あるいは記載が無いものを 0 円にしない。**
+        if self.cost == 0 and self.cost_kind is not CostKind.FREE:
+            object.__setattr__(self, "cost", None)
+        # 有料と分かっているのに金額が 0 なのは矛盾。金額不明として扱う。
+        if self.cost_kind is CostKind.PAID and self.cost == 0:
+            object.__setattr__(self, "cost", None)
+        return self
 
     def to_utc(self) -> "ExtractedOpportunity":
         """日時を UTC に揃えた写しを返す。DB へ入れる直前に呼ぶ。"""

@@ -46,6 +46,14 @@ class OpportunityFormat(StrEnum):
     HYBRID = "hybrid"
 
 
+class Availability(StrEnum):
+    """いま応募・参加できるか。`verified`（情報を確認できたか）とは別。"""
+
+    OPEN = "open"
+    CLOSED = "closed"
+    UNKNOWN = "unknown"
+
+
 class OpportunityStatus(StrEnum):
     DISCOVERED = "discovered"
     RECOMMENDED = "recommended"
@@ -73,6 +81,24 @@ class OpportunitySummary(BaseModel):
     match_reasons: list[str] = Field(default_factory=list)
 
     verified: bool = False
+    # **verified とは別の軸。** open は「受付中を確認できた」という意味で、
+    # 参加資格や空き枠までは保証しない。
+    availability: Availability = Availability.UNKNOWN
+    availability_reason: str | None = None
+    # **いつ時点の確認か。** 古い結果を今の状態として読まないために必ず対で見る。
+    availability_checked_at: Timestamp = None
+    # **出典に時刻が書かれていたか。** false のとき時刻を表示すると、
+    # こちらが 00:00 へ正規化した値を出典の値として見せることになる。
+    # **`None` は「分からない」。** false（出典に時刻があった）とは違う。
+    # 不明のときは時刻を表示しない（確かめていない時刻を見せない）。
+    start_at_is_date_only: bool | None = None
+    deadline_is_date_only: bool | None = None
+    # **この URL は申込先か、情報源か。** True なら申込先は未確認。
+    url_is_source_only: bool = True
+    # 検証で本文から読み取れた申込先。**同一サイトは根拠にしない。**
+    application_url: str | None = None
+    # 本人が取れる行動。特定できなければ null で、推薦には出さない。
+    recommended_action: str | None = None
     status: OpportunityStatus = OpportunityStatus.DISCOVERED
 
 
@@ -84,9 +110,19 @@ class OpportunityDetail(OpportunitySummary):
     format: OpportunityFormat | None = None
     eligibility: str | None = None
     cost: int | None = None
+    # **一部の区分だけ無料、ということがある。** cost が null でも
+    # 「記載が無い」のか「区分によって違う」のかで伝え方が変わる。
+    cost_kind: str | None = None
+
+    end_at_is_date_only: bool | None = None
+    # **その締切が何に対するものか。** 早割の期限を申込締切として見せない。
+    deadline_kind: str | None = None
+    # 判断の根拠になったページ上の表記。
+    deadline_quote: str | None = None
 
     verified_at: Timestamp = None
     verification_source: str | None = None
+    availability_source: str | None = None
 
 
 class InterestResult(BaseModel):

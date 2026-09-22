@@ -164,6 +164,8 @@ def generate_structured[T: BaseModel](
     失敗して例外を上げる場合も、そこまでに消費した分を例外の `usages` に載せる。
     """
     llm = client or get_client()
+    # 工程構成上の呼び出し数。**実際に投げた回数とは別**（Retry / Fallback で増える）。
+    cost.record_logical_call()
     tiers = (tier, *_FALLBACK_TIERS.get(tier, ()))
     last: Exception | None = None
     usages: list[LLMUsage] = []
@@ -189,6 +191,7 @@ def generate_structured[T: BaseModel](
                 # コスト記録（#26）がこれを使う。
                 exc.usages = list(usages)
                 raise
+            cost.record_fallback()
             logger.warning(
                 "llm.fallback from=%s to=%s schema=%s reason=%s",
                 current_tier.value,
@@ -235,6 +238,9 @@ def _attempt_with_tier[T: BaseModel](
             usages.extend(exc.usages)
             for u in exc.usages:
                 cost.record(u)
+            # **使用量が取れなかった試行も数える。** timeout / 接続失敗は usage が
+            # 付かないが、投げたこと自体は起きている。費用ゼロとは断定しない。
+            cost.record_attempt(got_usage=bool(exc.usages))
             if not exc.retryable or attempt == max_attempts:
                 exc.usages = list(usages)
                 raise
@@ -244,6 +250,7 @@ def _attempt_with_tier[T: BaseModel](
                     current_max_tokens * _EMPTY_RESPONSE_GROWTH, _MAX_TOKENS_CEILING
                 )
             _sleep(attempt)
+            cost.record_retry()
             logger.warning(
                 "llm.retry reason=request attempt=%d/%d schema=%s max_tokens=%d",
                 attempt,
@@ -254,6 +261,7 @@ def _attempt_with_tier[T: BaseModel](
             continue
 
         usages.append(res.usage)
+        cost.record_attempt(got_usage=True)
         cost.record(res.usage)
         raw = _extract_json(res.content)
 
@@ -291,6 +299,7 @@ def _attempt_with_tier[T: BaseModel](
             {"role": "assistant", "content": res.content},
             {"role": "user", "content": feedback},
         ]
+        cost.record_retry()
         logger.warning(
             "llm.retry reason=validation attempt=%d/%d schema=%s",
             attempt,

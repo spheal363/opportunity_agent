@@ -203,14 +203,17 @@ def _seed(db, *ids) -> list[str]:
 
 
 def test_stub_mode_still_works(db):
+    """**順位付けまで。** 状態の更新は _verify_and_finalize（実経路と同じ形）。"""
     ids = _seed(db, "opp_a", "opp_b")
     s = AgentState(run_id="run_e", user_id="user_001")
     out = loop._evaluate_and_select(db, s, ids)
+
     assert len(out) == 2
-    assert db.get(Opportunity, out[0]).status == OpportunityStatus.RECOMMENDED
+    assert s.ranked_ids == out
 
 
-def test_real_mode_writes_scores_and_reason(db, state, monkeypatch):
+def test_real_mode_writes_scores_and_ranks(db, state, monkeypatch):
+    """**評価は順位付けまで。** 推薦理由と status は検証の後（_verify_and_finalize）。"""
     ids = _seed(db, "opp_a", "opp_b")
     monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
     monkeypatch.setattr(
@@ -218,41 +221,16 @@ def test_real_mode_writes_scores_and_reason(db, state, monkeypatch):
         "evaluate_many",
         lambda **k: ([(i, _eval(score=90 if i == "opp_a" else 10)) for i in ids], []),
     )
-    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a"])
-    monkeypatch.setattr(
-        loop,
-        "recommend",
-        lambda **k: RecommendationOutput(reason="あなたの目標に直結します"),
-    )
+    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a", "opp_b"])
 
     out = loop._evaluate_and_select(db, state, ids)
 
-    assert out == ["opp_a"]
+    assert out == ["opp_a", "opp_b"]
     a = db.get(Opportunity, "opp_a")
     assert a.score == 90
     assert a.match_reasons == ["AI"]
-    assert a.reason == "あなたの目標に直結します"
-    assert a.status == OpportunityStatus.RECOMMENDED
-    # 選ばれなかったものは評価だけ入り、推薦状態にはならない
-    b = db.get(Opportunity, "opp_b")
-    assert b.score == 10
-    assert b.status != OpportunityStatus.RECOMMENDED
-
-
-def test_recommendation_failure_does_not_fail_the_run(db, state, monkeypatch):
-    """理由が無くても推薦自体は成立する。"""
-    ids = _seed(db, "opp_a")
-    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
-    monkeypatch.setattr(loop, "evaluate_many", lambda **k: ([("opp_a", _eval())], []))
-    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a"])
-    monkeypatch.setattr(
-        loop, "recommend", lambda **k: (_ for _ in ()).throw(LLMValidationError("x"))
-    )
-
-    out = loop._evaluate_and_select(db, state, ids)
-
-    assert out == ["opp_a"]
-    assert db.get(Opportunity, "opp_a").status == OpportunityStatus.RECOMMENDED
+    # **この時点では推薦状態にしない。** 検証で受付終了と分かるかもしれない
+    assert a.status != OpportunityStatus.RECOMMENDED
 
 
 def test_failed_evaluations_are_reported(db, state, monkeypatch):
@@ -282,108 +260,3 @@ def test_real_mode_with_no_candidates(db, state, monkeypatch):
 
 
 # --- ユーザー操作由来の status を守る（レビュー指摘 High）-----------------
-
-
-@pytest.mark.parametrize(
-    "decided",
-    [
-        OpportunityStatus.INTERESTED,
-        OpportunityStatus.REGISTERED,
-        OpportunityStatus.ATTENDED,
-        OpportunityStatus.DISMISSED,
-    ],
-)
-def test_user_decided_status_is_not_overwritten(db, state, monkeypatch, decided):
-    """再探索でユーザーの意思表示を巻き戻さない。
-
-    status は「ユーザー操作」由来の列（.claude/rules/architecture.md）。
-    同一 URL の行は run をまたいで再利用されるため、ここで守らないと
-    「興味なし」にした催しが推薦へ戻る。
-    """
-    db.add(
-        Opportunity(
-            opportunity_id="opp_a",
-            user_id="user_001",
-            type="event",
-            title="T",
-            status=decided,
-        )
-    )
-    db.commit()
-
-    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
-    monkeypatch.setattr(loop, "evaluate_many", lambda **k: ([("opp_a", _eval())], []))
-    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a"])
-    monkeypatch.setattr(loop, "recommend", lambda **k: RecommendationOutput(reason="r"))
-
-    loop._evaluate_and_select(db, state, ["opp_a"])
-
-    assert db.get(Opportunity, "opp_a").status == decided
-
-
-def test_discovered_status_is_promoted(db, state, monkeypatch):
-    """ユーザーが触っていないものは推薦にする。"""
-    db.add(
-        Opportunity(
-            opportunity_id="opp_a",
-            user_id="user_001",
-            type="event",
-            title="T",
-            status=OpportunityStatus.DISCOVERED,
-        )
-    )
-    db.commit()
-
-    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
-    monkeypatch.setattr(loop, "evaluate_many", lambda **k: ([("opp_a", _eval())], []))
-    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a"])
-    monkeypatch.setattr(loop, "recommend", lambda **k: RecommendationOutput(reason="r"))
-
-    loop._evaluate_and_select(db, state, ["opp_a"])
-
-    assert db.get(Opportunity, "opp_a").status == OpportunityStatus.RECOMMENDED
-
-
-def test_recommendation_does_not_touch_orm_in_workers(db, state, monkeypatch):
-    """ORM をワーカースレッドへ渡さない。
-
-    lazy load がスレッドをまたぐと壊れる。_verify と同じく、メインスレッドで
-    dict にしてから渡す。
-    """
-    import threading
-
-    _seed(db, "opp_a", "opp_b", "opp_c")
-    main = threading.current_thread().name
-    seen_threads: list[str] = []
-
-    as_dict_threads: list[str] = []
-    original_as_dict = loop._as_dict
-
-    def tracked_as_dict(row):
-        as_dict_threads.append(threading.current_thread().name)
-        return original_as_dict(row)
-
-    def fake_recommend(**kwargs):
-        seen_threads.append(threading.current_thread().name)
-        assert isinstance(kwargs["opportunity"], dict)
-        return RecommendationOutput(reason="r")
-
-    monkeypatch.setattr(loop, "_as_dict", tracked_as_dict)
-    monkeypatch.setattr(loop, "get_settings", lambda: Settings(agent_stub_mode=False))
-    monkeypatch.setattr(
-        loop,
-        "evaluate_many",
-        lambda **k: ([(i, _eval()) for i in ("opp_a", "opp_b", "opp_c")], []),
-    )
-    monkeypatch.setattr(loop, "select_top", lambda ev, **k: ["opp_a", "opp_b", "opp_c"])
-    monkeypatch.setattr(loop, "recommend", fake_recommend)
-
-    loop._evaluate_and_select(db, state, ["opp_a", "opp_b", "opp_c"])
-
-    # 並列で走っている（メインスレッド以外が混ざる）
-    assert any(t != main for t in seen_threads)
-    # **ORM を読むのはメインスレッドだけ。** ワーカーからは触らない。
-    assert as_dict_threads, "_as_dict が呼ばれていない"
-    assert all(t == main for t in as_dict_threads), (
-        f"ワーカースレッドから ORM を読んでいる: {set(as_dict_threads)}"
-    )

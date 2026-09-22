@@ -27,7 +27,14 @@ class AgentState(BaseModel):
 
     # 発見済み Opportunity（評価前も含む）の opportunity_id
     discovered_ids: list[str] = Field(default_factory=list)
+    # 評価で順位付けした全候補（上位から）。検証と繰り上げはここから取る。
+    ranked_ids: list[str] = Field(default_factory=list)
+    # 最終的に推薦する候補。**3 件に満たないことがある。**
     selected_ids: list[str] = Field(default_factory=list)
+    # 3 件に満たなかった理由。run に保存して後からも同じ内容を返す。
+    shortfall_reason: str | None = None
+    # 行動の対象を特定できずに外した件数。**不足理由の説明に使う。**
+    no_action_count: int = 0
 
     # 指示らしき文が見つかったページの URL（ai/guard.py, #27）と、
     # そこから取った Opportunity の id。推薦しない（#77）。

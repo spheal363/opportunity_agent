@@ -9,6 +9,26 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
+/**
+ * 出典に時刻が無かったものは、日付だけで見せる。
+ *
+ * **こちらが 00:00 へ正規化した値を、出典の時刻として見せない。**
+ * 「10月7日」としか書かれていないページから「10月7日 0:00」と出すと、
+ * 書かれていない事実を伝えることになる。
+ */
+export function formatDateOrDateTime(
+  value: string | null | undefined,
+  dateOnly: boolean | null,
+): string {
+  if (!value) return '日時未定';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '日時未定';
+  // **`null`（分からない）でも時刻は出さない。** 確かめていない時刻を
+  // 出典の値として見せないため。
+  if (dateOnly === false) return formatDateTime(value);
+  return new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium' }).format(date);
+}
+
 /** "Java, Python, AWS" のような入力を配列にする。 */
 export function parseList(value: string): string[] {
   return value

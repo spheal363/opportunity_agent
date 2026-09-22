@@ -60,7 +60,15 @@ def unverified(reason: str) -> VerificationOutput:
     **確認できなかったことを隠さない。** run は落とさず、
     「確認できていない」という事実を残して先へ進む。
     """
-    return VerificationOutput(verified=False, changes_detected=False, warnings=[reason])
+    # **確認できなかったときに availability を open にしない。**
+    # 古い open を今回の結果として返さないため、必ず unknown へ倒す。
+    return VerificationOutput(
+        verified=False,
+        changes_detected=False,
+        warnings=[reason],
+        availability="unknown",
+        availability_reason=reason,
+    )
 
 
 def verify_with_page(

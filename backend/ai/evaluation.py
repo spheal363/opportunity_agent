@@ -12,13 +12,17 @@
 そこから決められる。全件に推薦理由を書かせるのも無駄なので TOP3 に絞る。
 """
 
+from ai import cost
 from ai.concurrency import map_parallel
+from ai.jev.client import JevError
+from ai.jev.evaluation import evaluate_with_jev
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import evaluation as eval_prompt
 from ai.prompts import recommendation as rec_prompt
 from ai.schemas.evaluation import EvaluationOutput
 from ai.schemas.recommendation import RecommendationOutput
+from config import get_settings
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -39,7 +43,57 @@ def evaluate(
     opportunity: dict,
     tier: ModelTier = ModelTier.STANDARD,
 ) -> EvaluationOutput:
-    """1 件を評価する。"""
+    """1 件を評価する。
+
+    `EVALUATOR=jev` のときは Jev を使い、**確信が持てないときと失敗したときは
+    既存 LLM へ戻す。** 戻した分の費用は LLM 側の欄に乗る（#65 の A/B 比較で
+    「Jev に替えた分だけ安くなる」とは限らないため、別々に数える）。
+    """
+    if get_settings().evaluator.strip().lower() == "jev":
+        out = _try_jev(
+            goal_summary=goal_summary,
+            interest_connections=interest_connections,
+            opportunity=opportunity,
+        )
+        if out is not None:
+            return out
+
+    return _evaluate_with_llm(
+        goal_summary=goal_summary,
+        interest_connections=interest_connections,
+        opportunity=opportunity,
+        tier=tier,
+    )
+
+
+def _try_jev(
+    *, goal_summary: str, interest_connections: list[str], opportunity: dict
+) -> EvaluationOutput | None:
+    """Jev で評価する。**駄目なら None を返し、呼び出し元が LLM へ戻す。**"""
+    try:
+        return evaluate_with_jev(
+            goal_summary=goal_summary,
+            interest_connections=interest_connections,
+            opportunity=opportunity,
+        )
+    except JevError as exc:
+        # 1 件の失敗で評価全体を止めない。LLM へ戻して続ける。
+        #
+        # **低確信とは別に数える。** これは「確信が持てなかった」のではなく
+        # 「呼べなかった」。同じ欄に積むと、A/B 比較で見たいフォールバック率に
+        # 接続エラーが紛れ込む。
+        cost.record_jev_hard_failure()
+        logger.warning("evaluation.jev_failed reason=%s", exc)
+        return None
+
+
+def _evaluate_with_llm(
+    *,
+    goal_summary: str,
+    interest_connections: list[str],
+    opportunity: dict,
+    tier: ModelTier,
+) -> EvaluationOutput:
     result = generate_structured(
         schema=EvaluationOutput,
         system=eval_prompt.SYSTEM,

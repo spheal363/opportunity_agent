@@ -14,6 +14,7 @@ from api.errors import register_error_handlers
 from config import get_settings
 from db.session import init_db
 from logging_config import get_logger, setup_logging
+from tools.fetch import close_fetcher
 from tools.search import close_provider
 
 settings = get_settings()
@@ -28,6 +29,7 @@ async def lifespan(_: FastAPI):
     yield
     close_client()
     close_provider()
+    close_fetcher()
 
 
 app = FastAPI(

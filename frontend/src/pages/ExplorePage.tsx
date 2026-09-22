@@ -155,7 +155,7 @@ export default function ExplorePage() {
                   <>
                     <button
                       type="button"
-                      onClick={() => navigate('/app/results')}
+                      onClick={() => navigate(runId ? `/app/results?run_id=${runId}` : '/app/results')}
                       className={`${PRIMARY} lte620:text-[13px] lte620:gap-[8px]`}
                     >
                       結果を見る ↗

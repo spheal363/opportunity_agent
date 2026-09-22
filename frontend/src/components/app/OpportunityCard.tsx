@@ -1,5 +1,6 @@
 import { POSE_SLOTS } from '../../utils/poses';
 import {
+  availabilityView,
   categoryLabel,
   coverLines,
   isSaved,
@@ -38,6 +39,7 @@ export function OpportunityCard({
   const saved = isSaved(status);
   const inSteps = isStep(status);
   const serendipity = isSerendipity(opportunity);
+  const availability = availabilityView(opportunity.availability);
 
   return (
     <article
@@ -95,6 +97,10 @@ export function OpportunityCard({
           <span>◷ {scheduleLabel(opportunity)}</span>
           {/* 参加費は一覧の Schema に無い。詳細で出す。 */}
           <span>⌖ {placeLabel(opportunity)}</span>
+          {/* 確認できた範囲だけを書く。確認していない状態を「受付中」とは書かない。 */}
+          <span className={availability.tone}>
+            {availability.mark} {availability.label}
+          </span>
         </div>
         {opportunity.reason ? (
           <p className="text-[14px] leading-[1.85] p-[12px] bg-[#f7f8f4] rounded-[5px] mt-[14px] mb-[17px] flex-1 text-[#596653]">

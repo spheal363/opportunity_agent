@@ -399,13 +399,12 @@ def test_page_reader_accepts_single_and_multiple_urls(monkeypatch):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             seen["urls"] = urls
             return [PageContent(url=u, title="t", content="c") for u in urls], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
 
     out = registry.invoke("read_page", url="https://a.com")
     assert seen["urls"] == ["https://a.com"]
@@ -421,12 +420,11 @@ def test_page_reader_reports_failed_urls(monkeypatch):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             return [PageContent(url=urls[0], title="t", content="c")], [urls[1]]
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url=["https://ok.com", "https://ng.com"])
 
     assert len(out.data["pages"]) == 1
@@ -493,13 +491,12 @@ def test_page_reader_rejects_non_http_schemes(monkeypatch, bad):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             called.append(urls)
             return [PageContent(url=u, title="t", content="c") for u in urls], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url=["https://ok.com", bad])
 
     # provider には渡さない
@@ -513,13 +510,12 @@ def test_page_reader_with_only_bad_urls_does_not_call_provider(monkeypatch):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             called.append(urls)
             return [], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url="file:///etc/passwd")
 
     assert called == []
@@ -533,12 +529,11 @@ def test_page_reader_truncates_huge_content(monkeypatch):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             return [PageContent(url=urls[0], title="t", content="あ" * 200_000)], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url="https://e.com")
 
     assert len(out.data["pages"][0].content) == MAX_CONTENT_CHARS
@@ -565,13 +560,12 @@ def test_page_reader_rejects_internal_hosts(monkeypatch, blocked):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             called.append(urls)
             return [], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url=["https://ok.com", blocked])
 
     assert called == [["https://ok.com"]]
@@ -583,12 +577,11 @@ def test_page_reader_allows_normal_hosts(monkeypatch):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             return [PageContent(url=u, title="t", content="c") for u in urls], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url=["https://connpass.com/e", "http://example.com/x"])
 
     assert len(out.data["pages"]) == 2
@@ -623,13 +616,12 @@ def test_page_reader_rejects_obfuscated_ips(monkeypatch, obfuscated):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             called.append(urls)
             return [], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url=["https://ok.com", obfuscated])
 
     assert called == [["https://ok.com"]]
@@ -656,12 +648,11 @@ def test_page_reader_allows_public_hosts(monkeypatch, ok):
 
     class Fake:
         name = "fake"
-        supports_extract = True
 
-        def extract(self, urls):
+        def fetch(self, urls):
             return [PageContent(url=u, title="t", content="c") for u in urls], []
 
-    monkeypatch.setattr("tools.page_reader.get_provider", lambda: Fake())
+    monkeypatch.setattr("tools.page_reader.get_fetcher", lambda: Fake())
     out = registry.invoke("read_page", url=ok)
     assert len(out.data["pages"]) == 1
 
@@ -689,3 +680,36 @@ def test_has_valid_tld_boundaries(host, expected):
     from tools.page_reader import _has_valid_tld
 
     assert _has_valid_tld(host) is expected
+
+
+# --- 地域・言語の指定（#65）------------------------------------------------
+#
+# 公式（docs.tavily.com）で確認した仕様:
+#   country   その国の結果を**押し上げる**（topic が general のときだけ）
+#   language  その言語の結果を**押し上げる**
+# **Serper の gl / hl と同じ意味ではない。** あちらはロケール指定。
+
+
+def test_locale_is_not_sent_by_default():
+    """**既定の挙動を変えない。** 指定が無ければパラメータを足さない。"""
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json=_body())
+
+    _provider(handler).search("q")
+    assert "country" not in seen
+    assert "language" not in seen
+
+
+def test_locale_is_sent_when_given():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json=_body())
+
+    _provider(handler).search("q", country="japan", language="ja")
+    assert seen["country"] == "japan"
+    assert seen["language"] == "ja"

@@ -13,6 +13,21 @@ export type OpportunityType =
 
 export type OpportunityFormat = 'offline' | 'online' | 'hybrid';
 
+/** 受付状況。`verified` とは別の軸。 */
+export type Availability = 'open' | 'closed' | 'unknown';
+
+/** 参加費の区分。backend/ai/schemas/extraction.py と対応。 */
+export type CostKind = 'free' | 'paid' | 'partially_free' | 'unknown';
+
+/** 締切が何に対するものか。backend/ai/schemas/extraction.py と対応。 */
+export type DeadlineKind =
+  | 'application'
+  | 'registration'
+  | 'early_bird'
+  | 'speaker'
+  | 'other'
+  | 'unknown';
+
 export type OpportunityStatus =
   | 'discovered'
   | 'recommended'
@@ -21,7 +36,13 @@ export type OpportunityStatus =
   | 'attended'
   | 'dismissed';
 
-/** GET /api/opportunities（TOP3 一覧） */
+/**
+ * `GET /api/opportunities`。ユーザーへ提示済みの候補**すべて**。
+ *
+ * **今回の探索が選んだ 3 件ではない。** 選定結果は
+ * `GET /api/agent/runs/{run_id}/result` で取る。こちらは保存一覧・次の一歩の
+ * 母集合なので、件数を絞らない。
+ */
 export type Opportunity = {
   opportunity_id: string;
   type: OpportunityType;
@@ -40,6 +61,43 @@ export type Opportunity = {
   match_reasons: string[];
 
   verified: boolean;
+
+  /**
+   * いま応募・参加できるか。**`verified`（情報を確認できたか）とは別の軸。**
+   * open は「受付中を確認できた」という意味で、参加資格や空き枠は保証しない。
+   */
+  availability: Availability;
+  availability_reason: string | null;
+  /** いつ時点の確認か。古い結果を今の状態として読まないために対で見る。 */
+  availability_checked_at: string | null;
+
+  /**
+   * 出典に時刻が書かれていたか。**false のとき時刻を表示しない。**
+   * 00:00 はこちら側の正規化であって、出典の値ではない。
+   */
+  /**
+   * 出典に時刻が書かれていたか。**`null` は「分からない」**で、
+   * `false`（出典に時刻があった）とは違う。どちらでもない限り時刻を出さない。
+   */
+  start_at_is_date_only: boolean | null;
+  deadline_is_date_only: boolean | null;
+  /**
+   * この URL は**申込先ではなく情報源**か。
+   *
+   * `true` のとき、申込先は確認できていない。取得元のページへのリンクとして
+   * 見せ、「申込先は未確認」と添える。**情報源を申込先として見せない。**
+   */
+  url_is_source_only: boolean;
+  /**
+   * 検証で**本文から読み取れた**申込先。読み取れなければ null。
+   *
+   * **同一サイトであることは根拠にしない。** 外部の申込サービス
+   * （Google Form、Peatix、connpass）を使う催しは多く、逆に同じサイトでも
+   * 申込ページとは限らない。
+   */
+  application_url: string | null;
+  /** 本人が取れる行動。特定できなければ null。 */
+  recommended_action: string | null;
   status: OpportunityStatus;
 };
 
@@ -50,6 +108,17 @@ export type OpportunityDetail = Opportunity & {
   format: OpportunityFormat | null;
   eligibility: string | null;
   cost: number | null;
+  /**
+   * 参加費の区分。**cost が null でも意味が違う。**
+   * 記載が無いのか、区分によって額が違うのか。
+   */
+  cost_kind: CostKind | null;
+
+  end_at_is_date_only: boolean | null;
+  /** その締切が何に対するものか。**早割の期限を申込締切として見せない。** */
+  deadline_kind: DeadlineKind | null;
+  /** 判断の根拠になったページ上の表記。 */
+  deadline_quote: string | null;
   verified_at: string | null;
   verification_source: string | null;
 };

@@ -1,0 +1,273 @@
+"""受付状況の判定。
+
+**`verified` とは別の軸。**
+
+  verified      その情報を公式ページで確認できたか
+  availability  いま応募・参加できるか
+
+確認できたうえで受付終了、ということがある。両方を持つ。
+
+**推測しない。** 締切が未来というだけでは `open` にしない（満員かもしれない）。
+`deadline` が null は「受付終了でも受付中でもない」ので `unknown`。
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from enum import StrEnum
+
+from ai.schemas.extraction import GATING_DEADLINES, DeadlineKind
+from schemas.opportunity import OpportunityType
+
+
+class Availability(StrEnum):
+    """いま応募・参加できるか。
+
+    **`open` は「受付中を確認できた」という意味。** 参加資格を満たすことや
+    空き枠があることまでは保証しない。画面の文言もその範囲に合わせる。
+    """
+
+    OPEN = "open"
+    CLOSED = "closed"
+    UNKNOWN = "unknown"
+
+
+# 開催が終われば参加できない種類。開始しただけでは終わらない。
+_ENDS = frozenset(
+    {
+        OpportunityType.EVENT,
+        OpportunityType.HACKATHON,
+        OpportunityType.COMPETITION,
+    }
+)
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    """SQLite から読んだ naive な日時を UTC とみなす。
+
+    **SQLite は tz を保持しない。** ORM 経由で読むと `tzinfo=None` で返るため、
+    そのまま `now(UTC)` と比べると TypeError になる。保存時は UTC へ揃えて
+    いる（`ai/schemas/extraction.to_utc`）ので、読み出し時に付け直す。
+    """
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def from_dates(
+    *,
+    opportunity_type: str | None,
+    deadline: datetime | None,
+    end_at: datetime | None,
+    now: datetime | None = None,
+    deadline_kind: str | None = None,
+    deadline_is_date_only: bool | None = None,
+    end_at_is_date_only: bool | None = None,
+    speaker_is_the_opportunity: bool = False,
+) -> tuple[Availability, str | None]:
+    """日時だけで判定する。評価より前に使う。
+
+    **`closed` と言い切れるものだけ `closed` にする。** 残りは `unknown`。
+    `start_at` は見ない。開始済みでも参加できる機会がある（community / job）し、
+    イベントでも当日参加できることがある。終わったかどうかは `end_at` で見る。
+
+    ## 締切は「何に対するものか」で扱いを変える
+
+    **ページ全体の受付状況を一括で決めない。** 同じページに
+    「登壇者募集は終了、一般参加は受付中」が並ぶ。
+
+    受付終了の根拠にしてよいのは、**推薦する行動（参加・応募）に対応する
+    締切だけ**。早割の期限や登壇者募集の締切が過ぎていても、参加はできる。
+
+    `deadline_kind` が None のものは、区分を持たなかった頃に抽出した行。
+    当時の prompt は `deadline` を「申込締切」として書かせていたので、
+    **その前提のまま扱う。** 後から意味を変えない。
+    """
+    now = now or datetime.now(UTC)
+
+    # **開催が終わっているかを先に見る。** いちばん確かな根拠で、
+    # 締切の種類に左右されない。
+    #
+    # 以前はここが締切の判定より後にあり、**参加の締切ではない締切が
+    # 過ぎていると、そこで打ち切って開催終了を見ていなかった。**
+    # 終わったハッカソンが「受付中」のまま残る原因になっていた。
+    end_at = as_utc(end_at)
+    if (
+        end_at is not None
+        and _is_past(end_at, now, date_only=end_at_is_date_only)
+        and _ends(opportunity_type)
+    ):
+        return Availability.CLOSED, "開催が終了しています"
+
+    deadline = as_utc(deadline)
+    if deadline is not None and _is_past(deadline, now, date_only=deadline_is_date_only):
+        gating, reason = _deadline_gates_action(
+            deadline_kind,
+            speaker_is_the_opportunity=speaker_is_the_opportunity,
+            opportunity_type=opportunity_type,
+        )
+        if gating:
+            return Availability.CLOSED, reason or "申込の締切が過ぎています"
+        # 過ぎていても参加はできる締切。**閉じる根拠にしない。**
+        return Availability.UNKNOWN, reason
+
+    # 締切が未来でも「受付中」とは限らない（満員・中止がある）。
+    #
+    # **まだ過ぎていない締切を「過ぎている」と書かない。** 早割の期限が
+    # 分かっていても、それは参加の締切ではないので、受付状況の説明としては
+    # 「参加の締切を確認できていない」が正しい。
+    if deadline is not None:
+        gating, _ = _deadline_gates_action(
+            deadline_kind,
+            speaker_is_the_opportunity=speaker_is_the_opportunity,
+            opportunity_type=opportunity_type,
+        )
+        # **参加の締切そのものなら、説明は要らない。** まだ過ぎていないだけ。
+        # 参加の締切でないものしか分かっていないときに、そう書く。
+        if not gating:
+            return Availability.UNKNOWN, _NOT_YET_REASON.get(
+                _kind_or_none(deadline_kind), "参加の締切を確認できていません"
+            )
+    return Availability.UNKNOWN, None
+
+
+def _kind_or_none(deadline_kind: str | None) -> DeadlineKind | None:
+    if deadline_kind is None:
+        return None
+    try:
+        return DeadlineKind(deadline_kind)
+    except ValueError:
+        return None
+
+
+# 締切が**まだ過ぎていない**ときの説明。前後で文面を分ける。
+_NOT_YET_REASON = {
+    DeadlineKind.SUBMISSION: "参加の締切を確認できていません（分かっているのは提出の締切です）",
+    DeadlineKind.EARLY_BIRD: "参加の締切を確認できていません（分かっているのは早割の期限です）",
+    DeadlineKind.SPEAKER: "参加の締切を確認できていません（分かっているのは登壇者募集の締切です）",
+    DeadlineKind.OTHER: "参加の締切を確認できていません",
+    DeadlineKind.UNKNOWN: "締切が何に対するものか特定できませんでした",
+}
+
+
+def _is_past(deadline: datetime, now: datetime, *, date_only: bool | None) -> bool:
+    """締切を過ぎているか。
+
+    **日付しか書かれていなかったものを、当日中に打ち切らない。**
+    時刻はこちら側が 00:00 に正規化した値で、出典にあった時刻ではない。
+    その日のうちは判断できないものとして残し、翌日以降に過ぎたとする。
+    """
+    # **`None`（不明）も日付だけとして扱う。** 確かめていない時刻で
+    # 当日中に打ち切らない。安全な側へ寄せる。
+    if date_only is not False:
+        return deadline.date() < now.date()
+    return deadline < now
+
+
+def _deadline_gates_action(
+    deadline_kind: str | None,
+    *,
+    speaker_is_the_opportunity: bool = False,
+    opportunity_type: str | None = None,
+) -> tuple[bool, str | None]:
+    """その締切が、**推薦する行動**を閉ざすものか。
+
+    同じ「登壇者募集の締切」でも、扱いは推薦する行動で変わる。
+
+      一般参加の機会を薦める -> 登壇締切は関係ない。閉じない
+      登壇機会そのものを薦める -> **その締切が行動を閉ざす**
+
+    「登壇締切は何も閉じない」とは一般化できない。
+    """
+    if deadline_kind is None:
+        # 区分を持たなかった頃の行。
+        #
+        # **当時の prompt がそう指示していたことは、保存された値が申込締切で
+        # ある保証にはならない。** 実際、同じ設定で早割の期限を締切として
+        # 拾った例が観測されている。
+        #
+        # それでも閉じるのは、閉じないと期限切れが推薦に戻るため。
+        # **確かさが違うことを理由の文面で示し、確認済みのものと混ぜない。**
+        return True, "申込の締切が過ぎています（**締切の種類は未確認**）"
+    try:
+        kind = DeadlineKind(deadline_kind)
+    except ValueError:
+        return False, "締切の区分が読み取れませんでした"
+
+    if kind in GATING_DEADLINES:
+        return True, None
+    if kind is DeadlineKind.SUBMISSION:
+        # **提出締切だけでは閉じない。**
+        #
+        # 種別が hackathon だから作品提出が必須、とは決められない。同じ
+        # 催しに一般観覧・聴講の枠があることがあり、提出が締まっても
+        # 参加はできる。**種別だけで全参加形態を閉ざさない。**
+        #
+        # 開催そのものが終わっていれば `end_at` で閉じる。そちらのほうが
+        # 確かな根拠で、参加形態に左右されない。
+        return False, "過ぎているのは提出の締切で、参加の締切ではありません"
+    if kind is DeadlineKind.SPEAKER and speaker_is_the_opportunity:
+        # 登壇機会そのものを薦めている。**この締切が行動を閉ざす。**
+        return True, "登壇者募集の締切が過ぎています"
+    if kind is DeadlineKind.UNKNOWN:
+        return False, "締切が何に対するものか特定できませんでした"
+    return False, _NON_GATING_REASON[kind]
+
+
+_NON_GATING_REASON = {
+    DeadlineKind.EARLY_BIRD: "過ぎているのは早割の期限で、参加の締切ではありません",
+    DeadlineKind.SPEAKER: "過ぎているのは登壇者募集の締切で、参加の締切ではありません",
+    DeadlineKind.OTHER: "過ぎている締切は、参加の締切ではありません",
+}
+
+
+def _ends(opportunity_type: str | None) -> bool:
+    try:
+        return OpportunityType(opportunity_type) in _ENDS
+    except ValueError:
+        return False
+
+
+def is_actionable(availability: str | None) -> bool:
+    """行動できる推薦に混ぜてよいか。
+
+    **`unknown` は混ぜる。** 確認できていないだけで、終わったとは限らない。
+    画面では「要確認」と示す。
+    """
+    return availability != Availability.CLOSED
+
+
+def for_extracted(item, *, now: datetime | None = None) -> tuple[Availability, str | None]:
+    """抽出結果 1 件の受付状況。**本番・比較・再判定・監査の共通入口。**
+
+    呼び出し側が引数を組み立て直すと、どれか 1 つで項目が抜ける。実際に、
+    監査と再判定で `end_at_is_date_only` や登壇判定を渡し忘れていた。
+    **組み立てはここ 1 か所に置く。**
+
+    `item` は `ExtractedOpportunity`、または同じ属性を持つ ORM 行。
+    """
+    from ai import evidence  # 循環 import を避けるためここで読む
+
+    return from_dates(
+        opportunity_type=_attr(item, "type"),
+        deadline=_attr(item, "deadline"),
+        end_at=_attr(item, "end_at"),
+        now=now,
+        deadline_kind=_kind_value(_attr(item, "deadline_kind")),
+        # **bool() で潰さない。** None（不明）を False にすると、
+        # 確かめていない時刻を「出典にあった」と扱うことになる。
+        deadline_is_date_only=_attr(item, "deadline_is_date_only"),
+        end_at_is_date_only=_attr(item, "end_at_is_date_only"),
+        speaker_is_the_opportunity=evidence.is_a_call_for_speakers(
+            _attr(item, "title"), _attr(item, "description")
+        ),
+    )
+
+
+def _attr(item, name: str):
+    return getattr(item, name, None)
+
+
+def _kind_value(kind) -> str | None:
+    """StrEnum でも文字列でも受ける。"""
+    return kind.value if isinstance(kind, DeadlineKind) else kind

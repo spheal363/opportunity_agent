@@ -10,6 +10,7 @@ CHEAP を使わない**。
 
 from datetime import date
 
+from ai import evidence
 from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
@@ -41,6 +42,7 @@ def extract_opportunity(
     *,
     today: date | None = None,
     tier: ModelTier = ModelTier.STANDARD,
+    source_title: str | None = None,
 ) -> ExtractedOpportunity:
     """1 ページから Opportunity の事実を抽出する。
 
@@ -50,12 +52,21 @@ def extract_opportunity(
     result = generate_structured(
         schema=ExtractedOpportunity,
         system=prompt.SYSTEM,
-        user=prompt.build_user(source_url, content, today=today),
+        user=prompt.build_user(source_url, content, today=today, source_title=source_title),
         # Untrusted Data を読ませるため CHEAP は使わない
         tier=tier,
         max_tokens=EXTRACTION_MAX_TOKENS,
     )
-    return result.data.to_utc()
+
+    # **Schema の検査とは別のこと。** あちらは「区分が正しく付いた場合に
+    # 整合性を保つ」だけで、区分自体が誤っていれば何も防げない。
+    # ここでは**実際に渡した入力の文字列**と突き合わせる。
+    item = evidence.ground_deadline_kind(result.data, content)
+    notes = evidence.check(item, content)
+    if notes:
+        # ページ本文は Log へ出さない。指摘の種類だけ残す。
+        logger.info("extraction.evidence url=%s notes=%s", source_url, "; ".join(notes))
+    return item.to_utc()
 
 
 def extract_many(
@@ -82,7 +93,15 @@ def extract_many(
         if not content:
             return src.url, None
         try:
-            return src.url, extract_opportunity(src.url, content, today=today, tier=tier)
+            return src.url, extract_opportunity(
+                src.url,
+                content,
+                today=today,
+                tier=tier,
+                # **取得元のタイトルを捨てない。** 本文の抜粋に見出しが
+                # 無いことがあり、実測でそれが Schema 不通過の原因になった。
+                source_title=getattr(src, "title", None),
+            )
         except LLMError as exc:
             # 例外メッセージにページ本文を載せない（_safe_reason 済みのものだけ）
             logger.warning("extraction.failed url=%s reason=%s", src.url, exc)
