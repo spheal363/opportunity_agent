@@ -22,6 +22,14 @@ enum の値に閉じていれば、書き手が動かせるのは「どの種類
 
 `type:other` も鍵にしない。分類できなかった候補の寄せ集めで、種類の好みを表さない。
 下げると、抽出が種類を決めきれなかっただけの候補まで一律に下がる。
+
+## どこに置くか
+
+学んだことは Agent Memory（`agent_memories`）に置く（`save`）。
+**UserProfile は書き換えない。** プロフィールは「その人がどんな人か」、
+Memory は「Agent がその人について学んだこと」（.claude/rules/architecture.md）。
+プロフィールの興味を書き換えて学習を表すと、本人が書いた内容と Agent の推測が
+見分けられなくなり、本人が直す手段も失われる。
 """
 
 from __future__ import annotations
@@ -35,7 +43,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from ai.evaluation import _SERENDIPITY_WEIGHT, SERENDIPITY_WEIGHT_RANGE
-from models import Feedback, Opportunity
+from models import AgentMemory, Feedback, Opportunity
 from schemas.feedback import Reaction
 from schemas.opportunity import OpportunityFormat, OpportunityStatus, OpportunityType
 
@@ -95,6 +103,13 @@ _COUNT_LABELS = (
 )
 # 振り返りの Log に並べる鍵の数。**Log を増やしすぎない。**
 _MAX_LOGGED_KEYS = 4
+
+# Agent Memory の種類（models/memory.py）。**この 2 種類だけを毎 run 置き換える。**
+# search_suggestion など、ここで作らない種類には触らない。
+PREFERENCE = "preference"
+INSIGHT = "insight"
+SERENDIPITY_KEY = "serendipity_weight"
+_INSIGHT_KEY = "feedback"
 
 
 # --------------------------------------------------------------------------
@@ -299,9 +314,63 @@ def collect(db: Session, user_id: str) -> list[Signal]:
     return signals
 
 
+def save(db: Session, user_id: str, learned: Learned) -> None:
+    """学んだことで、そのユーザーの Agent Memory を置き換える（#49）。
+
+    **差分で更新しない。** 毎 run すべての反応から作り直した結果で丸ごと入れ替える。
+    消すのと入れるのは同じ transaction で行い、途中で落ちても半端な Memory を残さない。
+
+      preference  key=`type:hackathon` など / weight / meta に件数
+                  key=`serendipity_weight`   / weight に学んだ重み
+      insight     value に学んだことの文（コードが鍵と件数から組み立てる）
+
+    反応が無くなった（候補が消えた等）ときは、前の学習も消える。
+    """
+    db.query(AgentMemory).filter(
+        AgentMemory.user_id == user_id, AgentMemory.kind.in_((PREFERENCE, INSIGHT))
+    ).delete(synchronize_session=False)
+    for p in learned.preferences:
+        db.add(
+            AgentMemory(
+                user_id=user_id,
+                kind=PREFERENCE,
+                key=p.key,
+                weight=p.weight,
+                meta={"evidence": p.evidence, "counts": dict(p.counts)},
+            )
+        )
+    if learned.serendipity_weight is not None:
+        db.add(
+            AgentMemory(
+                user_id=user_id,
+                kind=PREFERENCE,
+                key=SERENDIPITY_KEY,
+                weight=learned.serendipity_weight,
+                meta={"samples": learned.serendipity_samples, "default": _SERENDIPITY_WEIGHT},
+            )
+        )
+    if text := insight(learned):
+        db.add(
+            AgentMemory(
+                user_id=user_id,
+                kind=INSIGHT,
+                key=_INSIGHT_KEY,
+                value=text,
+                meta={"reacted": learned.reacted},
+            )
+        )
+    db.commit()
+
+
 def reflect(db: Session, user_id: str) -> Learned:
-    """前回までの反応を振り返る。run の冒頭で 1 回だけ呼ぶ。"""
-    return learn(collect(db, user_id))
+    """前回までの反応を振り返り、Agent Memory に残す。run の冒頭で 1 回だけ呼ぶ。
+
+    **保存した内容をそのまま返す。** 毎回すべての反応から作り直すので、
+    読み戻しても同じ値になる。
+    """
+    learned = learn(collect(db, user_id))
+    save(db, user_id, learned)
+    return learned
 
 
 # --------------------------------------------------------------------------
@@ -311,6 +380,25 @@ def reflect(db: Session, user_id: str) -> Learned:
 
 def _counts_text(counts: Mapping[str, int]) -> str:
     return "・".join(f"{label}{n}件" for key, label in _COUNT_LABELS if (n := counts.get(key)))
+
+
+def insight(learned: Learned) -> str | None:
+    """Agent が学んだことを文にする（Memory の insight）。学んだことが無ければ None。
+
+    例: 「ハッカソンへの反応が悪い（👎2件）。コミュニティへの反応が良い（👍1件）。」
+    """
+    parts: list[str] = []
+    for p in learned.preferences:
+        if p.weight > 0:
+            parts.append(f"{p.label}への反応が良い（{_counts_text(p.counts)}）")
+        elif p.weight < 0:
+            parts.append(f"{p.label}への反応が悪い（{_counts_text(p.counts)}）")
+    weight = learned.serendipity_weight
+    if weight is not None and weight > _SERENDIPITY_WEIGHT:
+        parts.append("意外性の高い候補への反応が良い")
+    elif weight is not None and weight < _SERENDIPITY_WEIGHT:
+        parts.append("意外性より目標に近い候補への反応が良い")
+    return "".join(f"{part}。" for part in parts) or None
 
 
 def describe(learned: Learned) -> str | None:
