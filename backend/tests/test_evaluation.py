@@ -9,11 +9,12 @@ import pytest
 
 from agent import loop
 from agent.state import AgentState
-from ai import evaluation
+from ai import evaluation, routing
 from ai.llm import LLMResult, LLMValidationError
 from ai.orcarouter import ModelTier
 from ai.prompts import evaluation as eval_prompt
 from ai.prompts import recommendation as rec_prompt
+from ai.routing import Step
 from ai.schemas.evaluation import EvaluationOutput
 from ai.schemas.goal_analysis import GoalAnalysisOutput
 from ai.schemas.recommendation import RecommendationOutput
@@ -82,7 +83,8 @@ def test_recommendation_prompt_requires_honesty_about_concerns():
 # --- evaluate_many --------------------------------------------------------
 
 
-def test_uses_standard_tier(monkeypatch):
+def test_declares_its_step_and_is_not_cheap(monkeypatch):
+    """抽出結果は外部由来。CHEAP は使わない（`ai/routing.py`）。"""
     seen = {}
 
     def fake(**kwargs):
@@ -92,7 +94,8 @@ def test_uses_standard_tier(monkeypatch):
     monkeypatch.setattr(evaluation, "generate_structured", fake)
     evaluation.evaluate(goal_summary="g", interest_connections=[], opportunity=_opp())
 
-    assert seen["tier"] is ModelTier.STANDARD
+    assert seen["step"] is Step.EVALUATION
+    assert routing.route_for(Step.EVALUATION).tier is not ModelTier.CHEAP
     assert seen["max_tokens"] >= 8192
 
 

@@ -11,8 +11,8 @@ from agent import loop
 from agent.state import AgentState
 from ai import search_plan
 from ai.llm import LLMResult
-from ai.orcarouter import ModelTier
 from ai.prompts import search_plan as prompt
+from ai.routing import Step
 from ai.schemas.goal_analysis import GoalAnalysisOutput
 from ai.schemas.search_plan import SearchDirection, SearchPlanOutput
 from config import Settings
@@ -77,7 +77,8 @@ def test_location_is_passed():
 # --- plan_search ----------------------------------------------------------
 
 
-def test_uses_standard_tier_and_raised_max_tokens(monkeypatch):
+def test_declares_its_step_and_raised_max_tokens(monkeypatch):
+    """tier は `ai/routing.py` が決める（#26-b）。ここでは工程名だけ見る。"""
     seen = {}
 
     def fake(**kwargs):
@@ -87,7 +88,7 @@ def test_uses_standard_tier_and_raised_max_tokens(monkeypatch):
     monkeypatch.setattr(search_plan, "generate_structured", fake)
     _plan()
 
-    assert seen["tier"] is ModelTier.STANDARD
+    assert seen["step"] is Step.SEARCH_PLAN
     assert seen["max_tokens"] >= 8192
 
 

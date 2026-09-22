@@ -15,6 +15,7 @@ from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import extraction as prompt
+from ai.routing import Step
 from ai.schemas.extraction import MAX_PAGE_CONTENT_CHARS, ExtractedOpportunity
 from logging_config import get_logger
 from tools.search.base import PageContent, SearchResult
@@ -41,7 +42,7 @@ def extract_opportunity(
     page_content: str,
     *,
     today: date | None = None,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
     source_title: str | None = None,
 ) -> ExtractedOpportunity:
     """1 ページから Opportunity の事実を抽出する。
@@ -53,7 +54,8 @@ def extract_opportunity(
         schema=ExtractedOpportunity,
         system=prompt.SYSTEM,
         user=prompt.build_user(source_url, content, today=today, source_title=source_title),
-        # Untrusted Data を読ませるため CHEAP は使わない
+        # Untrusted Data を読ませるため CHEAP は使わない（`ai/routing.py` が縛る）
+        step=Step.EXTRACTION,
         tier=tier,
         max_tokens=EXTRACTION_MAX_TOKENS,
     )
@@ -73,7 +75,7 @@ def extract_many(
     sources: list[SearchResult | PageContent],
     *,
     today: date | None = None,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> tuple[list[tuple[str, ExtractedOpportunity]], list[str]]:
     """複数ページから抽出する。
 

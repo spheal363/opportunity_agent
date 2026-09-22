@@ -8,10 +8,11 @@ import re
 import pytest
 
 from agent import loop
-from ai import goal_analysis
+from ai import goal_analysis, routing
 from ai.llm import LLMResult
 from ai.orcarouter import ModelTier
 from ai.prompts import goal_analysis as prompt
+from ai.routing import Step
 from ai.schemas.goal_analysis import GoalAnalysisInput, GoalAnalysisOutput
 from config import Settings
 from models import UserProfile
@@ -85,8 +86,13 @@ def test_empty_profile_fields_are_labelled():
 # --- analyze_goal ---------------------------------------------------------
 
 
-def test_uses_standard_tier(monkeypatch):
-    """プロフィール本文を読ませるため CHEAP は使わない。"""
+def test_declares_its_step_and_is_not_cheap(monkeypatch):
+    """プロフィール本文を読ませるため CHEAP は使わない。
+
+    tier は `ai/routing.py` が決める（#26-b）。ここでは**工程を名乗っているか**と、
+    **その工程が CHEAP でないか**を見る。tier の値を直接見ると、振り分けを
+    変えるたびにこのテストが「安くした」だけで落ちる。
+    """
     seen = {}
 
     def fake(**kwargs):
@@ -96,7 +102,8 @@ def test_uses_standard_tier(monkeypatch):
     monkeypatch.setattr(goal_analysis, "generate_structured", fake)
     goal_analysis.analyze_goal(_input())
 
-    assert seen["tier"] is ModelTier.STANDARD
+    assert seen["step"] is Step.GOAL_ANALYSIS
+    assert routing.route_for(Step.GOAL_ANALYSIS).tier is not ModelTier.CHEAP
     assert seen["schema"] is GoalAnalysisOutput
 
 

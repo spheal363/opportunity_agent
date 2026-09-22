@@ -9,10 +9,11 @@ from datetime import UTC, date, datetime
 import pytest
 from pydantic import ValidationError
 
-from ai import extraction
+from ai import extraction, routing
 from ai.llm import LLMResult, LLMValidationError
 from ai.orcarouter import ModelTier
 from ai.prompts import extraction as prompt
+from ai.routing import Step
 from ai.schemas.extraction import MAX_PAGE_CONTENT_CHARS, ExtractedOpportunity
 from tools.search.base import PageContent, SearchResult
 
@@ -132,8 +133,12 @@ def test_source_url_is_inside_untrusted_boundary():
 # --- extract_opportunity --------------------------------------------------
 
 
-def test_extract_uses_standard_tier(monkeypatch):
-    """Untrusted Data を読ませるため CHEAP は使わない。"""
+def test_extract_declares_its_step_and_is_not_cheap(monkeypatch):
+    """Untrusted Data を読ませるため CHEAP は使わない。
+
+    縛っているのは `ai/routing.py`（#26-b）。ここでは工程を名乗っていることと、
+    その工程が CHEAP でないことを見る。
+    """
     seen = {}
 
     def fake(**kwargs):
@@ -143,7 +148,8 @@ def test_extract_uses_standard_tier(monkeypatch):
     monkeypatch.setattr(extraction, "generate_structured", fake)
     extraction.extract_opportunity("https://e.com", "本文")
 
-    assert seen["tier"] is ModelTier.STANDARD
+    assert seen["step"] is Step.EXTRACTION
+    assert routing.route_for(Step.EXTRACTION).tier is not ModelTier.CHEAP
     assert seen["schema"] is ExtractedOpportunity
 
 

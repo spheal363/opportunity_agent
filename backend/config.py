@@ -82,6 +82,11 @@ class Settings(BaseSettings):
     # 検知と除去は本番と同じコードが行う。本番の探索では false のまま。
     demo_injection: bool = False
 
+    # --- モデル振り分け（#26-b）------------------------------------------
+    # LLM_ROUTING=policy    **既定。** 工程ごとの方針に従う（`ai/routing.py`）
+    # LLM_ROUTING=standard  表を無視して全工程 STANDARD。振り分け前へ戻す
+    llm_routing: str = "policy"  # policy | standard
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.frontend_url.split(",") if o.strip()]

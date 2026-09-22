@@ -11,6 +11,7 @@
 from ai.llm import generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import goal_analysis as prompt
+from ai.routing import Step
 from ai.schemas.goal_analysis import GoalAnalysisInput, GoalAnalysisOutput
 from logging_config import get_logger
 
@@ -23,7 +24,7 @@ GOAL_ANALYSIS_MAX_TOKENS = 8192
 def analyze_goal(
     profile: GoalAnalysisInput,
     *,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> GoalAnalysisOutput:
     """プロフィールから目標を構造化する。"""
     result = generate_structured(
@@ -36,7 +37,7 @@ def analyze_goal(
             goals=profile.goals,
             about=profile.about,
         ),
-        # プロフィール本文を読ませるため CHEAP は使わない
+        step=Step.GOAL_ANALYSIS,
         tier=tier,
         max_tokens=GOAL_ANALYSIS_MAX_TOKENS,
     )

@@ -25,7 +25,7 @@ from functools import lru_cache
 
 from pydantic import BaseModel, ValidationError
 
-from ai import cost
+from ai import cost, routing
 from ai.orcarouter import (
     DEFAULT_MAX_TOKENS,
     EmptyResponseError,
@@ -36,6 +36,7 @@ from ai.orcarouter import (
     ModelTier,
     OrcaRouterClient,
 )
+from ai.routing import Step
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -69,6 +70,19 @@ _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 class LLMValidationError(LLMError):
     """試行回数を使い切っても Schema に合う出力が得られなかった。"""
+
+
+@dataclass
+class _CallStats:
+    """1 論理呼び出しの中で実際に起きたこと。
+
+    **`usages` の数では代用できない。** 404 / timeout は usage が付かないので、
+    `len(usages)` で数えると「1 回も投げていない」ことになる。実際に、
+    Fallback して失敗した行が `attempts=0 fallbacks=0` と出た。
+    """
+
+    attempts: int = 0
+    fallbacks: int = 0
 
 
 @dataclass
@@ -142,13 +156,20 @@ def generate_structured[T: BaseModel](
     schema: type[T],
     system: str,
     user: str,
-    tier: ModelTier = ModelTier.STANDARD,
+    step: Step | None = None,
+    tier: ModelTier | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     client: OrcaRouterClient | None = None,
     temperature: float | None = None,
 ) -> LLMResult[T]:
     """LLM に JSON を返させ、`schema` で検証して返す。
+
+    tier の決め方は 3 段階。**呼び出し元がモデルを決め打ちしない。**
+
+        tier を明示   -> それを使う（比較実験と一部のテストだけ）
+        step を渡す   -> `ai/routing.py` の方針に従う（本番の経路）
+        どちらも無し  -> STANDARD。振り分けを入れる前と同じ
 
     再試行するのは以下の場合のみ:
       - リトライ可能なリクエストエラー（429 / 5xx / timeout / 空応答）
@@ -166,13 +187,15 @@ def generate_structured[T: BaseModel](
     llm = client or get_client()
     # 工程構成上の呼び出し数。**実際に投げた回数とは別**（Retry / Fallback で増える）。
     cost.record_logical_call()
-    tiers = (tier, *_FALLBACK_TIERS.get(tier, ()))
+    requested, why = _resolve_tier(step, tier)
+    tiers = (requested, *_FALLBACK_TIERS.get(requested, ()))
     last: Exception | None = None
     usages: list[LLMUsage] = []
+    stats = _CallStats()
 
     for index, current_tier in enumerate(tiers):
         try:
-            return _attempt_with_tier(
+            result = _attempt_with_tier(
                 llm=llm,
                 schema=schema,
                 system=system,
@@ -182,6 +205,7 @@ def generate_structured[T: BaseModel](
                 max_tokens=max_tokens,
                 temperature=temperature,
                 usages=usages,
+                stats=stats,
             )
         except LLMError as exc:
             last = exc
@@ -190,17 +214,92 @@ def generate_structured[T: BaseModel](
                 # Fallback 先が未設定などで落ちても、前の tier では課金されている。
                 # コスト記録（#26）がこれを使う。
                 exc.usages = list(usages)
+                _log_routing(
+                    step=step,
+                    requested=requested,
+                    why=why,
+                    usages=usages,
+                    stats=stats,
+                    failed=True,
+                )
                 raise
+            stats.fallbacks += 1
             cost.record_fallback()
             logger.warning(
-                "llm.fallback from=%s to=%s schema=%s reason=%s",
+                "llm.fallback step=%s from=%s to=%s schema=%s reason=%s",
+                _step_name(step),
                 current_tier.value,
                 tiers[index + 1].value,
                 schema.__name__,
                 _safe_reason(exc),
             )
+        else:
+            _log_routing(
+                step=step,
+                requested=requested,
+                why=why,
+                usages=usages,
+                stats=stats,
+                failed=False,
+            )
+            return result
 
     raise last  # 到達しない（ループ内で必ず return か raise する）
+
+
+def _resolve_tier(step: Step | None, tier: ModelTier | None) -> tuple[ModelTier, str]:
+    """使う tier と、その理由を決める。**決め方はここだけ。**"""
+    if tier is not None:
+        return tier, "呼び出し元が指定"
+    if step is None:
+        # 工程を渡していない呼び出し（テストと旧経路）。
+        # **黙って安いほうへ倒さない。** 振り分け前と同じ既定にする。
+        return ModelTier.STANDARD, "工程の指定が無いため既定"
+    route = routing.route_for(step)
+    return route.tier, route.reason
+
+
+def _step_name(step: Step | None) -> str:
+    # 工程を渡していない呼び出しでも、cost 側の工程名が分かればそれを使う。
+    return step.value if step is not None else (cost.current_step() or "-")
+
+
+def _log_routing(
+    *,
+    step: Step | None,
+    requested: ModelTier,
+    why: str,
+    usages: list[LLMUsage],
+    stats: _CallStats,
+    failed: bool,
+) -> None:
+    """1 回の論理呼び出しの結果を 1 行に残す（#26-b / #54）。
+
+    **要求した tier と、実際に答えたモデルを別々に出す。** 同じ行に無いと
+    「振り分けが効いたのか、Fallback で上がったのか」を後から言い分けられない。
+
+    実費は取れた分だけ出す。**取れなければ `-`。** 0 と書くと無料に見える。
+    Secret とプロンプト本文は出さない。
+    """
+    last = usages[-1] if usages else None
+    actual = [u.cost_usd for u in usages if u.cost_usd is not None]
+    # **実費は全ての試行で取れたときだけ出す。** usage が付かなかった試行が
+    # あるのに合計を出すと、その分を 0 円として足したことになる。
+    known = bool(usages) and len(actual) == len(usages) == stats.attempts
+    logger.info(
+        "llm.routed step=%s requested=%s why=%s model=%s attempts=%d "
+        "fallbacks=%d tokens=%d reasoning=%d usd=%s result=%s",
+        _step_name(step),
+        requested.value,
+        why,
+        last.model if last else "-",
+        stats.attempts,
+        stats.fallbacks,
+        sum(u.total_tokens for u in usages),
+        sum(u.reasoning_tokens for u in usages),
+        f"{sum(actual):.6f}" if known else "-",
+        "failed" if failed else "ok",
+    )
 
 
 def _attempt_with_tier[T: BaseModel](
@@ -214,6 +313,7 @@ def _attempt_with_tier[T: BaseModel](
     max_tokens: int,
     temperature: float | None,
     usages: list[LLMUsage],
+    stats: _CallStats,
 ) -> LLMResult[T]:
     """1 つの tier で Retry まで回しきる。Fallback の判断は呼び出し元。"""
     current_max_tokens = max_tokens
@@ -225,6 +325,7 @@ def _attempt_with_tier[T: BaseModel](
 
     for attempt in range(1, max_attempts + 1):
         try:
+            stats.attempts += 1
             res = llm.chat(
                 messages,
                 tier=tier,

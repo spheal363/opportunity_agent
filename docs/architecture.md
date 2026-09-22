@@ -114,13 +114,43 @@ Tool には権限レベルを持たせ、LLM が騙されても重要操作を�
 
 ## Cost / Reliability
 
-- OrcaRouter でモデルを振り分ける（単純な分類は cheap、重要な判断は powerful）
+### 工程ごとのモデル振り分け
+
+方針は `backend/ai/routing.py` の 1 か所だけ。工程名ではなく
+**入力の出所・判断の重さ・呼び出し数・許容できる時間**で決める。
+判断の根拠と実測は `docs/experiments/26-routing.md`。
+
+| 工程 | 入力の出所 | 通常 tier | 上位へ移る条件 | 理由 |
+| --- | --- | --- | --- | --- |
+| ① 目標分析 | プロフィール自由文 | STANDARD | Fallback のみ | `about` に指示文を書ける |
+| ② 検索計画 | ①の出力 + 活動地域 | STANDARD | Fallback のみ | 外部本文は読まない。CHEAP を実測したが不合格 |
+| 事前選別 | 検索結果 | **LLM なし**（Jev） | — | OrcaRouter を通らない |
+| ③ 抽出 | **Web 本文** | STANDARD | Fallback のみ | 外部本文を直接読む。**CHEAP 禁止** |
+| ④ 評価 | ③の抽出結果 | STANDARD（Jev 優先） | Fallback のみ | 外部由来。要約を経ても trusted にしない |
+| ⑤ TOP3 選定 | ④のスコア | **LLM なし** | — | コードで決まる |
+| ⑥ 推薦理由 | ③④の結果 | STANDARD | Fallback のみ | 外部由来を読み、画面にそのまま出る |
+| ⑦ 検証 | **公式ページ本文** | STANDARD | Fallback のみ | 外部本文を直接読む。**CHEAP 禁止** |
+| ⑧ Reflection | — | **未実装** | — | Schema のみ。Agent Loop へ未接続 |
+
+**外部由来のデータを読む工程に CHEAP を使わない。** cheap は Prompt Injection に
+1/2 で突破される実測がある。表を書き換えても `routing._check_table` が import 時に落とす。
+
+**POWERFUL は通常 tier に置かない。** 1 呼び出し 4.5 秒かかる。
+上がるのは STANDARD が試行を使い切ったときだけ。
+
+`LLM_ROUTING=standard` で表を無視して全工程 STANDARD に戻せる。
+
+### その他
+
 - 絞り込みは `Rule/Embedding → Cheap LLM → Powerful LLM` の段階式にして、
-  全件を高性能モデルへ投げない
-- 🚧 `agent_runs.cost_jpy` / `expensive_model_calls` にコストを記録する
-  （列と DB 同期は実装済み。`AgentState` の値を加算する処理が無いため常に 0）
+  全件を高性能モデルへ投げない（現状は Jev による事前選別とコードによる TOP3 選定）
+- `agent_runs.cost_jpy` / `expensive_model_calls` にコストを記録する（実装済み）。
+  **見積もりであって請求額ではない。** `ORCAROUTER_INCLUDE_COST=true` のときだけ
+  実費も別欄に記録する
 - LLM 失敗時は Retry → Fallback Model → Agent 再開。
   **モデル障害 ≠ Agent 全体停止**
+- 1 論理呼び出しにつき `llm.routed` を 1 行残す（工程・選択理由・要求 tier・
+  実際のモデル・試行数・Fallback 数・トークン・実費）
 
 ## DB
 
