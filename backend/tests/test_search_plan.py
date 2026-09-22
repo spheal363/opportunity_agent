@@ -196,3 +196,66 @@ def test_real_mode_requires_goal_analysis_first(monkeypatch):
     state = AgentState(run_id="r", user_id="u")  # goal_analysis が None
     with pytest.raises(RuntimeError, match="goal analysis の前に"):
         loop._plan_search(state, UserProfile(user_id="u", name="N"))
+
+
+# --- 希望を落とさず後段へ渡す（#47）----------------------------------------
+
+
+def test_the_wishes_reach_the_prompt():
+    """**実測で、7 行の希望が要約 1〜2 文へ潰れて後段へ渡っていた。**
+
+    音楽・曲作り・ポケモンが消え、起業とプロダクト開発だけが残った。
+    要約ではなく、希望そのものを渡す。
+    """
+    user = prompt.build_user(
+        goal_summary="エンジニアとしてプロダクトを作りたい",
+        goal_directions=["Product development"],
+        interests=[],
+        wanted_now=["ハウス/テクノの音楽イベント", "曲作りのワークショップ", "ポケモンのイベント"],
+        background_goals=["将来の起業"],
+    )
+
+    for wish in ("ハウス/テクノの音楽イベント", "曲作りのワークショップ", "ポケモンのイベント"):
+        assert wish in user, f"希望が prompt に届いていない: {wish}"
+    assert "将来の起業" in user
+
+
+def test_the_background_goal_is_marked_as_not_required():
+    """**背景目標を今回の必須条件にしない。** 全部の候補に起業を絡めさせない。"""
+    user = prompt.build_user(
+        goal_summary="g",
+        goal_directions=[],
+        interests=[],
+        wanted_now=["ポケモンのイベント"],
+        background_goals=["将来の起業"],
+    )
+    assert "今回の必須条件ではない" in user
+
+
+def test_the_prompt_asks_for_one_direction_per_wish():
+    assert "「今回探したい機会」が与えられていたら、そのそれぞれに" in prompt.SYSTEM
+
+
+def test_the_prompt_forbids_adding_other_interests_as_a_condition():
+    """単独の趣味のイベントを、他の興味との掛け合わせに変えさせない。"""
+    assert "他の興味を条件として足さない" in prompt.SYSTEM
+
+
+def test_plan_search_passes_the_wishes_through(monkeypatch):
+    """`plan_search` -> prompt の経路で落ちないこと。"""
+    seen = {}
+
+    def fake(**kwargs):
+        seen.update(kwargs)
+        return _Result(_dir(serendipity=True))
+
+    monkeypatch.setattr(search_plan, "generate_structured", fake)
+    search_plan.plan_search(
+        goal_summary="g",
+        goal_directions=[],
+        interest_connections=[],
+        wanted_now=["ポケモンのイベント"],
+        background_goals=["将来の起業"],
+    )
+
+    assert "ポケモンのイベント" in seen["user"]

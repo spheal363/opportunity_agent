@@ -29,6 +29,8 @@ def plan_search(
     interest_connections: list[str],
     location: str | None = None,
     window: str | None = None,
+    wanted_now: list[str] | None = None,
+    background_goals: list[str] | None = None,
     tier: ModelTier | None = None,
 ) -> list[SearchDirection]:
     """検索方向を組み立てる。"""
@@ -41,6 +43,8 @@ def plan_search(
             interests=interest_connections,
             location=location,
             window=window,
+            wanted_now=wanted_now,
+            background_goals=background_goals,
         ),
         step=Step.SEARCH_PLAN,
         tier=tier,

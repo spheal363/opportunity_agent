@@ -1,6 +1,6 @@
 import type { Opportunity } from '../../types';
 import { splitCandidates } from '../../utils/candidates';
-import { formatDateTime } from '../../utils/date';
+import { formatDateOrDateTime } from '../../utils/date';
 import { availabilityLabel } from '../../utils/display';
 import { EYEBROW } from './styles';
 
@@ -56,9 +56,9 @@ export function CandidateSections({ selected, others, hasWindow }: Props) {
                   <dt className="text-muted">種類</dt>
                   <dd className="m-0">{o.type}</dd>
                   <dt className="text-muted">日時</dt>
-                  <dd className="m-0">{formatDateTime(o.start_at)}</dd>
+                  <dd className="m-0">{formatDateOrDateTime(o.start_at, o.start_at_is_date_only)}</dd>
                   <dt className="text-muted">申込締切</dt>
-                  <dd className="m-0">{formatDateTime(o.deadline)}</dd>
+                  <dd className="m-0">{formatDateOrDateTime(o.deadline, o.deadline_is_date_only)}</dd>
                   <dt className="text-muted">期間</dt>
                   <dd className="m-0">{o.window_note ?? '—'}</dd>
                   <dt className="text-muted">受付</dt>

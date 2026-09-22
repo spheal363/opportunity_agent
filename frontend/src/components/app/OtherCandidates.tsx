@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import type { Opportunity } from '../../types';
-import { formatDateTime } from '../../utils/date';
+import { formatDateOrDateTime } from '../../utils/date';
 import { availabilityLabel } from '../../utils/display';
 import { EYEBROW, TEXT_BUTTON } from './styles';
 
@@ -48,7 +48,7 @@ export function OtherCandidates({ items, window: win }: Props) {
                 <dt className="text-muted">種類</dt>
                 <dd className="m-0">{o.type}</dd>
                 <dt className="text-muted">日時</dt>
-                <dd className="m-0">{formatDateTime(o.start_at)}</dd>
+                <dd className="m-0">{formatDateOrDateTime(o.start_at, o.start_at_is_date_only)}</dd>
                 <dt className="text-muted">期間</dt>
                 <dd className="m-0">{o.window_note ?? '—'}</dd>
                 <dt className="text-muted">受付</dt>

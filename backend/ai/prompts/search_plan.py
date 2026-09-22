@@ -32,6 +32,13 @@ SYSTEM = (
     "規則:\n"
     f"1. search_directions は {MIN_DIRECTIONS}〜{MAX_DIRECTIONS} 個にする。"
     "数がそのまま検索コストになるため増やしすぎない。\n"
+    "1-b. **「今回探したい機会」が与えられていたら、そのそれぞれに"
+    "最低 1 つの方向を作る。** ここが最優先。\n"
+    "   - **他の興味を条件として足さない。** 「ポケモンのイベント」に"
+    "エンジニアリングや AI を掛けない。単独の趣味のイベントもそのまま探す\n"
+    "   - 数が上限を超えるときは、**先に書かれたものから順に**覆う\n"
+    "   - 「背景目標」は今回の必須条件ではない。"
+    "**背景目標だけの方向で枠を埋めない**\n"
     "2. **「探索の軸」は、どれも最低 1 つの方向で覆う。**"
     "軸が 2 つあるのに片方しか扱わない計画を作らない。"
     f"軸が {MAX_DIRECTIONS} 個を超えるときは、上から順に覆えるだけ覆う。\n"
@@ -77,16 +84,22 @@ def build_user(
     interests: list[str],
     location: str | None = None,
     window: str | None = None,
+    wanted_now: list[str] | None = None,
+    background_goals: list[str] | None = None,
 ) -> str:
     """Goal 分析の結果を user メッセージに組み立てる。
 
     goal_summary はプロフィール由来の内容を言い換えたものなので、
     プロフィールと同じく囲んで渡す。
     """
+    wanted_now = wanted_now or []
+    background_goals = background_goals or []
     lines = [
         f"目標: {goal_summary}",
         f"探索の軸: {', '.join(goal_directions) or '未設定'}",
         f"興味の交差点: {', '.join(interests) or '未設定'}",
+        f"今回探したい機会: {' / '.join(wanted_now) or '指定なし'}",
+        f"背景目標（今回の必須条件ではない）: {' / '.join(background_goals) or '指定なし'}",
         f"活動地域: {location or '不明'}",
         # **期間も囲みの内側に置く。** 外に置くと system 直後に並ぶ。
         f"対象期間: {window or '指定なし'}",

@@ -139,6 +139,14 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         with cost.step("goal_analysis"):
             state.goal_analysis = _analyze_goal(profile)
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
+        # **分析の全出力を残す。** 要約しか記録していなかったため、
+        # 「どこで希望が落ちたか」を後から追えなかった（#47）。
+        run = db.get(AgentRun, run_id)
+        if run is not None:
+            run.goal_analysis = state.goal_analysis.model_dump()
+            db.commit()
+        for wanted in state.goal_analysis.wanted_now:
+            _log(db, state, AgentStep.ANALYZING_PROFILE, f"今回探したい機会: {wanted}")
 
         _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
         with cost.step("search_plan"):
@@ -219,6 +227,10 @@ def _plan_search(state: AgentState, profile: UserProfile) -> list[SearchDirectio
         goal_summary=goal.goal_summary,
         goal_directions=goal.goal_directions,
         interest_connections=goal.interest_connections,
+        # **要約だけを渡さない。** 実測で、7 行の希望が要約 1〜2 文へ潰れ、
+        # 起業とプロダクト開発だけが後段へ渡っていた（#47）。
+        wanted_now=goal.wanted_now,
+        background_goals=goal.background_goals,
         location=profile.location,
         # **run 開始時に確定した期間**を明示して渡す（#47）。
         window=(f"{win.start:%Y年%m月%d日}〜{win.end:%Y年%m月%d日}" if win else None),

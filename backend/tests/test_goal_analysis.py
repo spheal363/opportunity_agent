@@ -189,3 +189,42 @@ def test_real_mode_handles_missing_list_fields(monkeypatch, empty):
 
     row = UserProfile(user_id="user_001", name="N", skills=empty, interests=empty, goals=empty)
     assert loop._analyze_goal(row).goal_summary
+
+
+# --- 今回の希望と背景目標を分ける（#47）------------------------------------
+
+
+def test_the_prompt_asks_to_split_now_from_background():
+    """**実測で、7 行の希望が要約へ潰れ起業だけが残った。**
+
+    「今回参加したい機会」と「将来の目標」を分けて出させる。
+    """
+    assert "wanted_now" in prompt.SYSTEM
+    assert "background_goals" in prompt.SYSTEM
+    assert "書かれた希望を 1 つも落とさない" in prompt.SYSTEM
+
+
+def test_the_prompt_accepts_hobbies_as_wishes():
+    """趣味・遊びの希望を「成長につながらない」と落とさせない。"""
+    assert "趣味・遊び・娯楽も対象" in prompt.SYSTEM
+
+
+def test_the_prompt_forbids_turning_a_single_interest_into_a_crossing():
+    """「ポケモンのイベント」を「ポケモン × エンジニアリング」にしない。"""
+    assert "他の興味との関連を条件として足さない" in prompt.SYSTEM
+
+
+def test_crossings_are_optional():
+    """交差点が無い希望もそのまま扱う。**必須にすると単独の趣味が消える。**"""
+    assert "交差点は必須ではない" in prompt.SYSTEM
+    assert GoalAnalysisOutput(goal_summary="g").interest_connections == []
+
+
+def test_the_output_keeps_the_wishes_separately():
+    out = GoalAnalysisOutput(
+        goal_summary="g",
+        wanted_now=["ポケモンのイベント", "ハウス/テクノの音楽イベント"],
+        background_goals=["将来の起業"],
+    )
+    assert out.wanted_now == ["ポケモンのイベント", "ハウス/テクノの音楽イベント"]
+    assert out.background_goals == ["将来の起業"]

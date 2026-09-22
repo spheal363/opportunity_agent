@@ -37,6 +37,9 @@ class AgentRun(Base):
     # **run 開始時に確定した値をそのまま残す。** 後から今日の日付で作り直さない。
     search_window: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # ① Goal Analysis の全出力（#47）。**要約だけでは追跡できない。**
+    goal_analysis: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # 検索で見つかった候補（#47）。[{title, url, direction}]。
     # **本文を読んだかどうかに関わらず全件。** 読んだ分だけが Opportunity 行になる。
     # 保存するのはタイトルと URL だけで、**本文は残さない**。
