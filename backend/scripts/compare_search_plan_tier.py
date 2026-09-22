@@ -191,6 +191,14 @@ def _quality(case: dict, out: SearchPlanOutput) -> dict:
         "recruiting_words": sum(1 for q in queries if any(w in q.lower() for w in _RECRUITING)),
         "article_words": [w for w in _ARTICLE_WORDS if w in joined],
         # 目標の軸をどれも落としていないこと。**片方だけ扱う計画を作らせない。**
+        #
+        # **これは既知の失敗の再発検知であって、品質の判定器ではない。**
+        # 保存済み 24 件を原文と照合した結果は docs/experiments/26-routing.md。
+        #   - 判別力があるのは Entrepreneurship 軸だけ。他の 3 軸は一度も落ちない
+        #     （`tech` や「デザイン」は全クエリに当たる）
+        #   - 語の一覧に無い言い換え（新規事業 / ビジコン / アントレプレナー）は見逃す
+        #   - 連結した文字列への部分一致なので、**どの方向で当たったかを見ていない。**
+        #     1 本の方向が 2 つの軸を満たしたことになる回が実データにある
         "covers_all_goals": all(
             any(w.lower() in joined.lower() for w in words) for words in case["must_cover"].values()
         ),
