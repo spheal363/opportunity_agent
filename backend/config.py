@@ -125,11 +125,11 @@ class Settings(BaseSettings):
     listing_stop_after_empty_rounds: int = 2
 
     # --- 探索経路（#47）---------------------------------------------------
-    # SEARCH_ROUTE=legacy     **既定。** 従来の 検索->精読->抽出->評価->推薦
-    # SEARCH_ROUTE=discovery  検索専用モデルで候補を集め、一覧を先に出す
+    # SEARCH_ROUTE=discovery  **既定。** 検索専用モデルで候補を集め、一覧を先に出す
+    # SEARCH_ROUTE=legacy     従来の 検索->精読->抽出->評価->推薦
     #
-    # **旧経路は壊さない。** 切り替えで戻せる。
-    search_route: str = "legacy"  # legacy | discovery
+    # **旧経路は壊さない。** `SEARCH_ROUTE=legacy` で戻せる。
+    search_route: str = "discovery"  # discovery | legacy
     # 検索専用モデル。内蔵検索が応答に含まれる（`web_search_options`）。
     discovery_model: str = "openai/gpt-5-search-api"
     # 希望ごとに何件求めるか。**必達ノルマではない。水増しさせない。**
@@ -153,7 +153,12 @@ class Settings(BaseSettings):
 #
 # 以前は鍵が無いと検索が方向ごとに失敗し、候補 0 件で終わっていた。
 # 「何も見つからなかった」と「鍵が無い」は別のこと。
-_REQUIRED_KEYS = {
+# 旧経路（legacy）で、その設定のときに要る鍵。
+# **足りなければ黙って別構成へ落とさない。**
+#
+# 以前は鍵が無いと検索が方向ごとに失敗し、候補 0 件で終わっていた。
+# 「何も見つからなかった」と「鍵が無い」は別のこと。
+_LEGACY_REQUIRED_KEYS = {
     "search_provider": {
         "tavily": ("search_api_key", "SEARCH_API_KEY"),
         "serper": ("serper_api_key", "SERPER_API_KEY"),
@@ -166,16 +171,32 @@ FALLBACK_TO_A = "SEARCH_PROVIDER=tavily PAGE_FETCHER=tavily EVALUATOR=llm SEARCH
 
 
 def missing_keys(settings: "Settings") -> list[str]:
-    """いまの構成に足りない鍵。**空なら走らせてよい。**
+    """**いま走らせる経路が実際に使う**鍵のうち、足りないもの。空なら走ってよい。
 
-    `page_fetcher=jina` は鍵が無くても動く（20 RPM）ので、ここには挙げない。
+    経路によって使うサービスが違う。使わないサービスの鍵で探索を止めない。
+
+        discovery  OrcaRouter だけ。検索はモデルの内側で行われる
+        legacy     OrcaRouter ＋ その設定の検索 provider ＋ 評価器
+
+    **任意機能の鍵はここで見ない。** 詳細確認（Jina）や Calendar が
+    未設定でも、通常の検索は止めない。**その機能を使う時点で確かめる。**
+    （`page_fetcher=jina` は鍵が無くても動く。20 RPM）
     """
     missing: list[str] = []
-    for field, table in _REQUIRED_KEYS.items():
+
+    # **どの経路でも LLM は要る。** ここが無いと何も始まらない。
+    if not settings.orcarouter_api_key:
+        missing.append("ORCAROUTER_API_KEY（どの経路でも必要）")
+
+    if settings.search_route.strip().lower() == "discovery":
+        # 検索はモデルの内側。**Serper も Jev も使わない。**
+        return missing
+
+    for field, table in _LEGACY_REQUIRED_KEYS.items():
         chosen = (getattr(settings, field) or "").strip().lower()
         need = table.get(chosen)
         if need and not getattr(settings, need[0]):
-            missing.append(f"{need[1]}（{field}={chosen} に必要）")
+            missing.append(f"{need[1]}（SEARCH_ROUTE=legacy の {field}={chosen} に必要）")
     return missing
 
 

@@ -106,12 +106,20 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         if not settings.agent_stub_mode and (missing := config_missing_keys(settings)):
             # **黙って別構成へ落とさない。** 鍵が無いことと、候補が
             # 見つからないことは別。理由が分かる形で止める。
+            # **どの経路の話かを書く。** 使わないサービスの鍵を
+            # 求めているように見えないようにする。
+            route = settings.search_route.strip().lower()
+            hint = (
+                f"旧経路へ戻すには SEARCH_ROUTE=legacy（そのときは {FALLBACK_TO_A}）"
+                if route == "discovery"
+                else f"構成 A へ戻すには {FALLBACK_TO_A}"
+            )
             _fail(
                 db,
                 state,
-                "探索に必要な設定が足りません: "
+                f"探索に必要な設定が足りません（SEARCH_ROUTE={route}）: "
                 + "、".join(missing)
-                + f"。構成 A へ戻すには {FALLBACK_TO_A}",
+                + f"。{hint}",
             )
             return
         profile = db.get(UserProfile, user_id)
@@ -145,7 +153,9 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         # ⑧ Reflection は run の冒頭で行う（フィードバックを受けた時点ではない）。
         # 毎回すべての反応から作り直すので、押した順番や途中で落ちた run に左右されない。
         # **AgentStep は増やさない**（API Schema の変更になる）。プロフィール分析の一部として出す。
-        learned = _reflect(db, state)
+        # **経路によって、学習を使うかが違う。** Log の書き方を合わせる。
+        route = settings.search_route.strip().lower()
+        learned = _reflect(db, state, applies=route != "discovery")
         with cost.step("goal_analysis"):
             state.goal_analysis = _analyze_goal(profile)
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
@@ -158,7 +168,7 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         for wanted in state.goal_analysis.wanted_now:
             _log(db, state, AgentStep.ANALYZING_PROFILE, f"今回探したい機会: {wanted}")
 
-        if settings.search_route.strip().lower() == "discovery":
+        if route == "discovery":
             # **新しい探索経路（#47）。** 旧経路は下にそのまま残してある。
             #
             # 一覧段階では 検索計画 / 本文抽出 / TOP3 推薦 / 全件検証 を行わない。
@@ -215,11 +225,15 @@ def _public_error(exc: Exception) -> str:
 # --------------------------------------------------------------------------
 
 
-def _reflect(db: Session, state: AgentState) -> reflection.Learned:
+def _reflect(db: Session, state: AgentState, *, applies: bool) -> reflection.Learned:
     """⑧ Reflection。前回までの反応を振り返る（#48）。
 
     **LLM を使わない**ので stub でも同じコードが走る（API キー無しのデモでも見える）。
     振り返りに失敗しても探索は止めない。学習を反映しない、いつもの探索に戻るだけ。
+
+    `applies` は、この run の経路が学習を**実際に使うか**。
+    **使わない経路で「反映しました」と読める Log を出さない（#47）。**
+    検索専用モデルの経路は、反応を検索にも評価にも渡していない。
     """
     try:
         learned = reflection.reflect(db, state.user_id, run_id=state.run_id)
@@ -234,6 +248,9 @@ def _reflect(db: Session, state: AgentState) -> reflection.Learned:
         )
         return reflection.NOTHING
     if message := reflection.describe(learned):
+        if not applies:
+            # **この経路では今回の検索・評価に渡していない。** そう書く。
+            message += "（この探索では反映していません。反応は次に活かせるよう保存しています）"
         _log(db, state, AgentStep.ANALYZING_PROFILE, message)
     return learned
 

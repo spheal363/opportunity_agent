@@ -456,7 +456,7 @@ def _run(client) -> str:
     return run_id
 
 
-def test_stub_rerun_changes_order_after_feedback(client, profile_payload, db):
+def test_stub_rerun_changes_order_after_feedback(client, profile_payload, db, legacy_route):
     """run → 👎（ハッカソン）👍（コミュニティ）→ 再 run で順位が変わり、Log に出る。"""
     assert client.put("/api/profile", json=profile_payload, headers=PAGE).status_code == 200
     first = _run(client)

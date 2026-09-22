@@ -198,3 +198,97 @@ def test_ホームは他人のrunを返さない(db):
     db.commit()
     assert agent_service.latest_result(db, DEFAULT_USER_ID).run_id == "r_mine"
     assert agent_service.latest_result(db, "user_other") is None
+
+
+# --- 既定の経路（#47）-----------------------------------------------------
+
+
+def _route_taken(monkeypatch, db, route: str | None) -> str:
+    """その設定で実際に通った経路を返す。**外部は呼ばない。**"""
+    from config import get_settings
+
+    _profile(db)
+    if route is None:
+        monkeypatch.delenv("SEARCH_ROUTE", raising=False)
+    else:
+        monkeypatch.setenv("SEARCH_ROUTE", route)
+    get_settings.cache_clear()
+
+    taken = {}
+    monkeypatch.setattr(
+        discovery_run, "run", lambda *a, **k: taken.setdefault("route", "discovery") or []
+    )
+    monkeypatch.setattr(
+        loop, "_plan_search", lambda *a, **k: taken.setdefault("route", "legacy") or []
+    )
+    monkeypatch.setattr(loop, "_search_and_extract", lambda *a, **k: [])
+    monkeypatch.setattr(loop, "_evaluate_and_select", lambda *a, **k: [])
+    monkeypatch.setattr(loop, "_verify_and_finalize", lambda *a, **k: None)
+
+    run_id = agent_service.create_run(db, DEFAULT_USER_ID)
+    loop.run_agent(run_id, DEFAULT_USER_ID)
+    get_settings.cache_clear()
+    return taken.get("route", "（どちらも通っていない）")
+
+
+def test_設定未指定なら新しい経路を通る(monkeypatch, db):
+    assert _route_taken(monkeypatch, db, None) == "discovery"
+
+
+def test_legacyを明示すれば旧経路を通る(monkeypatch, db):
+    assert _route_taken(monkeypatch, db, "legacy") == "legacy"
+
+
+def test_自動探索でも同じ経路選択になる(monkeypatch, db):
+    """**自動探索は経路を選ばない。** 設定に従うだけ（有効・無効は変えない）。"""
+    from config import get_settings
+
+    _profile(db)
+    monkeypatch.delenv("SEARCH_ROUTE", raising=False)
+    get_settings.cache_clear()
+    taken = {}
+    monkeypatch.setattr(
+        discovery_run, "run", lambda *a, **k: taken.setdefault("route", "discovery") or []
+    )
+    run_id = agent_service.create_run(
+        db, DEFAULT_USER_ID, trigger=AgentRunTrigger.SCHEDULED, reason="定期"
+    )
+    loop.run_agent(run_id, DEFAULT_USER_ID)
+    get_settings.cache_clear()
+    assert taken.get("route") == "discovery"
+
+
+def test_OrcaRouterの鍵が無ければ理由を出して止まる(monkeypatch, db):
+    """**黙って別経路へ切り替えない。** 名前と経路を出して失敗させる。"""
+    from config import get_settings
+
+    _profile(db)
+    monkeypatch.setenv("AGENT_STUB_MODE", "false")
+    monkeypatch.setenv("ORCAROUTER_API_KEY", "")
+    get_settings.cache_clear()
+
+    run_id = agent_service.create_run(db, DEFAULT_USER_ID)
+    loop.run_agent(run_id, DEFAULT_USER_ID)
+    get_settings.cache_clear()
+
+    row = db.get(AgentRun, run_id)
+    db.refresh(row)
+    assert row.status == "failed"
+    assert "ORCAROUTER_API_KEY" in (row.error or "")
+    assert "SEARCH_ROUTE=discovery" in (row.error or "")
+
+
+def test_ホームと結果画面が同じrunのおすすめを返す(db):
+    """**同じ `get_result` を通る。** 候補 ID も件数も一致する。"""
+    _profile(db)
+    run_id = agent_service.create_run(db, DEFAULT_USER_ID)
+    loop.run_agent(run_id, DEFAULT_USER_ID)
+
+    home = agent_service.latest_result(db, DEFAULT_USER_ID)
+    page = agent_service.get_result(db, run_id, DEFAULT_USER_ID)
+    assert home is not None and page is not None
+    assert home.run_id == page.run_id == run_id
+    assert home.recommended_count == page.recommended_count
+    top = lambda r: [o.opportunity_id for o in r.selected[: r.recommended_count]]  # noqa: E731
+    assert top(home) == top(page)
+    assert len(top(home)) == home.recommended_count

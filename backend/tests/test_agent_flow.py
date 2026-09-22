@@ -13,7 +13,7 @@ def test_agent_run_requires_profile(client):
     assert res.status_code == 404
 
 
-def test_full_mvp_flow(client, profile_payload):
+def test_full_mvp_flow(client, profile_payload, legacy_route):
     assert client.put("/api/profile", json=profile_payload, headers=PAGE).status_code == 200
 
     res = client.post("/api/agent/runs", headers=PAGE)

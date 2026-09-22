@@ -25,9 +25,11 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from agent import stub_data
 from agent.state import AgentState
 from ai import cost, discovery, matching
 from ai.routing import Step
+from config import get_settings
 from models.agent_run import AgentRun
 from models.opportunity import Opportunity
 from models.user_profile import UserProfile
@@ -53,6 +55,12 @@ def run(
     log: Callable,
     step: Callable,
 ) -> list[str]:
+    if get_settings().agent_stub_mode:
+        # **鍵が無くても動く状態を保つ（既定がこの経路になったため）。**
+        # 相方が API キー無しで画面を確認できることを壊さない。
+        # **外部は一切呼ばない。**
+        return _stub(db, state, profile, log=log, step=step)
+
     wishes_raw = list(state.goal_analysis.wanted_now)[:MAX_WISHES] if state.goal_analysis else []
     if not wishes_raw:
         # **希望が無いのに検索しない。** 推測で埋めると別物を探しに行く。
@@ -236,3 +244,77 @@ def _at(iso: str) -> datetime | None:
         return datetime.combine(date.fromisoformat(iso), time(0, 0), tzinfo=JST)
     except ValueError:
         return None
+
+
+def _iso(value):
+    """stub の ISO 文字列を datetime にする。**読めなければ None。**"""
+    if not isinstance(value, str):
+        return value
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _stub(db: Session, state: AgentState, profile: UserProfile, *, log, step) -> list[str]:
+    """Stub 経路。**固定データだけで一覧とおすすめを作る。**
+
+    `AGENT_STUB_MODE=true` のときに通る。外部を呼ばないので、
+    API キーが無くても画面の確認ができる。
+    """
+    step(db, state, AgentStep.SEARCHING, "希望ごとにWebを探索しています（stub）")
+    original = profile.wants_now or ""
+    labels = [_label(w, i) for i, w in enumerate(original.splitlines()) if w.strip()]
+    ids: list[str] = []
+    for i, item in enumerate(stub_data.STUB_OPPORTUNITIES):
+        row = Opportunity(
+            opportunity_id=f"opp_{uuid.uuid4().hex[:12]}",
+            user_id=state.user_id,
+            run_id=state.run_id,
+            type=item["type"],
+            title=item["title"],
+            description=item["description"],
+            url=item["url"],
+            source="stub",
+            # stub の日時は ISO 文字列。**DateTime 列へは datetime で渡す。**
+            start_at=_iso(item.get("start_at")),
+            end_at=_iso(item.get("end_at")),
+            deadline=_iso(item.get("deadline")),
+            location=item.get("location"),
+            format=item.get("format"),
+            eligibility=item.get("eligibility"),
+            cost=item.get("cost"),
+            wish=labels[i % len(labels)] if labels else None,
+            wish_source=original,
+            searched_values={"stub": True},
+            corrections=[],
+            confirmed_fields=[],
+            unknowns=[],
+            evaluated=True,
+            score=item.get("score", 0),
+            serendipity_score=item.get("serendipity_score", 0),
+            reason=item.get("reason"),
+            match_reasons=[labels[i % len(labels)]] if labels else [],
+            verified=False,
+            url_is_source_only=True,
+            status=OpportunityStatus.RECOMMENDED.value,
+        )
+        db.add(row)
+        ids.append(row.opportunity_id)
+    db.commit()
+
+    top = ids[:3]
+    state.selected_ids = list(ids)
+    run_row = db.get(AgentRun, state.run_id) if state.run_id else None
+    if run_row is not None:
+        run_row.selected_ids = list(ids)
+        run_row.recommended_count = len(top)
+        run_row.search_candidates = [
+            {"title": o["title"], "url": o["url"], "wish": None}
+            for o in stub_data.STUB_OPPORTUNITIES
+        ]
+        db.commit()
+    log(db, state, AgentStep.SEARCHING, f"{len(ids)}件の候補を見つけました（stub）")
+    step(db, state, AgentStep.EVALUATING, "希望との合い方を評価しています（stub）")
+    log(db, state, AgentStep.EVALUATING, f"{len(top)}件をおすすめにしました（stub）")
+    return ids
