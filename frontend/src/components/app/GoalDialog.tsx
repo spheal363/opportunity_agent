@@ -7,36 +7,34 @@ import {
   type ProfileDraft,
 } from '../../state/persistence';
 import type { UserProfile, UserProfileInput } from '../../types';
-import { parseList } from '../../utils/date';
 import { Dialog } from '../Dialog';
 import { DIALOG, DIALOG_CLOSE, DIALOG_H2, EYEBROW, FORM_HINT, MUTED, PRIMARY } from './styles';
 
 const LABEL = 'block text-[14px] mt-[20px] mb-[7px]';
 const FIELD = 'w-full p-[12px] border border-[#d4dbd0] rounded-[7px] bg-white text-ink text-[14px]';
 
-/** 興味の候補。プロフィールに入っているものと合わせて表示する。 */
-const SUGGESTED_INTERESTS = ['AI', 'Startup', 'Music', 'Design', 'Community', 'International'];
+/**
+ * 入力例。**プレースホルダーとしてだけ出す。**
+ * 未入力のまま保存される値にはしない。
+ */
+const WANTS_PLACEHOLDER = `ハウスやテクノの音楽イベントに行きたい
+初めての曲作りができるワークショップに出たい
+ハッカソンに挑戦したい`;
+const FUTURE_PLACEHOLDER = '将来は自分のプロダクトで起業したい';
+const LOCATION_PLACEHOLDER = '東京 / オンライン';
 
 /** 保存済みプロフィールを、フォームの見たままの形に戻す。 */
 const fromProfile = (profile: UserProfile | null): ProfileDraft =>
   profile
     ? {
-        name: profile.name,
-        goals: profile.goals.join('\n'),
-        interests: profile.interests,
+        name: profile.name ?? '',
+        // **Backend が旧 goals をそのまま本文として返す。**
+        // ここで分割・書き換えをしない。
+        wantsNow: profile.wants_now ?? '',
+        futureGoals: profile.future_goals ?? '',
         location: profile.location ?? '',
-        occupation: profile.occupation ?? '',
-        skills: profile.skills.join(', '),
-        about: profile.about ?? '',
       }
     : EMPTY_PROFILE_DRAFT;
-
-/** 目標は文章で書けるよう、改行だけで区切る（読点では分けない）。 */
-const parseGoals = (value: string) =>
-  value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
 
 interface GoalDialogProps {
   open: boolean;
@@ -60,13 +58,9 @@ export function GoalDialog({
   onSubmit,
 }: GoalDialogProps) {
   const [name, setName] = useState('');
-  const [goals, setGoals] = useState('');
-  const [interests, setInterests] = useState<string[]>([]);
+  const [wantsNow, setWantsNow] = useState('');
+  const [futureGoals, setFutureGoals] = useState('');
   const [location, setLocation] = useState('');
-  const [occupation, setOccupation] = useState('');
-  const [skills, setSkills] = useState('');
-  const [about, setAbout] = useState('');
-  const [adding, setAdding] = useState('');
   /** 復元が終わるまでは下書きを書かない。開いた瞬間の空の値で上書きしないため。 */
   const [restored, setRestored] = useState(false);
 
@@ -80,56 +74,33 @@ export function GoalDialog({
     }
     const draft = loadProfileDraft() ?? fromProfile(profile);
     setName(draft.name);
-    setGoals(draft.goals);
-    setInterests(draft.interests);
+    setWantsNow(draft.wantsNow);
+    setFutureGoals(draft.futureGoals);
     setLocation(draft.location);
-    setOccupation(draft.occupation);
-    setSkills(draft.skills);
-    setAbout(draft.about);
-    setAdding('');
     setRestored(true);
   }, [open, profile]);
 
   // 入力の途中経過をこのブラウザに残す。閉じても・再読み込みしても続きから書ける。
   useEffect(() => {
     if (!open || !restored) return;
-    saveProfileDraft({ name, goals, interests, location, occupation, skills, about });
-  }, [open, restored, name, goals, interests, location, occupation, skills, about]);
-
-  const chips = Array.from(new Set([...interests, ...SUGGESTED_INTERESTS]));
-
-  const toggle = (interest: string) =>
-    setInterests((prev) =>
-      prev.includes(interest) ? prev.filter((t) => t !== interest) : [...prev, interest],
-    );
-
-  const addInterest = () => {
-    const value = adding.trim();
-    if (!value) return;
-    setInterests((prev) => (prev.includes(value) ? prev : [...prev, value]));
-    setAdding('');
-  };
+    saveProfileDraft({ name, wantsNow, futureGoals, location });
+  }, [open, restored, name, wantsNow, futureGoals, location]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    const parsed = parseGoals(goals);
-    if (!parsed.length) {
-      goalRef.current?.setCustomValidity('目標をひとこと入力してください');
+    if (!wantsNow.trim()) {
+      goalRef.current?.setCustomValidity('やってみたいことをひとこと入力してください');
       goalRef.current?.reportValidity();
       return;
     }
     goalRef.current?.setCustomValidity('');
+    // **4 項目だけ送る。** 以前のフォームの項目（興味タグ・立場・できること・
+    // 自己紹介）は送らないことで、Backend 側の保存値がそのまま残る。
     onSubmit({
       name: name.trim(),
+      wants_now: wantsNow.trim(),
+      future_goals: futureGoals.trim() || null,
       location: location.trim() || null,
-      occupation: occupation.trim() || null,
-      skills: parseList(skills),
-      interests,
-      goals: parsed,
-      about: about.trim() || null,
-      // 画面に出していない項目は、保存済みの内容をそのまま残す。
-      languages: profile?.languages ?? [],
-      experience: profile?.experience ?? [],
     });
   };
 
@@ -146,113 +117,54 @@ export function GoalDialog({
         <p className={MUTED}>まだ、ぼんやりしていても大丈夫。</p>
 
         <label className={LABEL} htmlFor="profile-name">
-          お名前
+          お名前 <span className={MUTED}>任意</span>
         </label>
         <input
           id="profile-name"
-          required
           value={name}
           onChange={(event) => setName(event.target.value)}
           className={FIELD}
         />
 
-        <label className={LABEL} htmlFor="profile-goals">
-          やってみたいこと・目標 <span className={MUTED}>改行で複数書けます</span>
+        <label className={LABEL} htmlFor="profile-wants-now">
+          いま、やってみたいこと <span className={MUTED}>改行で複数書けます</span>
         </label>
         <textarea
-          id="profile-goals"
+          id="profile-wants-now"
           ref={goalRef}
           required
-          rows={3}
-          value={goals}
+          rows={4}
+          value={wantsNow}
+          placeholder={WANTS_PLACEHOLDER}
           onChange={(event) => {
-            setGoals(event.target.value);
+            setWantsNow(event.target.value);
             goalRef.current?.setCustomValidity('');
           }}
-          className={`${FIELD} resize-y min-h-[110px]`}
+          className={`${FIELD} resize-y min-h-[130px]`}
         />
 
-        <label className={LABEL}>
-          興味のあること <span className={MUTED}>複数選べます</span>
-        </label>
-        <div className="flex flex-wrap gap-[8px]">
-          {chips.map((interest) => {
-            const selected = interests.includes(interest);
-            return (
-              <button
-                key={interest}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => toggle(interest)}
-                className={`border px-[13px] py-[6px] rounded-[25px] text-[13px] font-medium tracking-[.04em] ${
-                  selected
-                    ? 'bg-[#e4ecdf] border-[#81977a] text-[#3d5734]'
-                    : 'bg-white border-[#d9ded3]'
-                }`}
-              >
-                {interest}
-              </button>
-            );
-          })}
-          <input
-            aria-label="興味を追加"
-            placeholder="＋ 追加"
-            value={adding}
-            onChange={(event) => setAdding(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter') return;
-              event.preventDefault();
-              addInterest();
-            }}
-            onBlur={addInterest}
-            className="border border-dashed border-[#d9ded3] bg-white px-[13px] py-[6px] rounded-[25px] text-[13px] w-[104px]"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-[14px] lte620:grid-cols-1 lte620:gap-0">
-          <div>
-            <label className={LABEL} htmlFor="profile-location">
-              活動したい地域
-            </label>
-            <input
-              id="profile-location"
-              value={location}
-              onChange={(event) => setLocation(event.target.value)}
-              className={FIELD}
-            />
-          </div>
-          <div>
-            <label className={LABEL} htmlFor="profile-occupation">
-              いまの立場
-            </label>
-            <input
-              id="profile-occupation"
-              value={occupation}
-              onChange={(event) => setOccupation(event.target.value)}
-              className={FIELD}
-            />
-          </div>
-        </div>
-
-        <label className={LABEL} htmlFor="profile-skills">
-          できること <span className={MUTED}>カンマ区切り</span>
-        </label>
-        <input
-          id="profile-skills"
-          value={skills}
-          onChange={(event) => setSkills(event.target.value)}
-          className={FIELD}
-        />
-
-        <label className={LABEL} htmlFor="profile-about">
-          自己紹介 <span className={MUTED}>任意</span>
+        <label className={LABEL} htmlFor="profile-future-goals">
+          将来の目標 <span className={MUTED}>任意</span>
         </label>
         <textarea
-          id="profile-about"
-          rows={3}
-          value={about}
-          onChange={(event) => setAbout(event.target.value)}
-          className={`${FIELD} resize-y min-h-[110px]`}
+          id="profile-future-goals"
+          rows={2}
+          value={futureGoals}
+          placeholder={FUTURE_PLACEHOLDER}
+          onChange={(event) => setFutureGoals(event.target.value)}
+          className={`${FIELD} resize-y min-h-[72px]`}
+        />
+        <p className={MUTED}>長期の目標です。今回探す機会の必須条件にはしません。</p>
+
+        <label className={LABEL} htmlFor="profile-location">
+          活動したい地域 <span className={MUTED}>任意・「オンライン」も指定できます</span>
+        </label>
+        <input
+          id="profile-location"
+          value={location}
+          placeholder={LOCATION_PLACEHOLDER}
+          onChange={(event) => setLocation(event.target.value)}
+          className={FIELD}
         />
 
         {error ? (

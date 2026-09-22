@@ -204,12 +204,16 @@ def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
 
     return analyze_goal(
         GoalAnalysisInput(
+            # **初回フォームの 2 欄が中心。** 以前の項目は下で補足として渡す。
+            wants_now=profile.wants_now,
+            future_goals=profile.future_goals,
             occupation=profile.occupation,
             skills=profile.skills or [],
             interests=profile.interests or [],
             goals=profile.goals or [],
             about=profile.about,
-        )
+        ),
+        location=profile.location,
     )
 
 

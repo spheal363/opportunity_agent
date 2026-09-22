@@ -18,6 +18,8 @@ const jst = (month: number, date: number, hour: number) =>
 export const MOCK_PROFILE: UserProfile = {
   user_id: 'user_001',
   name: 'Naoya',
+  wants_now: 'ハウスやテクノの音楽イベントに行きたい\n初めての曲作りができるワークショップに出たい',
+  future_goals: '将来は自分のプロダクトで起業したい',
   location: 'Tokyo, Japan',
   languages: ['Japanese', 'English'],
   occupation: 'Backend Engineer',

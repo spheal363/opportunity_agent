@@ -78,9 +78,15 @@ def test_profile_is_wrapped_as_untrusted():
 
 
 def test_empty_profile_fields_are_labelled():
-    """未記入を空文字で渡すと LLM が読み飛ばす。明示する。"""
+    """未記入を空文字で渡すと LLM が読み飛ばす。明示する。
+
+    **項目数は固定しない**（初回フォームを 4 項目にした、#47）。
+    どの欄も空なら、すべて「未記入」と書かれていること。
+    """
     user = prompt.build_user(occupation=None, skills=[], interests=[], goals=[], about=None)
-    assert user.count("未記入") == 5
+    assert "いま、やってみたいこと" in user
+    assert ": 未記入" in user
+    assert ": \n" not in user, "空欄をそのまま渡している"
 
 
 # --- analyze_goal ---------------------------------------------------------
@@ -228,3 +234,44 @@ def test_the_output_keeps_the_wishes_separately():
     )
     assert out.wanted_now == ["ポケモンのイベント", "ハウス/テクノの音楽イベント"]
     assert out.background_goals == ["将来の起業"]
+
+
+def test_the_current_wish_outranks_the_old_tags():
+    """**非表示にした興味タグに、いまの希望を上書きさせない（#47）。**
+
+    以前 AI / Startup を選んでいても、いま「ポケモンのイベント」と書いたなら
+    そちらが探索の中心。
+    """
+    user = prompt.build_user(
+        wants_now="ポケモンのイベントに行きたい",
+        occupation="エンジニア",
+        skills=["Python"],
+        interests=["AI", "Startup"],
+        goals=["将来は起業したい"],
+        about=None,
+    )
+
+    assert user.index("ポケモンのイベント") < user.index("AI")
+    assert "最優先。今回の探索の中心" in user
+    assert "上と食い違う場合は上を優先する" in user
+
+
+def test_the_future_goal_is_marked_as_optional():
+    user = prompt.build_user(
+        wants_now="音楽イベントに行きたい",
+        future_goals="将来の起業",
+        occupation=None,
+        skills=[],
+        interests=[],
+        goals=[],
+        about=None,
+    )
+    assert "今回の必須条件ではない" in user
+
+
+def test_the_old_fields_are_still_used_when_the_new_one_is_empty():
+    """新しい欄がまだ無いプロフィールでも探索できる。"""
+    user = prompt.build_user(
+        occupation="エンジニア", skills=["Python"], interests=["AI"], goals=["起業"], about=None
+    )
+    assert "AI" in user and "起業" in user

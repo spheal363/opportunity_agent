@@ -4,6 +4,16 @@ from pydantic import BaseModel, Field
 
 
 class GoalAnalysisInput(BaseModel):
+    """**「いま」と「将来」を分けて渡す。**
+
+    以前は全部 `goals` に入っていて、分析が長期目標へ寄り、今回の希望
+    （音楽・曲作り・ポケモン）が落ちた。
+    """
+
+    # 初回フォームのメイン欄。**検索の中心はこれ。**
+    wants_now: str | None = None
+    # 任意。**今回の探索の必須条件にしない。**
+    future_goals: str | None = None
     occupation: str | None = None
     skills: list[str] = Field(default_factory=list)
     interests: list[str] = Field(default_factory=list)

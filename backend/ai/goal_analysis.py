@@ -24,6 +24,7 @@ GOAL_ANALYSIS_MAX_TOKENS = 8192
 def analyze_goal(
     profile: GoalAnalysisInput,
     *,
+    location: str | None = None,
     tier: ModelTier | None = None,
 ) -> GoalAnalysisOutput:
     """プロフィールから目標を構造化する。"""
@@ -31,6 +32,9 @@ def analyze_goal(
         schema=GoalAnalysisOutput,
         system=prompt.SYSTEM,
         user=prompt.build_user(
+            location=location,
+            wants_now=profile.wants_now,
+            future_goals=profile.future_goals,
             occupation=profile.occupation,
             skills=profile.skills,
             interests=profile.interests,

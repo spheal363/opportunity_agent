@@ -53,11 +53,14 @@ SYSTEM = (
 
 def build_user(
     *,
+    location: str | None = None,
     occupation: str | None,
     skills: list[str],
     interests: list[str],
     goals: list[str],
     about: str | None,
+    wants_now: str | None = None,
+    future_goals: str | None = None,
 ) -> str:
     """プロフィールを user メッセージに組み立てる。
 
@@ -65,11 +68,28 @@ def build_user(
     Prompt Injection になりうるため、外部データと同じく囲んで渡す。
     自分のプロフィールなので攻撃者とは限らないが、囲む側で区別しない。
     """
-    lines = [
-        f"職業: {occupation or '未記入'}",
-        f"スキル: {', '.join(skills) or '未記入'}",
-        f"興味: {', '.join(interests) or '未記入'}",
-        f"目標: {', '.join(goals) or '未記入'}",
-        f"自由記述: {about or '未記入'}",
-    ]
+    # **本人がいま書いた希望が最優先。** 以前に選んだ興味タグや古い目標が
+    # これと食い違うとき、タグ側を採らせない。
+    lines = [f"いま、やってみたいこと（最優先。今回の探索の中心）: {wants_now or '未記入'}"]
+    if future_goals:
+        lines.append(f"将来の目標（補足。今回の必須条件ではない）: {future_goals}")
+    lines.append(f"活動したい地域: {location or '未記入'}")
+
+    if wants_now:
+        # 新しい欄が埋まっているので、以前の項目は**参考**としてのみ添える。
+        # 矛盾したら上の「いま、やってみたいこと」を採る。
+        extra = [t for t in (occupation, ", ".join(skills), ", ".join(interests)) if t]
+        if extra:
+            lines.append(
+                "（参考・以前の入力。上と食い違う場合は上を優先する）: " + " / ".join(extra)
+            )
+    else:
+        # 新しい欄が空。**以前の入力しか手がかりが無い。**
+        lines += [
+            f"職業: {occupation or '未記入'}",
+            f"スキル: {', '.join(skills) or '未記入'}",
+            f"興味: {', '.join(interests) or '未記入'}",
+            f"目標: {', '.join(goals) or '未記入'}",
+            f"自由記述: {about or '未記入'}",
+        ]
     return untrusted_block("user_profile", "\n".join(lines))

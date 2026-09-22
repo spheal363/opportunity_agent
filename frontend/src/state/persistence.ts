@@ -10,14 +10,7 @@
  */
 import type { OpportunityStatus, Reaction } from '../types';
 import { safeHttpUrl } from '../utils/display';
-import {
-  oneOf,
-  readStored,
-  recordOf,
-  storedString,
-  storedStrings,
-  writeStored,
-} from '../utils/storage';
+import { oneOf, readStored, recordOf, storedString, writeStored } from '../utils/storage';
 
 export const STORAGE_KEY = {
   /** サーバーの status に重ねる、この端末での操作結果。 */
@@ -56,35 +49,23 @@ export const reviveRegistrationUrls = recordOf((raw: unknown) => safeHttpUrl(sto
 /** 目標・興味ダイアログの入力内容。フォームの見たまま（配列に分解する前）を残す。 */
 export type ProfileDraft = {
   name: string;
-  goals: string;
-  interests: string[];
+  /** いま、やってみたいこと。**メインの自由入力。** */
+  wantsNow: string;
+  /** 将来の目標。任意。 */
+  futureGoals: string;
   location: string;
-  occupation: string;
-  skills: string;
-  about: string;
 };
 
 export const EMPTY_PROFILE_DRAFT: ProfileDraft = {
   name: '',
-  goals: '',
-  interests: [],
+  wantsNow: '',
+  futureGoals: '',
   location: '',
-  occupation: '',
-  skills: '',
-  about: '',
 };
 
 /** 何も入力されていない下書きは「下書きなし」と同じ。保存済みプロフィールを隠さない。 */
 function isEmpty(draft: ProfileDraft): boolean {
-  return (
-    !draft.name &&
-    !draft.goals &&
-    !draft.interests.length &&
-    !draft.location &&
-    !draft.occupation &&
-    !draft.skills &&
-    !draft.about
-  );
+  return !draft.name && !draft.wantsNow && !draft.futureGoals && !draft.location;
 }
 
 function reviveProfileDraft(raw: unknown): ProfileDraft | null {
@@ -92,12 +73,9 @@ function reviveProfileDraft(raw: unknown): ProfileDraft | null {
   const stored = raw as Record<string, unknown>;
   const draft: ProfileDraft = {
     name: storedString(stored.name) ?? '',
-    goals: storedString(stored.goals) ?? '',
-    interests: storedStrings(stored.interests) ?? [],
+    wantsNow: storedString(stored.wantsNow) ?? '',
+    futureGoals: storedString(stored.futureGoals) ?? '',
     location: storedString(stored.location) ?? '',
-    occupation: storedString(stored.occupation) ?? '',
-    skills: storedString(stored.skills) ?? '',
-    about: storedString(stored.about) ?? '',
   };
   return isEmpty(draft) ? null : draft;
 }
