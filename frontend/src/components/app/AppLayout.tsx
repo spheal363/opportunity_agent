@@ -5,6 +5,7 @@ import { usePageChrome } from '../../hooks/usePageChrome';
 import { useAppState } from '../../state/context';
 import { clearProfileDraft } from '../../state/persistence';
 import type { UserProfileInput } from '../../types';
+import { AutoRunNotice } from './AutoRunNotice';
 import { AppFooter, AppHeader, Sidebar, Toast } from './Chrome';
 import { DetailDialog } from './DetailDialog';
 import { GoalDialog } from './GoalDialog';
@@ -60,6 +61,8 @@ export default function AppLayout() {
       <div className="grid grid-cols-[228px_1fr] max-w-[1600px] mx-auto lte1150:grid-cols-[190px_1fr] lte850:block">
         <Sidebar />
         <main className="pt-[39px] px-[46px] pb-[22px] min-w-0 max-w-[1400px] gte1450:px-[60px] lte1150:py-[30px] lte1150:px-[26px] lte850:py-[27px] lte850:px-[22px]">
+          {/* Agent が自分で始めた探索の知らせ。どの画面にいても出す（開くかは本人が選ぶ）。 */}
+          <AutoRunNotice />
           <Outlet />
           <AppFooter />
         </main>

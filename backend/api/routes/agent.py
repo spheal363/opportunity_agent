@@ -41,6 +41,22 @@ def start_run(
     return ok(AgentRunCreated(run_id=run_id, status=AgentRunStatus.QUEUED))
 
 
+# **`/runs/{run_id}` より前に定義する。** 後ろに置くと "latest" が run_id として
+# 解釈され、404（指定された run_id が見つかりません）になる。
+@router.get("/runs/latest", response_model=ApiSuccess[AgentRunState | None])
+def get_latest_run(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    """現在のユーザーの最新 run（状態は問わない）。
+
+    Agent が自分で始めた探索（`trigger` が manual 以外）をホームや👎の後に
+    見つけるのに使う（#86）。**run が 1 件も無いときは 404 ではなく `data: null`。**
+    まだ探索していないのは正常な状態で、画面が定期的に取りに来るため。
+    """
+    return ok(agent_service.get_latest_run(db, user_id))
+
+
 @router.get("/runs/{run_id}", response_model=ApiSuccess[AgentRunState])
 def get_run(
     run_id: str,

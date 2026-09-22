@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -81,6 +82,32 @@ class Settings(BaseSettings):
     # 攻撃を仕込んだページを検索結果に 1 件混ぜる（Prompt Injection のデモ, #52）。
     # 検知と除去は本番と同じコードが行う。本番の探索では false のまま。
     demo_injection: bool = False
+
+    # --- 自動探索（services/auto_explore.py, #84 / #85）------------------
+    # Agent が「いつ探すか」も自分で決める。**自動にするのは発見だけ**で、
+    # Calendar への書き込みなど外部への操作は人の操作のまま。
+    #
+    # **既定はすべてオフ**（今の挙動を変えない）。オンにしても、下の上限は
+    # 全自動 trigger に共通でコードが強制する。LLM の判断では緩まない。
+    #
+    # 最新の推薦の過半数に👎が付いたら探し直す
+    auto_explore_on_feedback: bool = False
+    # 定期チェック（締切切れで推薦が減った・前回から時間がたった）
+    auto_explore_schedule: bool = False
+    # 定期チェックの間隔（秒）
+    auto_explore_tick_seconds: int = Field(default=300, ge=5)
+    # 前回の探索からこれだけたったら新着を探す（分）。既定は 24 時間
+    auto_explore_schedule_interval_minutes: int = Field(default=1440, ge=1)
+    # 直近 24 時間の自動 run の回数上限。0 なら自動では走らない
+    auto_explore_max_runs_per_day: int = Field(default=3, ge=0)
+    # 直近 24 時間の**全 run（手動を含む）**の見積もり額の合計がこれに達したら、
+    # 自動では始めない（円）。**見積もり**であって請求額ではない（ai/cost.py）
+    auto_explore_max_cost_jpy_per_day: float = Field(default=20.0, ge=0)
+    # 自動 run 同士の最低間隔（分）
+    auto_explore_min_interval_minutes: int = Field(default=60, ge=0)
+    # queued / running のまま、これだけ進捗の無い run は止まったものとみなす（分）。
+    # プロセスが落ちて running のまま残った run に、自動探索を止められないように
+    auto_explore_abandoned_after_minutes: int = Field(default=30, ge=1)
 
     @property
     def cors_origins(self) -> list[str]:

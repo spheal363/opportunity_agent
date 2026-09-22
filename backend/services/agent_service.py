@@ -1,19 +1,78 @@
 """Agent Run の作成・状態取得。"""
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
 from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity
-from schemas.agent import AgentLogEntry, AgentRunResult, AgentRunState, AgentRunStatus
+from schemas.agent import (
+    AgentLogEntry,
+    AgentRunResult,
+    AgentRunState,
+    AgentRunStatus,
+    AgentRunTrigger,
+    AgentStep,
+)
 from schemas.opportunity import OpportunitySummary
 
 
-def create_run(db: Session, user_id: str = DEFAULT_USER_ID) -> str:
+def create_run(
+    db: Session,
+    user_id: str = DEFAULT_USER_ID,
+    *,
+    trigger: AgentRunTrigger = AgentRunTrigger.MANUAL,
+    reason: str | None = None,
+) -> str:
+    """run を作る。実行（run_agent）は呼び出し側。
+
+    `reason` は Agent が自分で始めたときの「なぜ始めたか」（services/auto_explore.py）。
+    **決まった文面と数値だけを渡すこと。** 画面にそのまま出る。
+    """
     run_id = f"run_{uuid.uuid4().hex[:12]}"
-    db.add(AgentRun(run_id=run_id, user_id=user_id, status=AgentRunStatus.QUEUED))
+    db.add(
+        AgentRun(
+            run_id=run_id,
+            user_id=user_id,
+            status=AgentRunStatus.QUEUED,
+            trigger=trigger,
+            trigger_reason=reason,
+            # **マイクロ秒まで持たせる。** server_default（CURRENT_TIMESTAMP）は秒までで、
+            # 同じ秒に作った run のどちらが新しいか分からなくなる。自動探索は
+            # 「最新の run」「最後の自動 run」で判定するので、前後を取り違えると困る。
+            # 保存は他の列と同じく tz なしの UTC。
+            created_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
+    if reason:
+        # 探索中画面の先頭に「なぜ始めたか」を出す。**AgentStep は増やさない。**
+        # 最初のステップ（プロフィール分析）の記録として置く。Agent Loop の
+        # 最初の Log はこれより後に書かれる。
+        db.add(AgentLog(run_id=run_id, step=AgentStep.ANALYZING_PROFILE, message=reason))
     db.commit()
     return run_id
+
+
+def latest_row(db: Session, user_id: str) -> AgentRun | None:
+    """その人の最新の run（状態は問わない）。無ければ None。"""
+    return (
+        db.query(AgentRun)
+        .filter(AgentRun.user_id == user_id)
+        .order_by(AgentRun.created_at.desc())
+        .first()
+    )
+
+
+def get_latest_run(db: Session, user_id: str) -> AgentRunState | None:
+    """その人の最新の run。無ければ None。
+
+    Agent が自分で始めた探索（trigger が manual 以外）を画面が見つけるのに使う。
+    他人の run は返さない（#69）。
+    """
+    row = latest_row(db, user_id)
+    if row is None:
+        return None
+    return AgentRunState.model_validate(row, from_attributes=True)
 
 
 def get_run(db: Session, run_id: str, user_id: str) -> AgentRunState | None:

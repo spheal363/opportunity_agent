@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
   ApiRequestError,
+  fetchLatestAgentRun,
   fetchOpportunities,
   fetchProfile,
   markInterested,
@@ -13,6 +14,7 @@ import { usePersistedState } from '../hooks/usePersistedState';
 import { useToast } from '../hooks/useToast';
 import { isSaved, isStep } from '../utils/display';
 import type {
+  AgentRun,
   Opportunity,
   OpportunityStatus,
   Reaction,
@@ -25,6 +27,7 @@ import {
   reviveNotes,
   reviveReactions,
   reviveRegistrationUrls,
+  reviveSeenAutoRun,
   reviveStatusOverrides,
 } from './persistence';
 
@@ -37,6 +40,8 @@ const message = (err: unknown, fallback: string) => (err instanceof Error ? err.
  * 実効状態が interested のままで解除にならない。
  */
 const LOCALLY_CLEARED: OpportunityStatus = 'recommended';
+
+const isActive = (run: AgentRun) => run.status === 'queued' || run.status === 'running';
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -76,6 +81,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     {},
     reviveNotes,
   );
+
+  /** いちばん新しい run。Agent が自分で始めた探索に気づくために取る。 */
+  const [latestRun, setLatestRun] = useState<AgentRun | null>(null);
+  const [seenAutoRunId, setSeenAutoRunId] = usePersistedState<string | null>(
+    STORAGE_KEY.seenAutoRun,
+    null,
+    reviveSeenAutoRun,
+  );
+  /** 前回取った最新 run。自動で始めた run が新しく出た・終わった瞬間を知るため。 */
+  const latestRef = useRef<AgentRun | null>(null);
 
   const [goalOpen, setGoalOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -118,6 +133,46 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       stepCount: items.filter((o) => isStep(statusOf(o))).length,
     };
   }, [opportunities, statusOf]);
+
+  const refreshLatestRun = useCallback(async () => {
+    try {
+      const run = await fetchLatestAgentRun();
+      const previous = latestRef.current;
+      latestRef.current = run;
+      setLatestRun(run);
+      // Agent が自分で始めた探索が終わったら、おすすめを取り直す。
+      // ホームのカードが古い推薦のまま残らないように。初回の取得では取り直さない
+      // （おすすめは画面を開いたときに取ってある）。
+      const finished = run !== null && run.trigger !== 'manual' && run.status === 'completed';
+      const changed = previous?.run_id !== run?.run_id || previous?.status !== run?.status;
+      if (finished && previous !== null && changed) void refreshOpportunities();
+      return run;
+    } catch {
+      // 知らせのための取得。失敗しても画面の操作は止めない（次の取得でやり直す）。
+      return null;
+    }
+  }, [refreshOpportunities]);
+
+  const autoRun =
+    latestRun &&
+    latestRun.trigger !== 'manual' &&
+    latestRun.run_id !== lastRunId &&
+    latestRun.run_id !== seenAutoRunId
+      ? latestRun
+      : null;
+
+  const openAutoRun = useCallback(
+    (runId: string) => {
+      setLastRunId(runId);
+      setSeenAutoRunId(runId);
+    },
+    [setSeenAutoRunId],
+  );
+
+  const dismissAutoRun = useCallback(
+    (runId: string) => setSeenAutoRunId(runId),
+    [setSeenAutoRunId],
+  );
 
   const startRun = useCallback(async () => {
     const run = await startAgentRun();
@@ -169,15 +224,38 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const sendReaction = useCallback(
     async (opportunityId: string, reaction: Reaction) => {
+      // 送る前に知っていた最新の run。これと違う run が出ていれば、今回の👎で始まった。
+      const before = latestRef.current?.run_id ?? null;
       try {
         await sendFeedback(opportunityId, { reaction });
         setReactions((prev) => ({ ...prev, [opportunityId]: reaction }));
-        toast.show(reaction === 'like' ? '興味を記録しました' : 'フィードバックを記録しました');
       } catch (err) {
         toast.show(message(err, 'フィードバックを送れませんでした'));
+        return;
       }
+      if (reaction === 'like') {
+        toast.show('興味を記録しました');
+        return;
+      }
+      // 👎が推薦の過半数に重なると、Agent が反応を踏まえて探し直すことがある
+      // （Backend の自動探索。既定オフ）。feedback のレスポンスには出ないので、
+      // 最新の run を取って確かめる。**画面は移らない。** 知らせから本人が開く。
+      const latest = await refreshLatestRun();
+      const retried =
+        latest !== null &&
+        latest.trigger === 'feedback' &&
+        latest.run_id !== before &&
+        latest.run_id !== lastRunId &&
+        latest.run_id !== seenAutoRunId;
+      toast.show(
+        !retried
+          ? 'フィードバックを記録しました'
+          : isActive(latest)
+            ? '反応を踏まえて探し直しています'
+            : '反応を踏まえて探し直しました',
+      );
     },
-    [setReactions, toast],
+    [setReactions, toast, refreshLatestRun, lastRunId, seenAutoRunId],
   );
 
   const value: AppState = {
@@ -192,6 +270,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     stepCount,
     saveProfileAndStart,
     startRun,
+    latestRun,
+    refreshLatestRun,
+    autoRun,
+    openAutoRun,
+    dismissAutoRun,
     toggleInterest,
     markAsStep,
     reactionOf: (id) => reactions[id],

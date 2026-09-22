@@ -47,9 +47,19 @@ export default function ExplorePage() {
   const runId = params.get('run_id');
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  const { profile, opportunities, refreshOpportunities, startRun, showToast } = useAppState();
+  const { profile, opportunities, refreshOpportunities, startRun, showToast, openAutoRun } =
+    useAppState();
   const { run, logs, error, watch, setWatch } = useAgentRun(runId);
   const [starting, setStarting] = useState(false);
+
+  /** Agent が自分で始めた探索なら、その理由（決まった文面と数値だけ）。 */
+  const autoReason = run && run.trigger !== 'manual' ? run.trigger_reason : null;
+  const autoRunId = run && run.trigger !== 'manual' ? run.run_id : null;
+
+  // 自動で始めた探索をここで見ているなら、見たものとして知らせを閉じる。
+  useEffect(() => {
+    if (autoRunId) openAutoRun(autoRunId);
+  }, [autoRunId, openAutoRun]);
 
   const done = run?.status === 'completed';
   const failed = run?.status === 'failed';
@@ -131,6 +141,11 @@ export default function ExplorePage() {
               <span className="text-[12px] text-[#526748] bg-[#ffffff80] px-[10px] py-[5px] rounded-[4px]">
                 {badge}
               </span>
+              {autoReason ? (
+                <p className="text-[13px] leading-[1.8] text-[#726957] bg-[#f4eee5] rounded-[6px] px-[10px] py-[6px] mt-[12px] mb-0">
+                  Agent が自分で始めた探索です。{autoReason}
+                </p>
+              ) : null}
               <h2 className="text-[22px] font-medium leading-[1.65] mt-[15px] mb-[10px]">
                 {headline}
               </h2>

@@ -7,7 +7,7 @@ import type {
   OpportunityDetail,
 } from '../types';
 import { api, USE_MOCK } from './client';
-import { MOCK_OPPORTUNITIES, MOCK_OPPORTUNITY_SUMMARIES } from './mock';
+import { MOCK_OPPORTUNITIES, MOCK_OPPORTUNITY_SUMMARIES, recordMockFeedback } from './mock';
 
 export async function fetchOpportunities(): Promise<Opportunity[]> {
   if (USE_MOCK) return MOCK_OPPORTUNITY_SUMMARIES;
@@ -38,8 +38,15 @@ export async function markInterested(id: string): Promise<InterestResult> {
   return api.post<InterestResult>(`/opportunities/${id}/interest`);
 }
 
+/**
+ * 👍 / 👎 を送る。👎が推薦の過半数に重なると、Backend が探し直しを始めることがある
+ * （自動探索。既定オフ）。始めたかどうかはここでは返らないので、最新の run を取って確かめる。
+ */
 export async function sendFeedback(id: string, input: FeedbackInput) {
-  if (USE_MOCK) return { opportunity_id: id, recorded: true };
+  if (USE_MOCK) {
+    recordMockFeedback(id, input.reaction);
+    return { opportunity_id: id, recorded: true };
+  }
   return api.post<{ opportunity_id: string; recorded: boolean }>(
     `/opportunities/${id}/feedback`,
     input,

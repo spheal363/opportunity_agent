@@ -71,6 +71,7 @@ POST /api/opportunities/{id}/feedback
 | | `GET /api/profile` | 実装済み |
 | 2 | `POST /api/agent/runs` | 実装済み |
 | 3 | `GET /api/agent/runs/{run_id}` | 実装済み |
+| | `GET /api/agent/runs/latest` | 実装済み（現在のユーザーの最新 run。無ければ `data: null`） |
 | | `GET /api/agent/runs/{run_id}/logs` | 実装済み |
 | | `GET /api/agent/runs/{run_id}/result` | 実装済み（**この run の最終選定**） |
 | 4 | `GET /api/opportunities` | 実装済み |
@@ -78,7 +79,7 @@ POST /api/opportunities/{id}/feedback
 | 6 | `POST /api/opportunities/{opportunity_id}/interest` | 実装済み（Verification 未接続） |
 | 7 | `GET /api/calendar/availability` | 実装済み（Google Calendar） |
 | 8 | `POST /api/opportunities/{opportunity_id}/calendar` | 実装済み（Google Calendar） |
-| 9 | `POST /api/opportunities/{opportunity_id}/feedback` | 実装済み（Reflection 未接続） |
+| 9 | `POST /api/opportunities/{opportunity_id}/feedback` | 実装済み（Reflection 未接続。👎が重なると Agent が探し直すことがある。「自動探索」） |
 | | `GET /api/health` | 実装済み |
 
 ### Agent 実行状態
@@ -92,6 +93,61 @@ POST /api/opportunities/{id}/feedback
 `expensive_model_calls`: 高性能モデルを使った回数。**全件を高性能モデルへ投げていない**ことを示す。
 
 どちらも進捗の更新ごとに増える。途中で失敗しても、そこまでの分が残る。
+
+`trigger`: `manual` / `feedback` / `stale` / `scheduled`（何がきっかけで始まったか。「自動探索」）
+`trigger_reason`: Agent が自分で始めた理由。`manual` では `null`。
+**決まった文面と数値だけ**で、候補のタイトルなど Web 由来の文は入らない。
+
+列を足す前の run は `trigger=manual` として返る（既存 DB には `DEFAULT 'manual'` で足す）。
+
+### 自動探索（Agent が自分で始める探索）
+
+Agent が「いつ探すか」も自分で決める。**自動にするのは発見だけ**で、
+Calendar への追加など外部への操作は人の操作のまま。**既定はすべてオフ**
+（`backend/.env.example` の `AUTO_EXPLORE_*`）。判定は `backend/services/auto_explore.py`。
+
+| `trigger` | きっかけ | 判定するとき |
+| --- | --- | --- |
+| `manual` | ボタン・目標の保存（`POST /api/agent/runs`） | — |
+| `feedback` | 最新の完了 run の推薦（2 件以上）のうち、2 件以上かつ過半数に👎（`reaction=dislike` または `status=dismissed`）。その run より新しい run が無いとき | 👎を送った直後（`POST .../feedback`） |
+| `stale` | 推薦中・保存中（`recommended` / `interested`）で行動できる候補（受付終了でない・締切が過ぎていない）が 3 件を切り、**前回の探索の後に**締切を過ぎた・開催を終えたものが 1 件以上あるとき | 定期チェック |
+| `scheduled` | 最後の run（状態は問わない）から設定した時間（既定 24 時間）がたったとき | 定期チェック |
+
+定期チェックは `AUTO_EXPLORE_SCHEDULE=true` のときだけ Backend の起動時に始まり、
+`AUTO_EXPLORE_TICK_SECONDS`（既定 300 秒）ごとに判定する。`stale` を先に見る。
+**一度も探索していない人には始めない**（最初の探索は本人が始める）。
+`stale` の期限切れは「前回の探索の後に」過ぎたものだけを数える。同じ期限切れで
+何度も走らせないため。締切の種類の扱いは受付状況（availability）と同じ。
+
+始めた run は最初の Log（`step=analyzing_profile`）に `trigger_reason` と同じ文が入る。
+探索中画面の先頭に「なぜ始めたか」が出る。**AgentStep は増やしていない。**
+
+`POST .../feedback` の**レスポンスの形は変えていない。** 探し直したかどうかは返さないので、
+画面は👎の後に最新の run を取って確かめる。
+
+**止める仕組み（全自動 trigger に共通。コードが強制する）:**
+
+- 機能フラグが既定オフ。オフなら今の挙動を何も変えない
+- 直近 24 時間（暦日ではない）の自動 run の回数上限（既定 3）
+- 直近 24 時間の**全 run（手動を含む）**の `cost_jpy` の合計の上限（既定 20 円。見積もり）
+- 自動 run 同士の最低間隔（既定 60 分）
+- `queued` / `running` の run があれば始めない。ただし進捗が一定時間（既定 30 分）無いものは
+  止まった run とみなし、妨げにしない（決まった文言で `failed` にする。例外の文字列は載せない）
+- プロフィールが無ければ始めない
+- 同じ run への探し直しは 1 回まで（探し直した run が失敗しても繰り返さない）
+
+#### 最新の run（`GET /api/agent/runs/latest`）
+
+現在のユーザーのいちばん新しい run（状態は問わない）を `AgentRunState` で返す。他人の run は返さない。
+
+**run が 1 件も無いときは 404 ではなく `{"success": true, "data": null}`。**
+まだ探索していないのは正常な状態で、ホームが定期的に取りに来るため
+（404 だと毎回エラーとして扱うことになる）。
+
+画面はホーム（表示時・フォーカス時・30 秒ごと。自動の run が実行中の間は 5 秒ごと）と
+👎の後にこれを取る。`trigger` が `manual` 以外で、最後に自分で始めた run とも、
+見た・閉じた run とも違えば、`trigger_reason` と「見る」リンク（実行中なら探索中画面、
+完了なら結果）を出す。**画面は勝手に移らない。**
 
 ### 今回の選定結果と保存一覧は別経路
 
