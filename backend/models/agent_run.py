@@ -33,6 +33,10 @@ class AgentRun(Base):
     # 3 件に満たなかった理由。後から同じ内容を返せるよう run に持つ。
     shortfall_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # この run が対象にした期間（#47）。{'start','end','tz'}。
+    # **run 開始時に確定した値をそのまま残す。** 後から今日の日付で作り直さない。
+    search_window: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # コスト計測（OrcaRouter のモデル振り分けを見せるため）
     cost_jpy: Mapped[float] = mapped_column(Float, default=0.0)
     expensive_model_calls: Mapped[int] = mapped_column(Integer, default=0)

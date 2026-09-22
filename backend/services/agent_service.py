@@ -4,6 +4,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from ai import window as search_window
 from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity
 from schemas.agent import AgentLogEntry, AgentRunResult, AgentRunState, AgentRunStatus
 from schemas.opportunity import OpportunitySummary
@@ -56,16 +57,53 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
         r.opportunity_id: r
         for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
     }
+    win = search_window.SearchWindow.from_dict(run.search_window)
     # **順位を保つ。** DB の返す順ではなく selected_ids の順。
-    selected = [
-        OpportunitySummary.model_validate(rows[i], from_attributes=True) for i in ids if i in rows
+    selected = [_summary(rows[i], win) for i in ids if i in rows]
+
+    # **推薦しなかったが、読んで抽出できた候補。**
+    #
+    # 条件は「この run で見つけ」「本文から抽出できている」こと。
+    # 検索しただけで読んでいない候補は `Opportunity` の行にならないので、
+    # ここには入らない。**未読の保留候補を、確認済みの推薦と同じ扱いにしない。**
+    #
+    # 一覧を開くだけで外部 API は呼ばない。DB にある分だけを返す。
+    chosen = set(ids)
+    others = [
+        _summary(r, win)
+        for r in db.query(Opportunity)
+        .filter(Opportunity.run_id == run_id, Opportunity.user_id == run.user_id)
+        .order_by(Opportunity.score.desc())
+        .all()
+        if r.opportunity_id not in chosen
     ]
     return AgentRunResult(
         run_id=run_id,
         status=run.status,
         recorded=True,
         selected=selected,
+        others=others,
         shortfall_reason=run.shortfall_reason,
+        search_window=({**win.to_dict(), "days": win.days} if win else None),
         # **失敗の理由を隠さない。** 設定不足なら直せる。
         error=run.error,
     )
+
+
+def _summary(row: Opportunity, win: "search_window.SearchWindow | None") -> OpportunitySummary:
+    """期間との関係を付けて返す。**期間が分からない run では付けない。**
+
+    この列が付く前の run を、今日の日付で作り直した期間で判定しない。
+    """
+    out = OpportunitySummary.model_validate(row, from_attributes=True)
+    if win is None:
+        return out
+    status = search_window.classify(
+        opportunity_type=row.type,
+        start_at=row.start_at,
+        end_at=row.end_at,
+        window=win,
+    )
+    out.window_status = status.value
+    out.window_note = search_window.label(status, win)
+    return out

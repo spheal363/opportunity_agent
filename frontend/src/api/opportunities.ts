@@ -50,7 +50,7 @@ export async function sendFeedback(id: string, input: FeedbackInput) {
 
 /** その機会の時間帯に重なる予定。読み取りだけなので、画面を開いたときに自動で呼んでよい。 */
 export async function checkCalendarAvailability(id: string): Promise<CalendarAvailability> {
-  if (USE_MOCK) return { available: true, conflicts: [] };
+  if (USE_MOCK) return { available: true, conflicts: [], event: null };
   return api.get<CalendarAvailability>(
     `/calendar/availability?opportunity_id=${encodeURIComponent(id)}`,
   );

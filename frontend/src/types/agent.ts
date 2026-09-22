@@ -5,12 +5,7 @@ import type { Opportunity } from './opportunity';
 export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export type AgentStep =
-  | 'analyzing_profile'
-  | 'planning'
-  | 'searching'
-  | 'evaluating'
-  | 'verifying'
-  | 'completed';
+  'analyzing_profile' | 'planning' | 'searching' | 'evaluating' | 'verifying' | 'completed';
 
 export type AgentRunCreated = {
   run_id: string;
@@ -63,6 +58,15 @@ export type AgentRunResult = {
   selected: Opportunity[];
   /** 3 件に満たなかった理由 */
   shortfall_reason: string | null;
+  /** この run が対象にした期間（#47）。この列が付く前の run では null */
+  search_window: { start: string; end: string; tz: string; days: number } | null;
+  /**
+   * 推薦しなかったが、**本文まで読んで抽出できた**候補。
+   *
+   * 検索しただけで未読の候補は入らない。未読の保留候補を、確認済みの推薦と
+   * 同じ扱いにしないため。一覧を開くだけでは外部 API を呼ばない。
+   */
+  others: Opportunity[];
   /** 失敗した理由。**「記録されていません」だけでは原因が分からない。** */
   error: string | null;
 };

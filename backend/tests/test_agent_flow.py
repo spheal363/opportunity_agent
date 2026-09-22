@@ -30,7 +30,13 @@ def test_full_mvp_flow(client, profile_payload):
     assert run["progress"] == 100
 
     logs = client.get(f"/api/agent/runs/{run_id}/logs").json()["data"]
-    assert [log["step"] for log in logs][:2] == ["analyzing_profile", "planning"]
+    # 工程の順序を見る。**同じ工程の Log が何行出るかは固定しない**
+    # （探索の対象期間が analyzing_profile に 1 行増えた、#47）。
+    steps: list[str] = []
+    for log in logs:
+        if not steps or steps[-1] != log["step"]:
+            steps.append(log["step"])
+    assert steps[:2] == ["analyzing_profile", "planning"]
 
     items = client.get("/api/opportunities").json()["data"]
     assert len(items) == 3

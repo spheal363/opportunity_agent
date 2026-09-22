@@ -231,9 +231,7 @@ export function DetailDialog() {
             </p>
           ) : null}
           {item.recommended_action ? (
-            <p className="text-[14px] text-muted">
-              次に取れる行動：{item.recommended_action}
-            </p>
+            <p className="text-[14px] text-muted">次に取れる行動：{item.recommended_action}</p>
           ) : null}
 
           <label className="block text-[14px] mt-[20px] mb-[7px]" htmlFor="application">

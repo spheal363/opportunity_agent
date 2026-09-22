@@ -93,6 +93,11 @@ class OpportunitySummary(BaseModel):
     # 不明のときは時刻を表示しない（確かめていない時刻を見せない）。
     start_at_is_date_only: bool | None = None
     deadline_is_date_only: bool | None = None
+    # **探索期間との関係（#47）。** DB の列ではなく、run の期間から毎回求める。
+    # None は「期間が分からない run」（この列が付く前の run）。
+    # **受付状況とは別の軸。** 期間内でも申込が締め切られていることがある。
+    window_status: str | None = None
+    window_note: str | None = None
     # **この URL は申込先か、情報源か。** True なら申込先は未確認。
     url_is_source_only: bool = True
     # 検証で本文から読み取れた申込先。**同一サイトは根拠にしない。**

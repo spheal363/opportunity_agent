@@ -10,7 +10,12 @@ from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from models import Opportunity
-from schemas.calendar import CalendarAvailability, CalendarConflict, CalendarEventCreated
+from schemas.calendar import (
+    CalendarAvailability,
+    CalendarConflict,
+    CalendarEventCreated,
+    CalendarEventPreview,
+)
 from schemas.opportunity import OpportunityStatus
 from services.opportunity_service import get_owned
 from tools import registry
@@ -20,6 +25,9 @@ from tools.google_calendar import CalendarError, EventDraft, InsertedEvent, even
 # 推測した事実として見せないよう、予定の説明にも「仮」と書く。
 # Frontend の確認表示もこれに合わせている（docs/api.md）。
 PLACEHOLDER_DURATION = timedelta(hours=1)
+
+# 終日予定を組み立てる基準のタイムゾーン。画面の確認にもそのまま出す。
+EVENT_TIMEZONE = "Asia/Tokyo"
 
 
 class ScheduleUnknown(CalendarError):
@@ -49,7 +57,37 @@ def check_availability(
         )
         for b in result.data
     ]
-    return CalendarAvailability(available=not conflicts, conflicts=conflicts)
+    return CalendarAvailability(
+        available=not conflicts,
+        conflicts=conflicts,
+        # **確認に出すのは、実際に送る内容そのもの。**
+        event=_preview(row),
+    )
+
+
+def preview(db: Session, opportunity_id: str, user_id: str) -> CalendarEventPreview | None:
+    """登録する内容だけを返す。カレンダーへは触らない。"""
+    row = get_owned(db, opportunity_id, user_id)
+    return None if row is None else _preview(row)
+
+
+def _preview(row: Opportunity) -> CalendarEventPreview:
+    start_at, end_at, end_is_placeholder = _window(row)
+    all_day = row.start_at_is_date_only is True
+    return CalendarEventPreview(
+        title=row.title,
+        start_at=start_at,
+        end_at=end_at,
+        all_day=all_day,
+        timezone=EVENT_TIMEZONE,
+        end_is_placeholder=end_is_placeholder and not all_day,
+        location=row.location,
+        source_url=_safe_url(row.url),
+    )
+
+
+def _safe_url(url: str | None) -> str | None:
+    return url if url and urlparse(url).scheme in ("http", "https") else None
 
 
 def add_event(db: Session, opportunity_id: str, user_id: str) -> CalendarEventCreated | None:
@@ -57,13 +95,19 @@ def add_event(db: Session, opportunity_id: str, user_id: str) -> CalendarEventCr
     if row is None:
         return None
     start_at, end_at, end_is_placeholder = _window(row)
+    # **出典に時刻が無かったものは終日予定にする（#47）。**
+    # 00:00 開始の 1 時間の予定にすると、こちらが決めた時刻を出典の値として
+    # 見せることになる。`None`（時刻の有無が不明）も終日にはしない。
+    all_day = row.start_at_is_date_only is True
     draft = EventDraft(
         event_id=event_id_for(row.opportunity_id),
         title=row.title,
         start_at=start_at,
         end_at=end_at,
         location=row.location,
-        description=_description(row, end_is_placeholder),
+        description=_description(row, end_is_placeholder and not all_day),
+        all_day=all_day,
+        timezone=EVENT_TIMEZONE,
     )
     # ここへ来るのは POST /opportunities/{id}/calendar、つまりユーザーが画面で
     # 追加内容を確認してボタンを押したときだけ。その操作を承認として扱う。
@@ -99,12 +143,15 @@ def _as_utc(value: datetime) -> datetime:
 def _description(row: Opportunity, end_is_placeholder: bool) -> str:
     lines: list[str] = []
     # Web から取った URL。javascript: などは載せない。
-    if row.url and urlparse(row.url).scheme in ("http", "https"):
+    if _safe_url(row.url):
         lines.append(f"公式ページ: {row.url}")
-    if end_is_placeholder:
+    if row.start_at_is_date_only is True:
+        lines.append("開始時刻が分かっていないため、終日の予定として入れています。")
+    elif end_is_placeholder:
         hours = int(PLACEHOLDER_DURATION.total_seconds() // 3600)
         lines.append(f"終了時刻は分かっていないため、仮に {hours} 時間で入れています。")
     lines.append(
-        "Opportunity Agent から追加した予定です。日時や内容は公式ページで確認してください。"
+        "Opportunity Agent から追加した予定です。**この予定の追加は参加申込ではありません。**"
+        "日時や内容は公式ページで確認し、申込はご自身で行ってください。"
     )
     return "\n".join(lines)

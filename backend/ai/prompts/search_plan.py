@@ -57,7 +57,9 @@ SYSTEM = (
     "英語記事ばかりが引っかかって募集ページに届かない。\n"
     '   例: "AI ハッカソン 東京 募集" / "音楽 AI 勉強会 参加者募集"\n'
     "8. ユーザーの活動地域が分かるなら、query に地名を足す。"
-    "**時期は規則 4 のとおり、入力にあるときだけ入れる。**\n"
+    "**時期は規則 4 のとおり、入力にあるときだけ入れる。**"
+    "「対象期間」が与えられているときは、その範囲に開催・募集があるものを狙う。"
+    "ただし**期間の年月日を query の文字列に書かない**（規則 4 と同じ理由）。\n"
     "9. reason は**ユーザーに見せる日本語**で書く。"
     "探索中画面にそのまま表示される。\n"
     "10. category は必ず上の一覧から選ぶ。迷ったら other。\n"
@@ -71,6 +73,7 @@ def build_user(
     goal_directions: list[str],
     interests: list[str],
     location: str | None = None,
+    window: str | None = None,
 ) -> str:
     """Goal 分析の結果を user メッセージに組み立てる。
 
@@ -82,5 +85,7 @@ def build_user(
         f"探索の軸: {', '.join(goal_directions) or '未設定'}",
         f"興味の交差点: {', '.join(interests) or '未設定'}",
         f"活動地域: {location or '不明'}",
+        # **期間も囲みの内側に置く。** 外に置くと system 直後に並ぶ。
+        f"対象期間: {window or '指定なし'}",
     ]
     return untrusted_block("user_goal", "\n".join(lines))

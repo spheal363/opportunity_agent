@@ -64,6 +64,11 @@ class AgentRunResult(BaseModel):
     selected: list[OpportunitySummary] = Field(default_factory=list)
     # 3 件に満たなかった理由
     shortfall_reason: str | None = None
+    # この run が対象にした期間（#47）。{'start','end','tz','days'}
+    search_window: dict | None = None
+    # **推薦しなかったが、本文まで読んで抽出できた候補。**
+    # 検索しただけで未読の候補は入らない（確認済みの推薦と同じ扱いにしない）。
+    others: list[OpportunitySummary] = Field(default_factory=list)
     # **失敗した理由。** 「記録されていません」だけでは原因が分からない。
     # 設定不足（鍵が無いなど）と、探しても見つからなかったことは別。
     error: str | None = None

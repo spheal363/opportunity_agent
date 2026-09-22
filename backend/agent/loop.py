@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from agent import demo_attack, stub_data
 from agent.state import AgentState
 from ai import availability, cost, guard
+from ai import window as search_window
 from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
 from ai.extraction import extract_many
@@ -118,6 +119,22 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
             _fail(db, state, "プロフィールが登録されていません")
             return
 
+        # **期間はここで確定する（#47）。** 以降どこでも今日を取り直さない。
+        # 探索は 2 分ほどかかるので、途中で日付が変わると判定がずれる。
+        win = search_window.for_now()
+        state.search_window = win.to_dict()
+        run = db.get(AgentRun, run_id)
+        if run is not None:
+            run.search_window = state.search_window
+            db.commit()
+        _log(
+            db,
+            state,
+            AgentStep.ANALYZING_PROFILE,
+            f"探索の対象期間: {win.start:%Y/%m/%d}〜{win.end:%Y/%m/%d}"
+            f"（{win.days}日間 / {win.timezone}）",
+        )
+
         _step(db, state, AgentStep.ANALYZING_PROFILE, "プロフィールを分析しています")
         with cost.step("goal_analysis"):
             state.goal_analysis = _analyze_goal(profile)
@@ -197,11 +214,14 @@ def _plan_search(state: AgentState, profile: UserProfile) -> list[SearchDirectio
     if goal is None:  # 順序を崩した呼び出しへの保険
         raise RuntimeError("goal analysis の前に search planning を呼んでいます")
 
+    win = search_window.SearchWindow.from_dict(state.search_window)
     return plan_search(
         goal_summary=goal.goal_summary,
         goal_directions=goal.goal_directions,
         interest_connections=goal.interest_connections,
         location=profile.location,
+        # **run 開始時に確定した期間**を明示して渡す（#47）。
+        window=(f"{win.start:%Y年%m月%d日}〜{win.end:%Y年%m月%d日}" if win else None),
     )
 
 

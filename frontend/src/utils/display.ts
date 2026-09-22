@@ -171,7 +171,6 @@ export function isStep(status: OpportunityStatus): boolean {
   return STEP_STATUSES.includes(status);
 }
 
-
 /**
  * リンクの意味。**情報源を申込先として見せない。**
  *

@@ -21,20 +21,10 @@ export type CostKind = 'free' | 'paid' | 'partially_free' | 'unknown';
 
 /** 締切が何に対するものか。backend/ai/schemas/extraction.py と対応。 */
 export type DeadlineKind =
-  | 'application'
-  | 'registration'
-  | 'early_bird'
-  | 'speaker'
-  | 'other'
-  | 'unknown';
+  'application' | 'registration' | 'early_bird' | 'speaker' | 'other' | 'unknown';
 
 export type OpportunityStatus =
-  | 'discovered'
-  | 'recommended'
-  | 'interested'
-  | 'registered'
-  | 'attended'
-  | 'dismissed';
+  'discovered' | 'recommended' | 'interested' | 'registered' | 'attended' | 'dismissed';
 
 /**
  * `GET /api/opportunities`。ユーザーへ提示済みの候補**すべて**。
@@ -81,6 +71,13 @@ export type Opportunity = {
    */
   start_at_is_date_only: boolean | null;
   deadline_is_date_only: boolean | null;
+  /**
+   * 探索期間との関係（#47）。**受付状況とは別の軸。**
+   * 期間内でも申込が締め切られていることがある。null は期間が分からない run。
+   */
+  window_status:
+    'in_window' | 'after_window' | 'ended' | 'schedule_unknown' | 'not_time_bound' | null;
+  window_note: string | null;
   /**
    * この URL は**申込先ではなく情報源**か。
    *

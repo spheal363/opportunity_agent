@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -83,6 +83,12 @@ class EventDraft:
     end_at: datetime
     location: str | None = None
     description: str | None = None
+    # **出典に時刻が無かった。** 終日予定として入れる（#47）。
+    # 時刻が無いものを 00:00 開始の予定にすると、こちらが決めた時刻を
+    # 出典の値として見せることになる。
+    all_day: bool = False
+    # 終日予定を組み立てるタイムゾーン。日付は利用者の地域で決まる。
+    timezone: str = "Asia/Tokyo"
 
 
 @dataclass(frozen=True)
@@ -285,11 +291,23 @@ def _rfc3339(value: datetime) -> str:
 
 
 def _event_body(draft: EventDraft) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "summary": draft.title,
-        "start": {"dateTime": _rfc3339(draft.start_at)},
-        "end": {"dateTime": _rfc3339(draft.end_at)},
-    }
+    if draft.all_day:
+        # Google の終日予定は date で指定し、**end は翌日**（排他）。
+        # 1 日だけの催しで end に同じ日を入れると API が弾く。
+        tz = ZoneInfo(draft.timezone)
+        start_date = draft.start_at.astimezone(tz).date()
+        end_date = max(draft.end_at.astimezone(tz).date(), start_date)
+        body: dict[str, Any] = {
+            "summary": draft.title,
+            "start": {"date": start_date.isoformat()},
+            "end": {"date": (end_date + timedelta(days=1)).isoformat()},
+        }
+    else:
+        body = {
+            "summary": draft.title,
+            "start": {"dateTime": _rfc3339(draft.start_at)},
+            "end": {"dateTime": _rfc3339(draft.end_at)},
+        }
     if draft.location:
         body["location"] = draft.location
     if draft.description:

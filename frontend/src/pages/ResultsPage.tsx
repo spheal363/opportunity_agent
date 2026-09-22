@@ -15,6 +15,7 @@ import { BottomNote, PageIntro } from '../components/app/Chrome';
 import { CardGrid, ResultsHead } from '../components/app/CardGrid';
 import { ResultWelcome } from '../components/app/ResultWelcome';
 import ErrorMessage from '../components/ErrorMessage';
+import { OtherCandidates } from '../components/app/OtherCandidates';
 import { useRunResult } from '../hooks/useRunResult';
 import { useAppState } from '../state/context';
 
@@ -36,6 +37,8 @@ export default function ResultsPage() {
   const { result, error, loading } = useRunResult(runId);
 
   const items = result?.selected ?? [];
+  const others = result?.others ?? [];
+  const win = result?.search_window ?? null;
   const notRecorded = result !== null && !result.recorded;
 
   return (
@@ -71,9 +74,7 @@ export default function ResultsPage() {
           探索に失敗しました：{result.error}
         </p>
       ) : null}
-      {result?.shortfall_reason ? (
-        <p role="status">{result.shortfall_reason}</p>
-      ) : null}
+      {result?.shortfall_reason ? <p role="status">{result.shortfall_reason}</p> : null}
 
       {notRecorded && !loading ? (
         <p role="status">
@@ -83,7 +84,16 @@ export default function ResultsPage() {
         </p>
       ) : null}
 
+      {/* **この run が対象にした期間。** 結果の読み方に効くので隠さない。 */}
+      {win ? (
+        <p className="text-[14px] text-muted mt-[4px] mb-0">
+          対象期間: {win.start} 〜 {win.end}（{win.days}日間 / {win.tz}）
+        </p>
+      ) : null}
+
       <CardGrid items={items} isResult />
+      {/* **おすすめとは別枠。** 読んだが選ばなかったものを、件数埋めに使わない。 */}
+      <OtherCandidates items={others} window={win} />
       <BottomNote />
     </>
   );
