@@ -5,6 +5,9 @@
 
 きっかけ（schemas.agent.AgentRunTrigger）:
   feedback   最新の推薦の過半数に👎が付いた。👎を送った直後に判定する
+  stale      推薦中・保存中で行動できる候補が 3 件を切り、前回の探索の後に
+             締切を過ぎた・開催を終えたものが出た。定期チェック（agent/scheduler.py）で判定する
+  scheduled  前回の探索から設定した時間がたった。定期チェックで判定する
 
 止める仕組みは**すべてここでコードが強制する**。LLM の判断は使わない。
 全自動 trigger に共通:
@@ -35,7 +38,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ai.availability import as_utc
+from ai.availability import Availability, as_utc, for_extracted
 from config import Settings, get_settings
 from logging_config import describe_exception, get_logger
 from models import AgentRun, Feedback, Opportunity, UserProfile
@@ -55,6 +58,12 @@ _start_lock = threading.Lock()
 WINDOW = timedelta(hours=24)
 
 _ACTIVE = (AgentRunStatus.QUEUED, AgentRunStatus.RUNNING)
+
+# 推薦中・保存中。これが「行動できる候補」の母集合。参加済みなどは数えない。
+_HELD = (OpportunityStatus.RECOMMENDED, OpportunityStatus.INTERESTED)
+
+# 行動できる候補がこれを切ったら補充を考える（推薦は TOP3）。
+ENOUGH_ACTIONABLE = 3
 
 # 止まったまま残った run を failed にするときの文言。**例外の文字列は載せない。**
 # run の error は GET /api/agent/runs/{id} でそのまま画面に出る。
@@ -76,6 +85,19 @@ class Decision:
 
 def feedback_reason(total: int, disliked: int) -> str:
     return f"今回の推薦{total}件のうち{disliked}件に👎が付いたため、反応を踏まえて探し直します"
+
+
+def stale_reason(expired: int) -> str:
+    return f"推薦中の機会のうち{expired}件が締切を過ぎたか開催を終えたため、新しく探します"
+
+
+def scheduled_reason(elapsed: timedelta) -> str:
+    """経過時間は**実際にたった時間**で書く。設定値ではない（止まっていた間も含めて正直に）。"""
+    hours = int(elapsed.total_seconds() // 3600)
+    if hours >= 1:
+        return f"前回の探索から{hours}時間たったため、新着を探します"
+    minutes = max(1, int(elapsed.total_seconds() // 60))
+    return f"前回の探索から{minutes}分たったため、新着を探します"
 
 
 # --------------------------------------------------------------------------
@@ -113,6 +135,81 @@ def decide_after_feedback(
 
     decision = Decision(AgentRunTrigger.FEEDBACK, feedback_reason(len(ids), disliked))
     return _unless_blocked(db, user_id, now, settings, decision)
+
+
+def decide_on_tick(
+    db: Session, user_id: str, now: datetime, settings: Settings | None = None
+) -> Decision | None:
+    """定期チェックで呼ぶ。stale を先に見て、成り立たなければ scheduled を見る。
+
+    **一度も探索していない人には始めない。** 最初の探索は本人が始める
+    （目標の保存・ボタン）。「前回」が無いので、どちらの条件も決められない。
+    """
+    settings = settings or get_settings()
+    if not settings.auto_explore_schedule:
+        return None
+
+    last = agent_service.latest_row(db, user_id)
+    if last is None:
+        return None
+    decision = _stale(db, user_id, as_utc(last.created_at), now) or _scheduled(
+        as_utc(last.created_at), now, settings
+    )
+    if decision is None:
+        return None
+    return _unless_blocked(db, user_id, now, settings, decision)
+
+
+def _stale(db: Session, user_id: str, last_run_at: datetime, now: datetime) -> Decision | None:
+    """推薦中・保存中の候補が締切切れで減ったか。
+
+    成り立つ条件:
+      - 行動できる候補（受付終了でない・締切が過ぎていない）が 3 件を切った
+      - **前回の探索の後に**締切を過ぎた・開催を終えたものが 1 件以上ある
+
+    「前回の探索の後に」で絞るのは、同じ期限切れで何度も走らせないため。
+    探し直しても行動できる候補が 3 件に届かないことはあり、その期限切れを
+    毎回数えると、上限に達するまで同じ理由で走り続ける。
+
+    受付終了（availability=closed）は探索中の検証でしか分からず、その run は
+    もう知っている。**新しく分かるのは日時が過ぎたことだけ**なので、それを数える。
+    締切の種類ごとの扱い（早割の期限は閉じる根拠にしない など）は
+    ai/availability.py と同じ判定を使う。
+    """
+    rows = (
+        db.query(Opportunity)
+        .filter(
+            Opportunity.user_id == user_id,
+            Opportunity.status.in_([s.value for s in _HELD]),
+        )
+        .all()
+    )
+    actionable = 0
+    newly_expired = 0
+    for row in rows:
+        known_closed = row.availability == Availability.CLOSED
+        closed_now = _closed_by_date(row, now)
+        if not known_closed and not closed_now:
+            actionable += 1
+        elif closed_now and not known_closed and not _closed_by_date(row, last_run_at):
+            newly_expired += 1
+    if actionable >= ENOUGH_ACTIONABLE or newly_expired == 0:
+        return None
+    return Decision(AgentRunTrigger.STALE, stale_reason(newly_expired))
+
+
+def _scheduled(last_run_at: datetime, now: datetime, settings: Settings) -> Decision | None:
+    """前回の探索（状態は問わない）から設定した時間がたったか。"""
+    elapsed = now - last_run_at
+    if elapsed < timedelta(minutes=settings.auto_explore_schedule_interval_minutes):
+        return None
+    return Decision(AgentRunTrigger.SCHEDULED, scheduled_reason(elapsed))
+
+
+def _closed_by_date(row: Opportunity, at: datetime) -> bool:
+    """その時点で、日時だけから受付終了と言い切れるか（ai/availability.py の判定）。"""
+    status, _ = for_extracted(row, now=at)
+    return status is Availability.CLOSED
 
 
 def blocked_reason(db: Session, user_id: str, now: datetime, settings: Settings) -> str | None:
@@ -227,6 +324,21 @@ def start_after_feedback(
         return None
 
 
+def start_on_tick(db: Session, user_id: str, now: datetime | None = None) -> str | None:
+    """定期チェックで呼ぶ。始めるなら run を作って run_id を返す（実行は呼び出し側）。
+
+    例外はそのまま上げる。呼び出し側（agent/scheduler.py）がログに残して次の人へ進む。
+    """
+    settings = get_settings()
+    if not settings.auto_explore_schedule:
+        return None
+    with _start_lock:
+        now = now or datetime.now(UTC)
+        expire_abandoned_runs(db, user_id, now, settings)
+        decision = decide_on_tick(db, user_id, now, settings)
+        return _start(db, user_id, decision) if decision else None
+
+
 def expire_abandoned_runs(db: Session, user_id: str, now: datetime, settings: Settings) -> int:
     """進捗が止まったまま残った run を failed にする。直した件数を返す。
 
@@ -252,7 +364,7 @@ def _start(db: Session, user_id: str, decision: Decision) -> str:
 
 
 # --------------------------------------------------------------------------
-# 日時
+# run の状態と日時
 # --------------------------------------------------------------------------
 
 

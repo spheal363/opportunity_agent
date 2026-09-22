@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     #
     # 最新の推薦の過半数に👎が付いたら探し直す
     auto_explore_on_feedback: bool = False
+    # 定期チェック（締切切れで推薦が減った・前回から時間がたった）
+    auto_explore_schedule: bool = False
+    # 定期チェックの間隔（秒）
+    auto_explore_tick_seconds: int = Field(default=300, ge=5)
+    # 前回の探索からこれだけたったら新着を探す（分）。既定は 24 時間
+    auto_explore_schedule_interval_minutes: int = Field(default=1440, ge=1)
     # 直近 24 時間の自動 run の回数上限。0 なら自動では走らない
     auto_explore_max_runs_per_day: int = Field(default=3, ge=0)
     # 直近 24 時間の**全 run（手動を含む）**の見積もり額の合計がこれに達したら、

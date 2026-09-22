@@ -109,6 +109,14 @@ Calendar への追加など外部への操作は人の操作のまま。**既定
 | --- | --- | --- |
 | `manual` | ボタン・目標の保存（`POST /api/agent/runs`） | — |
 | `feedback` | 最新の完了 run の推薦（2 件以上）のうち、2 件以上かつ過半数に👎（`reaction=dislike` または `status=dismissed`）。その run より新しい run が無いとき | 👎を送った直後（`POST .../feedback`） |
+| `stale` | 推薦中・保存中（`recommended` / `interested`）で行動できる候補（受付終了でない・締切が過ぎていない）が 3 件を切り、**前回の探索の後に**締切を過ぎた・開催を終えたものが 1 件以上あるとき | 定期チェック |
+| `scheduled` | 最後の run（状態は問わない）から設定した時間（既定 24 時間）がたったとき | 定期チェック |
+
+定期チェックは `AUTO_EXPLORE_SCHEDULE=true` のときだけ Backend の起動時に始まり、
+`AUTO_EXPLORE_TICK_SECONDS`（既定 300 秒）ごとに判定する。`stale` を先に見る。
+**一度も探索していない人には始めない**（最初の探索は本人が始める）。
+`stale` の期限切れは「前回の探索の後に」過ぎたものだけを数える。同じ期限切れで
+何度も走らせないため。締切の種類の扱いは受付状況（availability）と同じ。
 
 始めた run は最初の Log（`step=analyzing_profile`）に `trigger_reason` と同じ文が入る。
 探索中画面の先頭に「なぜ始めたか」が出る。**AgentStep は増やしていない。**

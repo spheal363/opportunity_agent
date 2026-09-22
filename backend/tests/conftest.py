@@ -11,6 +11,7 @@ os.environ["AGENT_STUB_MODE"] = "true"
 # 自動探索は既定オフ。手元の .env でオンにしていても、テストでは勝手に走らせない。
 # 使うテストは設定を差し替えてオンにする（tests/test_auto_explore_*.py）。
 os.environ["AUTO_EXPLORE_ON_FEEDBACK"] = "false"
+os.environ["AUTO_EXPLORE_SCHEDULE"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
