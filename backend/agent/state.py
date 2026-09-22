@@ -26,6 +26,8 @@ class AgentState(BaseModel):
     search_directions: list[SearchDirection] = Field(default_factory=list)
 
     # 発見済み Opportunity（評価前も含む）の opportunity_id
+    # 希望した活動地域（#47）。プロフィールの値を run 開始時に写す。
+    wanted_region: str | None = None
     # この run が対象にする期間（#47）。**run 開始時に確定し、途中で変えない。**
     search_window: dict | None = None
     discovered_ids: list[str] = Field(default_factory=list)

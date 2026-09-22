@@ -58,6 +58,7 @@ class Step(StrEnum):
     GOAL_ANALYSIS = "goal_analysis"
     SEARCH_PLAN = "search_plan"
     EXTRACTION = "extraction"
+    LINK_PICK = "link_pick"
     EVALUATION = "evaluation"
     RECOMMENDATION = "recommendation"
     VERIFICATION = "verification"
@@ -97,6 +98,11 @@ _ROUTES: dict[Step, Route] = {
         tier=ModelTier.STANDARD,
         reads_untrusted=True,
         reason="Web 本文をそのまま読む。8回/run で費用の過半を占める",
+    ),
+    Step.LINK_PICK: Route(
+        tier=ModelTier.STANDARD,
+        reads_untrusted=True,
+        reason="一覧ページから取った題名を読む。Web 由来",
     ),
     Step.EVALUATION: Route(
         tier=ModelTier.STANDARD,

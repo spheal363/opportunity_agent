@@ -82,6 +82,19 @@ class Settings(BaseSettings):
     # 検知と除去は本番と同じコードが行う。本番の探索では false のまま。
     demo_injection: bool = False
 
+    # --- 一覧ページからの探索（#47）---------------------------------------
+    # **最初の実験条件であって、製品として最適と決まった値ではない。**
+    # 実測してから調整する。0 にすると一覧を辿らない（従来の挙動へ戻る）。
+    #
+    # 候補が足りない希望について、一覧を何ページ辿るか
+    listing_pages_per_wish: int = 2
+    # 1 つの一覧から、個別イベントを何件まで読むか
+    listing_links_per_page: int = 4
+    # 1 run 全体で、一覧からの追加取得を何件まで許すか
+    listing_max_fetches: int = 12
+    # 追加探索を止める条件。**新しい候補が得られなくなったら止める。**
+    listing_stop_after_empty_rounds: int = 2
+
     # --- モデル振り分け（#26-b）------------------------------------------
     # LLM_ROUTING=policy    **既定。** 工程ごとの方針に従う（`ai/routing.py`）
     # LLM_ROUTING=standard  表を無視して全工程 STANDARD。振り分け前へ戻す

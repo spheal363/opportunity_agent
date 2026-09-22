@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from agent import demo_attack, stub_data
 from agent.state import AgentState
-from ai import availability, cost, guard
+from ai import availability, cost, explore, guard, listing
 from ai import window as search_window
 from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
@@ -123,6 +123,7 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         # 探索は 2 分ほどかかるので、途中で日付が変わると判定がずれる。
         win = search_window.for_now()
         state.search_window = win.to_dict()
+        state.wanted_region = profile.location
         run = db.get(AgentRun, run_id)
         if run is not None:
             run.search_window = state.search_window
@@ -306,7 +307,12 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # 取ってきた本文も Web 由来。抽出へ渡す前に検査する。
     sources = _guard_bodies(db, state, _with_bodies([r for _, r in candidates]))
 
-    # --- ⑤ 全候補をまとめて抽出する -----------------------------------------
+    # --- ⑤ 一覧ページは「探索元」として先へ進む -----------------------------
+    # **一覧を個別イベントとして数えない。** 実測で、音楽方向は一覧 4 件と
+    # 記事 1 件で個別イベントが 0 件だった。ここが無いと先へ届かない。
+    sources = _follow_listings(db, state, sources)
+
+    # --- ⑥ 全候補をまとめて抽出する -----------------------------------------
     # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
     # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
     with cost.step("extraction"):
@@ -452,6 +458,84 @@ def _save_search_candidates(db: Session, state: AgentState, candidates: list) ->
         run.search_candidates = rows
         db.commit()
     _log(db, state, AgentStep.SEARCHING, f"検索で{len(rows)}件の候補が見つかりました")
+
+
+def _follow_listings(db: Session, state: AgentState, sources: list) -> list:
+    """一覧ページから個別イベントのページまで進む（#47）。
+
+    **一覧はそのまま抽出へ回さない。** 1 ページに複数のイベントが載っており、
+    1 件の機会へ潰すと中身が混ざる。代わりに本文のリンクから個別ページを
+    取り、それを抽出の入力に足す。**一覧自体も残す**（一覧しか手がかりが
+    無いときに、取得元として画面へ出せるようにするため）。
+
+    上限は設定で変える（`config.py` の `LISTING_*`）。
+    **最初の実験条件であって、製品として最適と決まった値ではない。**
+    """
+    settings = get_settings()
+    budget = settings.listing_max_fetches
+    if budget <= 0:
+        return sources
+
+    goal = state.goal_analysis
+    wishes = list(goal.wanted_now) if goal else []
+    win = search_window.SearchWindow.from_dict(state.search_window)
+    window_text = f"{win.start:%Y年%m月%d日}〜{win.end:%Y年%m月%d日}" if win else None
+    profile_location = state.wanted_region
+
+    added: list = []
+    pages = 0
+    for source in sources:
+        if budget <= 0 or pages >= settings.listing_pages_per_wish * max(1, len(wishes)):
+            break
+        if not isinstance(source, PageContent):
+            continue
+        if (
+            listing.classify_page(source.content, base_url=source.url)
+            is not listing.PageKind.LISTING
+        ):
+            continue
+
+        pages += 1
+        with cost.step("listing"):
+            result = explore.follow(
+                source,
+                wishes=wishes,
+                location=profile_location,
+                window=window_text,
+                limit=min(settings.listing_links_per_page, budget),
+                fetch=_fetch_pages,
+            )
+        budget -= len(result.pages)
+        added.extend(result.pages)
+        cost.record_dropped("listing_pages", 1)
+        _log(
+            db,
+            state,
+            AgentStep.SEARCHING,
+            f"一覧ページから{len(result.pages)}件の個別イベントを読みました"
+            f"（リンク{result.links_found}件から{result.picked}件を選択）",
+        )
+        for url, why in result.failures:
+            # **取れなかったことを隠さない。** URL は出すが本文は出さない。
+            logger.info("listing.failed url=%s reason=%s", url, why)
+
+    if added:
+        cost.record_dropped("listing_individual_pages", len(added))
+    return [*sources, *added]
+
+
+def _fetch_pages(urls: list[str]) -> list:
+    """URL の一覧から本文を取る。**取れなかった分は黙って落とす。**
+
+    呼び出し側（`ai/explore.py`）が、取れなかった URL を理由付きで記録する。
+    """
+    if not urls:
+        return []
+    try:
+        return registry.invoke("read_page", url=urls).data["pages"]
+    except SearchError as exc:
+        logger.warning("listing.fetch_failed reason=%s", exc)
+        return []
 
 
 def _guard_bodies(

@@ -101,7 +101,13 @@ def test_the_steps_that_read_external_data_are_marked():
     **外部由来のデータ**を読む。要約を経ても trusted には格上げしない。
     """
     reads = {s for s, r in routing.table() if r.reads_untrusted}
-    assert reads == {Step.EXTRACTION, Step.EVALUATION, Step.RECOMMENDATION, Step.VERIFICATION}
+    assert reads == {
+        Step.EXTRACTION,
+        Step.LINK_PICK,
+        Step.EVALUATION,
+        Step.RECOMMENDATION,
+        Step.VERIFICATION,
+    }
 
 
 def test_no_step_uses_powerful_by_default():
