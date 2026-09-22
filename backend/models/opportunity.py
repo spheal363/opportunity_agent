@@ -26,6 +26,9 @@ class Opportunity(Base):
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     location: Mapped[str | None] = mapped_column(String, nullable=True)
     format: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 開催地の都道府県（#47）。**会場名だけでは地域を判定できない。**
+    region: Mapped[str | None] = mapped_column(String, nullable=True)
+    online_participation: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     eligibility: Mapped[str | None] = mapped_column(Text, nullable=True)
     cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

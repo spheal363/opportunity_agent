@@ -463,7 +463,11 @@ def _fits_the_wish(row: Opportunity, win, wanted_region: str | None) -> bool:
         if status is search_window.WindowStatus.SCHEDULE_UNKNOWN:
             return False
     match = region.classify(
-        wanted=wanted_region, location=row.location, opportunity_format=row.format
+        wanted=wanted_region,
+        location=row.location,
+        opportunity_format=row.format,
+        region=row.region,
+        online_participation=row.online_participation,
     )
     return match is region.RegionMatch.MATCH
 
@@ -510,6 +514,8 @@ def _extract_until_enough(
                 end_at=item.end_at,
                 location=item.location,
                 format=item.format,
+                region=item.region,
+                online_participation=item.online_participation,
                 availability=availability.for_extracted(item)[0],
             )
             if _fits_the_wish(row, win, state.wanted_region):
@@ -787,6 +793,8 @@ def _save_extracted(
     row.deadline = item.deadline
     row.location = item.location
     row.format = item.format
+    row.region = item.region
+    row.online_participation = item.online_participation
     row.eligibility = item.eligibility
     row.cost = item.cost
     # **何に対する締切・料金か。** ページ全体の受付状況を一括で決めないため。

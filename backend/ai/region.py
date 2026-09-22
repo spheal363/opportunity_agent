@@ -77,36 +77,64 @@ def classify(
     wanted: str | None,
     location: str | None,
     opportunity_format: str | None,
+    region: str | None = None,
+    online_participation: bool | None = None,
 ) -> RegionMatch:
     """候補が希望の地域に合うか。
 
     **希望が未記入なら判定しない**（UNKNOWN。全件を不一致にしない）。
+
+    見る順番:
+
+        1. 抽出できた都道府県（`region`）。**会場名より確か**
+        2. 会場名（`location`）に希望の地名が出るか
+        3. オンライン参加が明示されているか
+
+    実測の誤りを踏まえている。
+
+        hybrid を無条件に不一致にしていた  -> 現地参加もできるので会場で見る
+        ZEROTOKYO が「東京」に一致しない   -> 都道府県を別に持つ
     """
     places, online_ok = wanted_places(wanted)
     if not places and not online_ok:
         return RegionMatch.UNKNOWN
 
     fmt = (opportunity_format or "").strip().lower()
+    online = (
+        online_participation if online_participation is not None else fmt in ("online", "hybrid")
+    )
 
-    # オンライン参加が明示されている。**語の拾い読みではなく抽出済みの形式。**
-    if fmt in ("online", "hybrid"):
-        return RegionMatch.MATCH if online_ok else RegionMatch.MISMATCH
-
-    place_text = _normalize(location or "")
-    hit = any(_normalize(p) and _normalize(p) in place_text for p in places)
-    if hit:
-        # 希望した地名が開催地に出てくる。現地開催として一致。
-        return RegionMatch.MATCH
-
-    if fmt == "offline":
-        if not place_text:
-            # 現地開催だが場所が取れていない。**東京と決めつけない。**
-            return RegionMatch.UNKNOWN
-        # 現地開催で、希望した地名がどこにも出てこない。
-        # **「沖縄だ」と断定はしない。** 言えるのは「希望地を確認できない」こと。
+    # ① 都道府県。**会場名より確か。**
+    region_text = _normalize(region or "")
+    if region_text:
+        if any(_normalize(p) and _normalize(p) in region_text for p in places):
+            return RegionMatch.MATCH
+        # 都道府県が分かっていて、希望のどれとも違う。
+        # オンラインでも参加できるなら、そちらで一致しうる。
+        if online and online_ok:
+            return RegionMatch.MATCH
         return RegionMatch.MISMATCH
 
-    # 参加形式が分からない。場所も一致しない。
+    # ② 会場名に希望の地名が出るか。
+    place_text = _normalize(location or "")
+    if any(_normalize(p) and _normalize(p) in place_text for p in places):
+        return RegionMatch.MATCH
+
+    # ③ オンライン参加。
+    if online and online_ok:
+        return RegionMatch.MATCH
+
+    if fmt == "online" and not online_ok:
+        # **オンラインのみ。現地参加はできない。**
+        # 希望がオンラインを含まないなら、これは対象外と言い切れる。
+        return RegionMatch.MISMATCH
+
+    if fmt == "offline" and place_text:
+        # 現地開催で、会場名にも都道府県にも希望の地名が無い。
+        # **「どこそこだ」とは断定しない。** 言えるのは「希望地を確認できない」こと。
+        return RegionMatch.MISMATCH
+
+    # 参加形式も開催地も決め手が無い。**東京と決めつけない。**
     return RegionMatch.UNKNOWN
 
 

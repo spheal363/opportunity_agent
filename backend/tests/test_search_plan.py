@@ -272,6 +272,18 @@ def test_a_wish_is_not_replaced_by_a_crossing():
     assert "枠を使い切るなら" in prompt.SYSTEM
 
 
+def test_the_window_is_not_written_into_the_query():
+    """**実測で、クエリに年月を書くと当たらなくなった。**
+
+        「ハウス テクノ イベント 東京」        -> 一覧サイトが並ぶ
+        「ハウス テクノ イベント 東京 2026年」  -> 過去の記事とトップページ
+
+    対象期間は結果を絞るのに使い、検索語には入れない。
+    """
+    assert "期間は query に入れない" in prompt.SYSTEM
+    assert "かえって当たらなくなる" in prompt.SYSTEM
+
+
 def test_ticketed_events_do_not_get_an_application_word():
     """**実測で、クラブイベントの検索に「募集」が付いて外れた。**
 

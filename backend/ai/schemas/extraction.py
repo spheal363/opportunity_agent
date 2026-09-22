@@ -121,6 +121,17 @@ class ExtractedOpportunity(BaseModel):
     deadline: AwareDatetime = None
     location: str | None = None
     format: OpportunityFormat | None = None
+    # **開催地の都道府県。** 会場名だけでは地域を判定できない（#47 の実測）。
+    #
+    #   ZEROTOKYO          -> 「東京」に一致しない（ローマ字）
+    #   ヨドバシHD池袋ビル屋上  -> 「東京」に一致しない（地名のみ）
+    #   天王洲アイル「KIWA」   -> 同上
+    #
+    # 本文から分かるときだけ入れる。**推測で埋めない。**
+    region: str | None = Field(default=None, max_length=40)
+    # オンラインでも参加できると本文に書かれているか。
+    # **`format` とは別。** hybrid でも現地参加が主で配信のみのことがある。
+    online_participation: bool | None = None
     eligibility: str | None = None
     # 無料は 0、不明は null。混同しない。
     cost: int | None = Field(default=None, ge=0)

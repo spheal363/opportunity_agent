@@ -110,7 +110,13 @@ def _summary(
     """
     out = OpportunitySummary.model_validate(row, from_attributes=True)
     # **地域の照合は期間と独立。** 期間が分からない run でも出す。
-    match = region.classify(wanted=wanted, location=row.location, opportunity_format=row.format)
+    match = region.classify(
+        wanted=wanted,
+        location=row.location,
+        opportunity_format=row.format,
+        region=row.region,
+        online_participation=row.online_participation,
+    )
     out.region_match = match.value
     out.region_note = region.note(match, wanted=wanted, location=row.location)
     if win is None:

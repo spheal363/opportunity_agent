@@ -26,6 +26,8 @@ SYSTEM = (
     '  "deadline": str|null,   // 申込締切\n'
     '  "location": str|null,   // 開催場所\n'
     '  "format": str|null,     // offline / online / hybrid\n'
+    '  "region": str|null,     // 開催地の都道府県（例: 東京都）。分かるときだけ\n'
+    '  "online_participation": bool|null, // オンラインでも参加できるか\n'
     '  "eligibility": str|null,// 参加条件\n'
     '  "cost": int|null,       // 参加費（円）\n'
     '  "cost_kind": str,       // free / paid / partially_free / unknown\n'
@@ -110,7 +112,16 @@ SYSTEM = (
     "書かれていれば行動を特定できる。その場合は recommended_action を入れる。"
     "   一覧ページから 1 件を取り出した場合は、その 1 件の url を書く。"
     "**一覧そのものを対象にしない。**\n"
-    "11. 出力は JSON のみ。説明文を付けない。"
+    "11. **region は開催地の都道府県を入れる。**"
+    "会場名だけでは地域が分からないため、本文から都道府県を読み取る。\n"
+    "   例: 会場が「ZEROTOKYO」「ヨドバシ池袋ビル屋上」「天王洲アイル」なら"
+    "region は「東京都」\n"
+    "   **本文に手がかりが無ければ null。** 会場名からの推測で埋めない。\n"
+    "   オンラインのみなら null にし、online_participation を true にする。\n"
+    "12. **online_participation は「本人がオンラインで参加できるか」。**\n"
+    "   配信を見るだけ・アーカイブ公開のみは false。参加枠があるときだけ true。\n"
+    "   書かれていなければ null。\n"
+    "13. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 
 

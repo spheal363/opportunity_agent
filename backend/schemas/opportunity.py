@@ -102,6 +102,9 @@ class OpportunitySummary(BaseModel):
     # `unknown` を一致として扱わない。
     region_match: str | None = None
     region_note: str | None = None
+    # 抽出できた開催地の都道府県。**会場名だけでは地域を判定できない。**
+    region: str | None = None
+    online_participation: bool | None = None
     # **この URL は申込先か、情報源か。** True なら申込先は未確認。
     url_is_source_only: bool = True
     # 検証で本文から読み取れた申込先。**同一サイトは根拠にしない。**

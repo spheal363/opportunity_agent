@@ -46,7 +46,11 @@ def test_a_hybrid_event_matches_when_online_is_wanted():
     assert _c(TOKYO, "大阪", "hybrid") is r.RegionMatch.MATCH
 
 
-def test_an_online_event_does_not_match_when_only_a_place_is_wanted():
+def test_an_online_only_event_is_out_when_only_a_place_is_wanted():
+    """**オンラインのみは現地参加できない。**
+
+    希望が「東京」だけ（オンラインを含まない）なら対象外と言い切れる。
+    """
     assert _c("東京", None, "online") is r.RegionMatch.MISMATCH
 
 
@@ -114,3 +118,60 @@ def test_eligibility_is_not_mixed_into_the_region():
 def test_separators(wanted):
     places, online = r.wanted_places(wanted)
     assert places == ["東京"] and online is True
+
+
+# --- 実測の誤りを繰り返さない（#47）----------------------------------------
+
+
+def test_a_hybrid_event_in_the_wanted_place_matches():
+    """**実測で、hybrid を無条件に不一致にしていた。**
+
+    `AI HACK 2026`（東京都23区某所・hybrid）が mismatch になった。
+    現地参加もできるので、会場と都道府県で見る。
+    """
+    got = r.classify(
+        wanted="東京", location="東京都23区某所", opportunity_format="hybrid", region="東京都"
+    )
+    assert got is r.RegionMatch.MATCH
+
+
+def test_a_romaji_venue_matches_through_the_prefecture():
+    """**実測で `ZEROTOKYO` が「東京」に一致しなかった。**
+
+    会場名はローマ字・地名のみのことがある。抽出した都道府県で照合する。
+    """
+    assert (
+        r.classify(
+            wanted="東京", location="ZEROTOKYO", opportunity_format="offline", region="東京都"
+        )
+        is r.RegionMatch.MATCH
+    )
+    assert (
+        r.classify(
+            wanted="東京",
+            location="ヨドバシHD池袋ビル9階屋上",
+            opportunity_format="offline",
+            region="東京都",
+        )
+        is r.RegionMatch.MATCH
+    )
+
+
+def test_the_prefecture_outranks_the_venue_name():
+    """都道府県が分かっているなら、会場名より優先する。"""
+    got = r.classify(
+        wanted="東京", location="読谷村立図書館", opportunity_format="offline", region="沖縄県"
+    )
+    assert got is r.RegionMatch.MISMATCH
+
+
+def test_online_participation_overrides_the_format():
+    """**配信のみは参加ではない。** `format` より抽出した可否を優先する。"""
+    watched_only = r.classify(
+        wanted="東京 / オンライン",
+        location="大阪",
+        opportunity_format="hybrid",
+        region="大阪府",
+        online_participation=False,
+    )
+    assert watched_only is r.RegionMatch.MISMATCH
