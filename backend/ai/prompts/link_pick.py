@@ -15,6 +15,8 @@ SYSTEM = (
     "以下の JSON を 1 つだけ返す。\n"
     "\n"
     "{\n"
+    '  "is_listing": bool,     // このページはイベント一覧・カレンダーか\n'
+    '  "listing_reason": str,  // そう判断した理由。短く\n'
     '  "picked": [\n'
     "    {\n"
     '      "index": int,     // 渡した一覧の番号。**URL は書かない**\n'
@@ -25,6 +27,15 @@ SYSTEM = (
     "}\n"
     "\n"
     "規則:\n"
+    "0. **まず、このページがイベント一覧かを判断する。**"
+    "本文の冒頭と、リンクの題名の並びから決める。\n"
+    "   - 一覧: そのページ自体が開催予定を並べている"
+    "（題名にイベント名・日付・会場が繰り返し出る）\n"
+    "   - 一覧ではない: 記事・お知らせ・企業情報で、"
+    "**関連記事や他の記事へのリンクが並んでいるだけ**のもの\n"
+    "   - **リンクが並んでいることだけを根拠にしない。**"
+    "記事の関連記事欄にも同じ形のリンクが並ぶ\n"
+    "   - 一覧でなければ `is_listing` を false にし、picked は空配列にする\n"
     "1. **選ぶのは番号だけ。** URL を書かない。渡していない番号を返さない。\n"
     "2. **希望に合いそうなものだけ選ぶ。** 数を埋めない。"
     "当たりが無ければ picked は空配列でよい。\n"
@@ -46,6 +57,7 @@ def build_user(
     window: str | None,
     links: list,
     limit: int,
+    excerpt: str = "",
 ) -> str:
     """一覧のリンクを user メッセージに組み立てる。
 
@@ -57,7 +69,10 @@ def build_user(
         f"対象期間: {window or '指定なし'}",
         f"選んでよい上限: {limit} 件",
         "",
-        "リンクの一覧:",
     ]
+    if excerpt:
+        # **本文の冒頭。** 一覧か記事かは、ここを読まないと分からない。
+        lines += ["", "ページ冒頭:", excerpt, ""]
+    lines.append("リンクの一覧:")
     lines += [f"{i}: {link.title or '（題名なし）'}" for i, link in enumerate(links)]
     return untrusted_block("listing_links", "\n".join(lines))

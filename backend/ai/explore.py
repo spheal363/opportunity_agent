@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ai import cost, guard, interstitial, listing
 from ai.llm import LLMError, generate_structured
@@ -42,6 +42,8 @@ class ExploreResult:
     links_found: int = 0
     # 選んだ数
     picked: int = 0
+    # このページはイベント一覧だったか（LLM の判断）
+    is_listing: bool = False
     # 取れなかったものと理由。**隠さない。**
     failures: list[tuple[str, str]] = field(default_factory=list)
 
@@ -52,6 +54,9 @@ def links_from(page: PageContent) -> list[listing.Link]:
     return listing.same_shape_links(found)
 
 
+EXCERPT_CHARS = 1500
+
+
 def pick_links(
     links: list[listing.Link],
     *,
@@ -59,27 +64,38 @@ def pick_links(
     location: str | None,
     window: str | None,
     limit: int,
-) -> list[listing.Link]:
+    excerpt: str = "",
+) -> tuple[bool, list[listing.Link]]:
     """どのリンクを読むかを選ぶ。**番号で選ばせ、URL は作らせない。**
 
     失敗したら空を返す。**上位から機械的に取る代替はしない**
     （一覧の並び順は開催日順とは限らず、古い回が先頭のこともある）。
     """
     if not links:
-        return []
+        return False, []
     with cost.step("link_pick"):
         try:
             out = generate_structured(
                 schema=LinkPickOutput,
                 system=prompt.SYSTEM,
                 user=prompt.build_user(
-                    wishes=wishes, location=location, window=window, links=links, limit=limit
+                    wishes=wishes,
+                    location=location,
+                    window=window,
+                    links=links,
+                    limit=limit,
+                    excerpt=excerpt,
                 ),
                 step=Step.LINK_PICK,
             ).data
         except LLMError as exc:
             logger.warning("explore.pick_failed reason=%s", exc)
-            return []
+            return False, []
+
+    if not out.is_listing:
+        # **一覧ではない。** 記事の関連記事欄にリンクが並んでいただけ。
+        logger.info("explore.not_a_listing reason=%s", out.listing_reason[:80])
+        return False, []
 
     picked: list[listing.Link] = []
     seen: set[int] = set()
@@ -91,7 +107,7 @@ def pick_links(
         picked.append(links[item.index])
         if len(picked) >= limit:
             break
-    return picked
+    return True, picked
 
 
 def follow(
@@ -115,8 +131,20 @@ def follow(
         result.failures.append((page.url, "本文から個別イベントのリンクを取り出せませんでした"))
         return result
 
-    chosen = pick_links(links, wishes=wishes, location=location, window=window, limit=limit)
+    is_listing, chosen = pick_links(
+        links,
+        wishes=wishes,
+        location=location,
+        window=window,
+        limit=limit,
+        excerpt=(page.content or "")[:EXCERPT_CHARS],
+    )
+    result.is_listing = is_listing
     result.picked = len(chosen)
+    if not is_listing:
+        # **記事の関連記事欄にリンクが並んでいただけ。** 一覧ではない。
+        result.failures.append((page.url, "イベント一覧ではありませんでした"))
+        return result
     if not chosen:
         result.failures.append((page.url, "希望に合いそうなリンクを選べませんでした"))
         return result
@@ -134,7 +162,5 @@ def follow(
             result.failures.append((link.url, f"取得できませんでした（{why}）"))
             continue
         checked = guard.inspect(got_page.content)
-        from dataclasses import replace as _replace
-
-        result.pages.append(_replace(got_page, content=checked.text))
+        result.pages.append(replace(got_page, content=checked.text))
     return result

@@ -264,3 +264,7 @@ token.json
 
 # 実験の生データ（取得した本文を含む。公開しない）
 backend/experiments/
+
+# 新規ユーザー検証用の DB。**普段の DB と分ける**（#47）
+verify_*.db
+verify_*.db-journal

@@ -540,10 +540,9 @@ def _follow_listings(db: Session, state: AgentState, sources: list) -> list:
             break
         if not isinstance(source, PageContent):
             continue
-        if (
-            listing.classify_page(source.content, base_url=source.url)
-            is not listing.PageKind.LISTING
-        ):
+        # **構造は門だけ。** 一覧か記事かは explore が本文を読んで判断する
+        # （同形リンクは記事の関連記事欄にも並ぶ、という実測のため）。
+        if not listing.may_be_listing(source.content, base_url=source.url):
             continue
 
         pages += 1

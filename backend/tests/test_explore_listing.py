@@ -53,11 +53,20 @@ def test_only_the_offered_indexes_are_used(monkeypatch):
         explore,
         "generate_structured",
         lambda **k: type(
-            "R", (), {"data": LinkPickOutput(picked=[PickedLink(index=0), PickedLink(index=99)])}
+            "R",
+            (),
+            {
+                "data": LinkPickOutput(
+                    is_listing=True, picked=[PickedLink(index=0), PickedLink(index=99)]
+                )
+            },
         )(),
     )
 
-    picked = explore.pick_links(links, wishes=["音楽"], location=None, window=None, limit=5)
+    is_listing, picked = explore.pick_links(
+        links, wishes=["音楽"], location=None, window=None, limit=5
+    )
+    assert is_listing is True
     assert [p.url for p in picked] == ["https://x/0"]
 
 
@@ -67,10 +76,17 @@ def test_the_limit_is_respected(monkeypatch):
         explore,
         "generate_structured",
         lambda **k: type(
-            "R", (), {"data": LinkPickOutput(picked=[PickedLink(index=i) for i in range(5)])}
+            "R",
+            (),
+            {
+                "data": LinkPickOutput(
+                    is_listing=True, picked=[PickedLink(index=i) for i in range(5)]
+                )
+            },
         )(),
     )
-    assert len(explore.pick_links(links, wishes=[], location=None, window=None, limit=2)) == 2
+    _, picked = explore.pick_links(links, wishes=[], location=None, window=None, limit=2)
+    assert len(picked) == 2
 
 
 def test_a_failed_pick_returns_nothing_instead_of_guessing(monkeypatch):
@@ -83,14 +99,14 @@ def test_a_failed_pick_returns_nothing_instead_of_guessing(monkeypatch):
         "generate_structured",
         lambda **k: (_ for _ in ()).throw(LLMValidationError("nope")),
     )
-    assert explore.pick_links(links, wishes=[], location=None, window=None, limit=2) == []
+    assert explore.pick_links(links, wishes=[], location=None, window=None, limit=2) == (False, [])
 
 
 # --- 一覧を辿る -------------------------------------------------------------
 
 
 def test_a_listing_is_followed_to_the_individual_pages(monkeypatch):
-    monkeypatch.setattr(explore, "pick_links", lambda links, **k: links[:2])
+    monkeypatch.setattr(explore, "pick_links", lambda links, **k: (True, list(links[:2])))
     fetched = [
         _page("https://ja.ra.co/events/2001001", "10月10日 Contact Tokyo で開催。" * 20),
         _page("https://ja.ra.co/events/2001002", "10月17日 WOMB で開催。" * 20),
@@ -110,7 +126,7 @@ def test_a_listing_is_followed_to_the_individual_pages(monkeypatch):
 
 def test_an_interstitial_is_recorded_not_recommended(monkeypatch):
     """**アクセス制限は回避しない。** 理由を残して次へ進む。"""
-    monkeypatch.setattr(explore, "pick_links", lambda links, **k: links[:1])
+    monkeypatch.setattr(explore, "pick_links", lambda links, **k: (True, links[:1]))
     blocked = _page("https://ja.ra.co/events/2001001", "", title="Just a moment...")
     result = explore.follow(
         _page(LISTING_URL, LISTING_BODY),
@@ -125,7 +141,8 @@ def test_an_interstitial_is_recorded_not_recommended(monkeypatch):
     assert result.failures and "取得できませんでした" in result.failures[0][1]
 
 
-def test_a_page_that_cannot_be_fetched_is_recorded():
+def test_a_page_that_cannot_be_fetched_is_recorded(monkeypatch):
+    monkeypatch.setattr(explore, "pick_links", lambda links, **k: (True, list(links[:1])))
     result = explore.follow(
         _page(LISTING_URL, LISTING_BODY),
         wishes=[],
@@ -178,8 +195,35 @@ def test_a_non_listing_page_is_left_alone(db, state, monkeypatch):
     called = []
     monkeypatch.setattr(loop.explore, "follow", lambda page, **k: called.append(1))
 
-    individual = _page("https://ja.ra.co/events/2001001", "10月10日 Contact Tokyo。" * 20)
+    individual = _page("https://ja.ra.co/events/2001001", "10月10日 Contact Tokyo。")
     out = loop._follow_listings(db, state, [individual])
 
     assert called == []
     assert out == [individual]
+
+
+def test_an_article_is_rejected_by_the_model_not_by_the_url(monkeypatch):
+    """**構造では分けられない。** 一覧でないと LLM が言えば、そこで止まる。
+
+    実測で、`okinawatimes` の記事は同形リンク 24 本で門を通る。
+    止めるのは本文を読んだ判断。
+    """
+    monkeypatch.setattr(
+        explore,
+        "generate_structured",
+        lambda **k: type(
+            "R", (), {"data": LinkPickOutput(is_listing=False, listing_reason="記事の関連記事欄")}
+        )(),
+    )
+    result = explore.follow(
+        _page("https://ja.ra.co/articles/1", LISTING_BODY),
+        wishes=["音楽"],
+        location=None,
+        window=None,
+        limit=2,
+        fetch=lambda urls: pytest.fail("一覧でないのに取得している"),
+    )
+
+    assert result.is_listing is False
+    assert result.pages == []
+    assert "イベント一覧ではありませんでした" in result.failures[0][1]

@@ -17,4 +17,10 @@ class PickedLink(BaseModel):
 class LinkPickOutput(BaseModel):
     """**0 件でよい。** 当たりが無い一覧で無理に選ばせない。"""
 
+    # このページはイベント一覧・カレンダーか。
+    # **記事の関連記事欄と、一覧の本体を区別させる。** 構造だけでは分けられない
+    # （実測: clubberia の一覧と okinawatimes の記事が、どちらも同形リンク 20 本超）。
+    is_listing: bool = False
+    # なぜそう判断したか。Log に残す。
+    listing_reason: str = ""
     picked: list[PickedLink] = Field(default_factory=list)

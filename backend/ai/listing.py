@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import StrEnum
 from urllib.parse import urljoin, urlparse
 
 # Jina Reader が返す Markdown のリンク。`[題名](URL)`。
@@ -72,23 +71,6 @@ _SOCIAL = (
 
 # 一覧と見なすための、同じ深さのリンクの数。**仮説であって正解ではない。**
 LISTING_MIN_LINKS = 6
-
-
-class PageKind(StrEnum):
-    """検索で見つかったページの種類。
-
-    **「個別イベントでない」ことと「価値が無い」ことを分ける。**
-    一覧は探索元として価値がある。
-    """
-
-    # 1 つの機会について書かれたページ
-    INDIVIDUAL = "individual"
-    # イベント一覧・カレンダー。**探索元として使う**
-    LISTING = "listing"
-    # 解説記事・まとめ・動画
-    ARTICLE = "article"
-    # 判断できない。**捨てない**
-    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -153,41 +135,32 @@ def _path_shape(url: str) -> str:
     return re.sub(r"\d+", "#", path)
 
 
-def classify_page(content: str, *, base_url: str, links: list[Link] | None = None) -> PageKind:
-    """ページの種類を見立てる。**URL の形だけでは決めない。**
+def may_be_listing(content: str, *, base_url: str, links: list[Link] | None = None) -> bool:
+    """**一覧の「候補」かどうかだけを構造で見る。判定はしない。**
 
-    本文が短い・リンクが少ないだけでは決めつけず、`UNKNOWN` を返す。
-    呼び出し側は `UNKNOWN` を捨てずに扱う。
+    ここで返すのは「同じ形のリンクが並んでいる」という事実だけ。
+    一覧か記事かは本文を読まないと分からない（`ai/explore.py` が LLM に聞く）。
+
+    **構造だけでは分けられないことを実測した。**
+
+        clubberia.com/ja/events/            同形 27 / 題名に日付 100%
+        okinawatimes.co.jp/articles/-/…     同形 24 / 題名に日付  67%
+
+    以前は「自分と同じ形のリンクが並ぶページは記事」としていたが、
+    **イベント一覧にも同じ形の個別リンクが並ぶ**ので使えない。
+    構造は「LLM に聞く価値があるか」の門にとどめる。
     """
     body = content or ""
     if not body.strip():
-        return PageKind.UNKNOWN
-
+        return False
     found = links if links is not None else extract_links(body, base_url=base_url)
     if len(found) < LISTING_MIN_LINKS:
-        return PageKind.UNKNOWN
-
-    # 同じ形のリンクがいくつ並んでいるか。並んでいれば一覧らしい。
+        return False
     shapes: dict[str, int] = {}
     for link in found:
         shape = _path_shape(link.url)
         shapes[shape] = shapes.get(shape, 0) + 1
-    dominant, count = max(shapes.items(), key=lambda kv: kv[1])
-    if count < LISTING_MIN_LINKS:
-        return PageKind.UNKNOWN
-
-    # **自分と同じ形のリンクが並ぶページは、一覧ではなく記事。**
-    #
-    # 実測で、`okinawatimes.co.jp/articles/-/1863932` が一覧と誤判定された。
-    # 関連記事のサイドバーに `/articles/-/#` が 91 本並ぶためで、
-    # **そのページ自身も同じ形**（記事の隣に記事が並んでいるだけ）。
-    #
-    # 一覧ページは自分と違う形の子を並べる
-    # （`/ja/events/` の下に `/ja/events/309310`）。
-    if _path_shape(base_url) == dominant:
-        return PageKind.ARTICLE
-
-    return PageKind.LISTING
+    return max(shapes.values()) >= LISTING_MIN_LINKS
 
 
 def same_shape_links(links: list[Link], *, limit: int | None = None) -> list[Link]:

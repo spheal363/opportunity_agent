@@ -62,33 +62,41 @@ def test_other_hosts_are_not_followed_by_default():
     assert not any("example.com" in u for u in urls)
 
 
-# --- 種類の見立て -----------------------------------------------------------
+# --- 一覧の「候補」かどうかの門 --------------------------------------------
 
 
-def test_a_listing_is_recognised_by_the_repeated_shape():
-    assert listing.classify_page(LISTING_BODY, base_url=BASE) is listing.PageKind.LISTING
+def test_a_repeated_shape_makes_it_a_candidate():
+    assert listing.may_be_listing(LISTING_BODY, base_url=BASE) is True
 
 
-def test_an_individual_page_is_not_called_a_listing():
-    """**一覧でないと判断できれば十分。** 断定しない。"""
-    kind = listing.classify_page(INDIVIDUAL_BODY, base_url="https://ja.ra.co/events/2001001")
-    assert kind is not listing.PageKind.LISTING
+def test_an_empty_body_is_not_a_candidate():
+    assert listing.may_be_listing("", base_url=BASE) is False
 
 
-def test_an_empty_body_is_unknown():
-    assert listing.classify_page("", base_url=BASE) is listing.PageKind.UNKNOWN
+def test_a_page_with_few_links_is_not_a_candidate():
+    assert listing.may_be_listing(INDIVIDUAL_BODY, base_url=BASE + "/2001001") is False
 
 
-def test_the_url_shape_alone_does_not_decide():
-    """**実測で URL の形だけの分類が外れた。**
+def test_the_structure_alone_does_not_decide_listing_or_article():
+    """**構造だけでは分けられない（実測）。**
 
-    `ja.ra.co/events/jp/tokyo/house` は一覧、
-    `timeout.jp/tokyo/ja/music/music-festivals-in-...` は記事だが
-    どちらも「深いパス」で、形だけでは区別できない。
+        clubberia.com/ja/events/         同形 27 / 題名に日付 100%
+        okinawatimes.co.jp/articles/-/…  同形 24 / 題名に日付  67%
+
+    どちらも門は通る。一覧か記事かは本文を読んで LLM が判断する。
+    以前の「自分と同じ形のリンクが並ぶページは記事」は、
+    **イベント一覧にも同じ形の個別リンクが並ぶ**ので使えなかった。
     """
-    article = "# 音楽フェス5選\n本文がここに続く。" * 5
-    kind = listing.classify_page(article, base_url="https://www.timeout.jp/tokyo/ja/music/x")
-    assert kind is not listing.PageKind.LISTING
+    article_url = "https://www.okinawatimes.co.jp/articles/-/1863932"
+    article = "\n".join(
+        f"[記事{i}](https://www.okinawatimes.co.jp/articles/-/19{i:05d})" for i in range(20)
+    )
+    listing_url = "https://clubberia.com/ja/events/"
+    events = "\n".join(
+        f"[Event {i} 9.{i:02d} TUE](https://clubberia.com/ja/events/3093{i:02d})" for i in range(20)
+    )
+    assert listing.may_be_listing(article, base_url=article_url) is True
+    assert listing.may_be_listing(events, base_url=listing_url) is True
 
 
 # --- 並んでいる列だけ取る ---------------------------------------------------
@@ -122,24 +130,3 @@ def test_the_prefilter_question_counts_a_listing_as_an_opportunity():
     assert "個別の開催へたどれる" in q.IS_OPPORTUNITY
     # 記事は従来どおり該当しない。
     assert "解説記事" in q.IS_OPPORTUNITY
-
-
-def test_an_article_with_a_related_sidebar_is_not_a_listing():
-    """**実測で、ニュース記事が一覧と誤判定された。**
-
-    `okinawatimes.co.jp/articles/-/1863932` の関連記事欄に
-    `/articles/-/#` が 91 本並ぶ。**そのページ自身も同じ形**で、
-    記事の隣に記事が並んでいるだけ。一覧ではない。
-    """
-    url = "https://www.okinawatimes.co.jp/articles/-/1863932"
-    body = "\n".join(
-        f"[記事{i}](https://www.okinawatimes.co.jp/articles/-/19{i:05d})" for i in range(20)
-    )
-    assert listing.classify_page(body, base_url=url) is listing.PageKind.ARTICLE
-
-
-def test_a_real_listing_has_children_of_a_different_shape():
-    """`clubberia.com/ja/events/` の下に `/ja/events/309310` が並ぶ形。"""
-    url = "https://clubberia.com/ja/events/"
-    body = "\n".join(f"[Event {i}](https://clubberia.com/ja/events/3093{i:02d})" for i in range(20))
-    assert listing.classify_page(body, base_url=url) is listing.PageKind.LISTING
