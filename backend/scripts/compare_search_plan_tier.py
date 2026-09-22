@@ -63,6 +63,32 @@ CASES = [
         # 入力に現れる語。出力がこれを保っているかを見る。
         "must_keep": ["AI"],
         "expect_japanese": True,
+        # 探索の軸ごとに、覆えたと見なす語。**軸は英語、query は日本語**の
+        # ことがあるので、語そのものの一致では測れない。
+        "must_cover": {
+            "AI product development": [
+                "ハッカソン",
+                "hackathon",
+                "開発",
+                "develop",
+                "プロダクト",
+                "product",
+                "勉強会",
+                "もくもく",
+            ],
+            "Entrepreneurship": [
+                "起業",
+                "スタートアップ",
+                "startup",
+                "アクセラレ",
+                "accelerator",
+                "創業",
+                "founder",
+                "ピッチ",
+                "pitch",
+                "incubat",
+            ],
+        },
     },
     {
         "name": "global_only",
@@ -72,6 +98,15 @@ CASES = [
         "location": "Berlin",
         "must_keep": [],
         "expect_japanese": False,
+        "must_cover": {
+            "International tech community": [
+                "community",
+                "コミュニティ",
+                "meetup",
+                "ミートアップ",
+                "tech",
+            ],
+        },
     },
     {
         "name": "sparse",
@@ -81,6 +116,7 @@ CASES = [
         "location": None,
         "must_keep": [],
         "expect_japanese": False,
+        "must_cover": {"Design": ["design", "デザイン"]},
     },
 ]
 
@@ -102,6 +138,9 @@ _RECRUITING = (
 # 記事・解説に当たってしまう語（prompt の規則 4 が禁じている）。
 _ARTICLE_WORDS = ("とは", "まとめ", "解説", "おすすめ一覧", "比較サイト")
 _JAPANESE = re.compile(r"[ぁ-んァ-ヶ一-龠]")
+# 入力に無い年。**どの固定入力にも年は書いていない**ので、出たら補完である。
+# 過去の年を入れると、その年のページばかりが引っかかる。
+_YEAR = re.compile(r"(?:19|20)[0-9]{2}")
 
 
 @dataclass
@@ -151,6 +190,18 @@ def _quality(case: dict, out: SearchPlanOutput) -> dict:
         # 募集ページへ当てる語。prompt の規則 4。
         "recruiting_words": sum(1 for q in queries if any(w in q.lower() for w in _RECRUITING)),
         "article_words": [w for w in _ARTICLE_WORDS if w in joined],
+        # 目標の軸をどれも落としていないこと。**片方だけ扱う計画を作らせない。**
+        "covers_all_goals": all(
+            any(w.lower() in joined.lower() for w in words) for words in case["must_cover"].values()
+        ),
+        "uncovered_goals": [
+            axis
+            for axis, words in case["must_cover"].items()
+            if not any(w.lower() in joined.lower() for w in words)
+        ],
+        # 根拠のない補完。入力に年は無い。
+        "no_invented_year": not _YEAR.search(joined),
+        "invented_years": sorted(set(_YEAR.findall(joined))),
         # 方向が一方向へ偏らないこと。
         "distinct_categories": len({d.category for d in directions}),
         "distinct_queries": len({q.strip().lower() for q in queries}),
@@ -246,12 +297,16 @@ def _summarise(rows: list[Attempt]) -> dict:
                     "keeps_goal_terms",
                     "keeps_location",
                     "japanese_ok",
+                    "covers_all_goals",
+                    "no_invented_year",
                 )
             },
             "median_distinct_categories": (
                 statistics.median(r.checks["distinct_categories"] for r in ok) if ok else 0
             ),
             "any_article_words": sorted({w for r in ok for w in r.checks.get("article_words", [])}),
+            "uncovered_goals": sorted({a for r in ok for a in r.checks.get("uncovered_goals", [])}),
+            "invented_years": sorted({y for r in ok for y in r.checks.get("invented_years", [])}),
         }
     return by_tier
 
@@ -260,7 +315,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--confirm", action="store_true", help="実 API を呼ぶ")
     ap.add_argument("--dry-run", action="store_true", help="呼ばずに計画だけ出す")
-    ap.add_argument("--out", default="../docs/experiments/26-search-plan-tier.json")
+    ap.add_argument("--out", default="../docs/experiments/26-search-plan-tier-v2.json")
     args = ap.parse_args()
 
     settings = get_settings()

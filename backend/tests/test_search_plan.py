@@ -92,6 +92,24 @@ def test_declares_its_step_and_raised_max_tokens(monkeypatch):
     assert seen["max_tokens"] >= 8192
 
 
+def test_system_prompt_requires_covering_every_goal_direction():
+    """軸が 2 つあるのに片方しか扱わない計画を作らせない（#26-b の実測）。
+
+    **実測では、この規則を足しても cheap は従わなかった**（6 件中 2 件で
+    「起業」の軸が落ちた）。規則を消してよい理由にはならないので残す。
+    """
+    assert "「探索の軸」は、どれも最低 1 つの方向で覆う" in prompt.SYSTEM
+
+
+def test_system_prompt_forbids_inventing_a_date():
+    """入力に無い年を入れると、その年のページばかり引っかかる（#26-b の実測）。
+
+    実測で `open source hackathon Berlin 2024` が出た。**今は 2026 年。**
+    この規則を足したあとは 6/6 で出なくなった。
+    """
+    assert "年・月・日付を query に入れない" in prompt.SYSTEM
+
+
 def test_directions_are_capped(monkeypatch):
     """方向の数がそのまま検索コストになる。増えすぎを防ぐ。"""
     many = [_dir(query=f"q{i}", serendipity=True) for i in range(10)]
