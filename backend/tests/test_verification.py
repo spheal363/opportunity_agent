@@ -826,3 +826,65 @@ def test_a_naive_deadline_from_sqlite_does_not_crash():
     """SQLite は tz を保持しない。**naive な値で落ちない。**"""
     naive = (datetime.now(UTC) - timedelta(days=5)).replace(tzinfo=None)
     assert _guarded(naive, "early_bird") == "unknown"
+
+
+# --- 実測: 2023 年の申込締切が推薦に残った（#47）-----------------------------
+
+
+def test_a_passed_application_deadline_found_by_verification_closes_it(
+    db, state, real_mode, monkeypatch
+):
+    """**実測で、申込締切 2023 年 12 月の候補が推薦に残った。**
+
+    検証は「申込の締切が過ぎています」と書いていたのに、抽出が
+    `deadline_kind` を決められず `unknown` だったため、見張りが
+    「参加の締切か確認できない」として `unknown` へ戻していた。
+
+    **古い日付だから閉じるのではない。** 検証が読んだ終了の根拠が、
+    推薦する行動（応募）に対応する締切を指しているから閉じる。
+    """
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="closed", availability_reason="申込の締切が過ぎています"),
+    )
+    state.ranked_ids = [
+        _add(db, "old", deadline=datetime(2023, 12, 19, tzinfo=UTC), deadline_kind="unknown")
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert db.get(loop.Opportunity, "old").availability == "closed"
+    assert state.selected_ids == [], "受付終了の候補を推薦に残している"
+
+
+def test_an_early_bird_notice_still_cannot_close_it(db, state, real_mode, monkeypatch):
+    """**区分が分かっているなら、そちらを優先する。**
+
+    早割と分類できているなら、検証が何と書いていても参加は塞がれていない。
+    """
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="closed", availability_reason="応募を締め切りました"),
+    )
+    state.ranked_ids = [
+        _add(db, "eb", deadline=datetime(2026, 1, 1, tzinfo=UTC), deadline_kind="early_bird")
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert db.get(loop.Opportunity, "eb").availability == "unknown"
+
+
+def test_a_speaker_call_notice_does_not_close_participation(db, state, real_mode, monkeypatch):
+    """登壇者募集の終了は、参加の締切ではない。"""
+    monkeypatch.setattr(
+        loop,
+        "verify_with_page",
+        lambda **k: _out(availability="closed", availability_reason="登壇者の募集を終了しました"),
+    )
+    state.ranked_ids = [
+        _add(db, "cfp", deadline=datetime(2026, 1, 1, tzinfo=UTC), deadline_kind="unknown")
+    ]
+    loop._verify_and_finalize(db, state)
+
+    assert db.get(loop.Opportunity, "cfp").availability == "unknown"

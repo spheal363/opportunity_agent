@@ -33,7 +33,7 @@ from ai.jev.prefilter import rank_for_reading
 from ai.llm import LLMError
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.evaluation import EvaluationOutput
-from ai.schemas.extraction import GATING_DEADLINES, ExtractedOpportunity
+from ai.schemas.extraction import GATING_DEADLINES, DeadlineKind, ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
 from ai.search_plan import plan_search
 from ai.verification import verify_with_page
@@ -886,6 +886,24 @@ def _verified_availability(row: Opportunity, out) -> tuple[str, str | None]:
     #
     # ここを `_is_past` に揃えると、当日のぶんが `closed` を素通しする側へ
     # 倒れる。**揃えないこと自体が意図。**
+    # **検証自身が「参加の締切」と言っているなら、倒さない。**
+    #
+    # 実測で、申込締切が 2023 年 12 月のアクセラレーターが推薦に残った。
+    # 検証は「申込の締切が過ぎています」と書いていたのに、抽出段階で
+    # `deadline_kind` を `unknown` にしか倒せなかったために、この見張りが
+    # 「参加の締切か確認できない」として `unknown` へ戻していた。
+    #
+    # **古い日付だから閉じるのではない。** 検証が読み取った終了の根拠が、
+    # 推薦する行動（応募・参加登録）に対応する締切や開催終了を指しているか
+    # で決める。指していなければ従来どおり `unknown` へ倒す。
+    # **区分が分かっているときは、そちらを優先する。** 早割・登壇者募集と
+    # 分類できているなら、検証が何と書いていようと参加は塞がれていない。
+    # 検証の文言に頼るのは、抽出が区分を決められなかったときだけ。
+    if row.deadline_kind in (None, DeadlineKind.UNKNOWN.value) and _closes_the_recommended_action(
+        out
+    ):
+        return out.availability, out.availability_reason
+
     if (
         row.deadline is not None
         and row.deadline_kind not in _GATING_KINDS
@@ -897,6 +915,45 @@ def _verified_availability(row: Opportunity, out) -> tuple[str, str | None]:
             "それが参加の締切かどうかを確認できませんでした",
         )
     return out.availability, out.availability_reason
+
+
+# 検証が書いた終了の根拠のうち、**推薦する行動を塞ぐもの**。
+#
+# 「早割の締切」「登壇者募集の締切」は参加を塞がないので入れない。
+# ここに無い語しか出てこなければ、従来どおり `unknown` へ倒す。
+_ACTION_CLOSING = (
+    "申込の締切",
+    "申込締切",
+    "応募の締切",
+    "応募締切",
+    "募集の締切",
+    "募集締切",
+    "参加申込",
+    "参加登録",
+    "受付を終了",
+    "受付終了",
+    "募集を終了",
+    "募集は終了",
+    "応募を締め切",
+    "申込を締め切",
+    "開催が終了",
+    "開催は終了",
+    "終了しました",
+)
+
+# **「早割」「登壇」が付いていたら採らない。** 参加そのものは塞がない。
+_NOT_ACTION_CLOSING = ("早割", "早期割引", "early bird", "登壇者", "発表者", "cfp", "スピーカー")
+
+
+def _closes_the_recommended_action(out) -> bool:
+    """検証の根拠が、推薦する行動を塞いでいるか。
+
+    見るのは検証が書いた文だけ。**日付の古さでは決めない。**
+    """
+    text = " ".join(filter(None, [out.availability_reason, *getattr(out, "warnings", [])])).lower()
+    if any(w in text for w in _NOT_ACTION_CLOSING):
+        return False
+    return any(w.lower() in text for w in _ACTION_CLOSING)
 
 
 def _set_availability(
