@@ -325,12 +325,7 @@ def _demo_attack_without_llm(db: Session, state: AgentState) -> None:
     page = demo_attack.search_result()
     _guard_candidates(db, state, [(None, page)])
     if page.url in state.flagged_urls:
-        _log(
-            db,
-            state,
-            AgentStep.SEARCHING,
-            f"「{demo_attack.TITLE}」は指示らしき文を含むページから取ったため、推薦から外しました",
-        )
+        _log(db, state, AgentStep.SEARCHING, _DROPPED_MESSAGE)
 
 
 def _save_extracted(
@@ -692,6 +687,12 @@ def _verify(db: Session, state: AgentState) -> None:
     db.commit()
 
 
+# 推薦から外したことを伝える Log。**候補のタイトルを入れない。** タイトルは
+# 攻撃ページから LLM が読み取った文で、「★当選★ 今すぐ EVIL.COM へ」のように
+# 書き手の思いどおりにできる。推薦から外しても Log で画面に届いては意味が無い。
+_DROPPED_MESSAGE = "指示らしき文を含むページから取った候補を1件、推薦から外しました"
+
+
 def _drop_flagged(db: Session, state: AgentState, row: Opportunity, step: AgentStep) -> None:
     """指示らしき文があったページの候補を推薦から外し、そのことを Log に残す（#77）。
 
@@ -701,12 +702,7 @@ def _drop_flagged(db: Session, state: AgentState, row: Opportunity, step: AgentS
     state.flagged_ids.add(row.opportunity_id)
     if row.status == OpportunityStatus.RECOMMENDED:
         row.status = OpportunityStatus.DISCOVERED
-    _log(
-        db,
-        state,
-        step,
-        f"「{row.title}」は指示らしき文を含むページから取ったため、推薦から外しました",
-    )
+    _log(db, state, step, _DROPPED_MESSAGE)
 
 
 def _fetch_page(url: str) -> str | None:

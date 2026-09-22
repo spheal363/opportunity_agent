@@ -243,6 +243,18 @@ def test_attacker_url_never_reaches_the_screen(db, state, monkeypatch, case: Cas
     assert _attacker_row(db).url == ATTACKER_URL
 
 
+@pytest.mark.parametrize("case", DETECTABLE, ids=_ids(DETECTABLE))
+def test_attacker_title_never_reaches_the_log(db, state, monkeypatch, case: Case):
+    """推薦から外した候補のタイトルを Agent Log に出さない。
+
+    タイトルは攻撃ページから LLM が読み取った文で、書き手が自由に決められる。
+    推薦から外しても、Log で画面に届いては意味が無い。
+    """
+    _run_with_compromised_llm(db, state, monkeypatch, case)
+
+    assert not any(CANARY in r.message for r in db.query(AgentLog).all())
+
+
 @pytest.mark.parametrize("case", EVASIVE, ids=_ids(EVASIVE))
 def test_evasive_attack_can_still_move_the_score(db, state, monkeypatch, case: Case):
     """**コードだけでは守れないもの。** 検知をすり抜け、LLM が従えば順位は動く。

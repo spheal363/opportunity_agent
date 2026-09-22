@@ -116,9 +116,7 @@ def test_stub_mode_shows_the_same_flow(db, state, monkeypatch):
     logs = _logs(db)
     assert logs[0] == demo_attack.LOG_MESSAGE
     assert any("指示らしき文を見つけ" in m for m in logs)
-    assert any(
-        f"「{demo_attack.TITLE}」は指示らしき文を含むページから取ったため" in m for m in logs
-    )
+    assert loop._DROPPED_MESSAGE in logs
 
 
 def test_demo_is_off_by_default(db, state, monkeypatch):

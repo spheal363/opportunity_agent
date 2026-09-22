@@ -265,6 +265,16 @@ def test_log_does_not_leak_page_text(db, state, real_mode, monkeypatch, caplog):
         ("電話 03-1234-5678 へ", "03-1234-5678"),
         ("電話 +81 90 1234 5678 へ", "1234 5678"),
         ("www.evil.example で受付中", "evil.example"),
+        # 大文字・TLD・全角・伏せ字・見えない文字での言い換え
+        ("申込は EVIL.COM/apply から", "EVIL.COM"),
+        ("申込は Evil-Apply.COM から", "Evil-Apply"),
+        ("申込は evil.shop/apply から", "evil.shop"),
+        ("申込は ｅｖｉｌ．ｃｏｍ から", "ｅｖｉｌ"),
+        ("申込は evil[.]com から", "evil[.]com"),
+        ("申込は hxxps://evil[.]com/apply から", "evil"),
+        ("申込は evil.\N{ZERO WIDTH SPACE}com から", "evil"),
+        ("問い合わせ info@evil[.]com まで", "info@"),
+        ("電話 ０３－１２３４－５６７８ へ", "１２３４"),
     ],
 )
 def test_strip_links_removes_contacts(text, leak):
@@ -280,10 +290,18 @@ def test_strip_links_removes_contacts(text, leak):
         "2026.10.01 開催、v1.2.3、Python3.13",
         "締切は 2026-09-30、定員 100 名",
         "AI Agent, Tokyo, 未経験可",
+        "Socket.IO と README.md と main.py と setup.sh",
+        "ASP.NET/C# の経験者、株式会社ABC Co.,Ltd. 主催",
+        "Mr.Children と Dr.STONE",
     ],
 )
 def test_strip_links_keeps_ordinary_text(text):
     assert guard.strip_links(text) == text
+
+
+def test_strip_links_changes_only_the_link():
+    """全角の括弧や記号は元のまま。そろえた形で探し、見つけた箇所だけを置き換える。"""
+    assert guard.strip_links("（詳細）ｅｖｉｌ．ｃｏｍ へ！") == f"（詳細）{guard.LINK_MARK} へ！"
 
 
 def test_strip_links_keeps_japanese_after_url():
@@ -340,7 +358,10 @@ def test_flagged_candidate_is_not_evaluated_or_recommended(db, eval_state, real_
     assert evaluated_ids == ["opp_good"]
     assert selected == ["opp_good"]
     assert db.get(Opportunity, "opp_evil").status != OpportunityStatus.RECOMMENDED
-    assert any("「Topp_evil」は指示らしき文を含むページから取ったため" in m for m in _logs(db))
+    logs = _logs(db)
+    assert loop._DROPPED_MESSAGE in logs
+    # タイトルは攻撃ページから LLM が読み取った文。推薦から外しても Log で画面に出さない
+    assert not any("Topp_evil" in m for m in logs)
 
 
 def test_flagged_candidate_from_earlier_run_is_demoted(db, eval_state, real_mode, monkeypatch):

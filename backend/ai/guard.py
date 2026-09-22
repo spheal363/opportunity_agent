@@ -183,16 +183,42 @@ LINK_MARK = "[リンク省略]"
 # URL に続く文字。ASCII に限る（「…/applyへ」の「へ」まで食べない）。
 # 括弧と引用符も含めない（「(https://a.com)」の閉じ括弧を残す）。
 _URL_END = r"[A-Za-z0-9\-._~:/?#@!$&*+,;=%]"
+
+# スキームの無いドメインとして扱う TLD。**すべての TLD は並べていない。**
+# 2 文字の国別 TLD をまとめて拾うと README.md・main.py・setup.sh のような
+# ファイル名まで消してしまうため、拡張子と重なるもの（md py sh rs pl ms am id）は外した。
+_TLDS = (
+    # 汎用
+    "com", "net", "org", "info", "biz", "io", "co", "ai", "app", "dev", "me", "xyz",
+    "site", "online", "link", "page", "shop", "store", "top", "club", "tech", "cloud",
+    "live", "life", "website", "space", "fun", "pro", "work", "jobs", "news", "blog",
+    "today", "world", "email", "events", "asia", "art", "studio", "agency", "digital",
+    "academy", "click", "download", "zip", "mov", "icu", "vip", "win", "buzz", "example",
+    # 地域
+    "tokyo", "osaka", "kyoto", "nagoya", "yokohama",
+    # 国別
+    "jp", "us", "uk", "ca", "au", "nz", "de", "fr", "it", "es", "nl", "be", "ch", "at",
+    "se", "no", "fi", "dk", "ie", "pt", "ru", "cn", "tw", "hk", "kr", "sg", "in", "th",
+    "vn", "ph", "my", "br", "mx", "ar", "eu", "to", "ly", "gg", "cc", "tv", "fm", "gl",
+    "so", "la", "ws", "gd", "is",
+)  # fmt: skip
+
+# ドメインの形をしているが技術名として書かれるもの。大文字・小文字を区別せずに
+# 探すため、これが無いと「ASP.NET の経験」まで消してしまう。
+_NOT_LINKS = frozenset({"asp.net", "vb.net", "ado.net", "ml.net", "socket.io"})
+
 _LINKS = (
-    re.compile(rf"(?:https?|ftp)://{_URL_END}+", re.IGNORECASE),
+    # hxxp:// は URL を伏せ字にする書き方
+    re.compile(rf"(?:h(?:tt|xx)ps?|ftp)://{_URL_END}+", re.IGNORECASE),
     re.compile(rf"www\.{_URL_END}+", re.IGNORECASE),
     re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"),
-    # スキームの無いドメイン（evil.example/apply）。**小文字だけ**を見る。
-    # 大文字を含めると ASP.NET のような技術名まで消してしまう。
+    # スキームの無いドメイン（evil.example/apply）。EVIL.COM も Evil.com も
+    # 画面では行き先として読めるので、大文字・小文字を区別しない。
     re.compile(
         r"(?<![A-Za-z0-9.@/-])(?:[a-z0-9-]+\.)+"
-        r"(?:com|net|org|jp|io|dev|app|co|info|biz|xyz|me|site|online|link|ai|example)"
-        rf"(?![A-Za-z0-9-])(?:/{_URL_END}*)?"
+        rf"(?:{'|'.join(_TLDS)})"
+        rf"(?![A-Za-z0-9-])(?:/{_URL_END}*)?",
+        re.IGNORECASE,
     ),
     # 電話番号（03-1234-5678 / +81 90 1234 5678 / 09012345678）
     re.compile(
@@ -203,13 +229,51 @@ _LINKS = (
 )
 
 
+# 伏せ字にしたドメインの区切り（evil[.]com）。画面では「.」と読める。
+_DEFANGED_DOT = re.compile(r"\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)", re.IGNORECASE)
+# 全角の英数字・記号（！〜～）を半角へ。1 文字を 1 文字へ対応させる。
+_HALF_WIDTH = {c: c - 0xFEE0 for c in range(0xFF01, 0xFF5F)}
+
+
 def strip_links(text: str | None) -> str | None:
-    """LLM が書いた自由文から URL・メールアドレス・電話番号を取り除く。"""
+    """LLM が書いた自由文から URL・メールアドレス・電話番号を取り除く。
+
+    **画面で行き先と読める形にそろえてから探す。** 全角（ｅｖｉｌ．ｃｏｍ）、
+    見えない文字を挟んだもの、伏せ字（evil[.]com）も、人が読めば行き先になる。
+    NFKC で本文ごと書き換えると日本語の全角括弧まで半角になるため、そろえた文で
+    見つけた位置を元の文へ戻し、その箇所だけを置き換える。
+    """
     if not text:
         return text
+    folded, origin = _fold(text)
+    spans: list[tuple[int, int]] = []
     for pattern in _LINKS:
-        text = pattern.sub(LINK_MARK, text)
-    return text
+        for m in pattern.finditer(folded):
+            if m.group(0).split("/")[0].lower() in _NOT_LINKS:
+                continue
+            spans.append((origin[m.start()][0], origin[m.end() - 1][1]))
+    if not spans:
+        return text
+    return _remove(text, spans, LINK_MARK)
+
+
+def _fold(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """行き先として読める形にそろえた文と、その各文字が元の文のどこにあったかを返す。"""
+    chars: list[str] = []
+    origin: list[tuple[int, int]] = []
+    i = 0
+    while i < len(text):
+        c = text[i]
+        if c in "[({" and (m := _DEFANGED_DOT.match(text, i)):
+            chars.append(".")
+            origin.append((i, m.end()))
+            i = m.end()
+            continue
+        if not _INVISIBLE.match(c):
+            chars.append(chr(_HALF_WIDTH.get(ord(c), ord(c))))
+            origin.append((i, i + 1))
+        i += 1
+    return "".join(chars), origin
 
 
 def _span_around(text: str, start: int, end: int) -> tuple[int, int]:
@@ -231,7 +295,7 @@ def _span_around(text: str, start: int, end: int) -> tuple[int, int]:
     return begin, newline if newline != -1 else hi
 
 
-def _remove(text: str, spans: list[tuple[int, int]]) -> str:
+def _remove(text: str, spans: list[tuple[int, int]], mark: str = REMOVED_MARK) -> str:
     """重なる範囲をまとめてから、それぞれを印に置き換える。"""
     merged: list[list[int]] = []
     for s, e in sorted(spans):
@@ -244,7 +308,7 @@ def _remove(text: str, spans: list[tuple[int, int]]) -> str:
     pos = 0
     for s, e in merged:
         out.append(text[pos:s])
-        out.append(REMOVED_MARK)
+        out.append(mark)
         pos = e
     out.append(text[pos:])
     return "".join(out)
