@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from agent import demo_attack, stub_data
 from agent.state import AgentState
-from ai import availability, cost, explore, guard, listing
+from ai import availability, cost, explore, guard, listing, region
 from ai import window as search_window
 from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
@@ -307,36 +307,16 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # 取ってきた本文も Web 由来。抽出へ渡す前に検査する。
     sources = _guard_bodies(db, state, _with_bodies([r for _, r in candidates]))
 
-    # --- ⑤ 足りない方向だけ、未読の候補を追加で読む -------------------------
-    # **粗選別は snippet だけで決めている。** 一覧サイトの抜粋は
-    # 「clubberia | クラブイベント情報」のように中身が無く、実測で
-    # 有望な探索元が落ちた。**足りない方向だけ、読んでから判断し直す。**
-    sources = _read_more_for_thin_directions(db, state, sources, candidates, deferred)
-
-    # --- ⑥ 一覧ページは「探索元」として先へ進む -----------------------------
+    # --- ⑤ 一覧ページは「探索元」として先へ進む -----------------------------
     # **一覧を個別イベントとして数えない。** 実測で、音楽方向は一覧 4 件と
     # 記事 1 件で個別イベントが 0 件だった。ここが無いと先へ届かない。
     sources = _follow_listings(db, state, sources)
 
-    # --- ⑥ 全候補をまとめて抽出する -----------------------------------------
-    # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
-    # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
-    with cost.step("extraction"):
-        extracted, failed = extract_many(sources)
-
-    # 読んだ結果、候補がほとんど残らなかったときは後回しにした分から足す。
-    # **上限を設ける。無制限には増やさない。**
-    if deferred and len(extracted) < TOP_N:
-        extra = deferred[: get_settings().prefilter_extra_reads]
-        _log(db, state, AgentStep.SEARCHING, f"候補が足りないため{len(extra)}件を追加で読みます")
-        with cost.step("extraction"):
-            more, more_failed = extract_many(
-                _guard_bodies(db, state, _with_bodies([r for _, r in extra]))
-            )
-        extracted = [*extracted, *more]
-        failed = [*failed, *more_failed]
-        candidates = [*candidates, *extra]
-        cost.record_dropped("prefilter_extra_reads", len(extra))
+    # --- ⑥ 抽出し、足りない方向があれば読み足す -----------------------------
+    # **「何件読んだか」では不足を測れない。** 何件読んでも終了済み・地域違い
+    # なら希望を満たしていない（実測）。**条件に合う候補の数**で測り、
+    # 足りない方向だけ読み足して、もう一度抽出する。
+    extracted, failed, candidates = _extract_until_enough(db, state, sources, candidates, deferred)
 
     # クエリ文字列ではなく**方向の位置**を鍵にする。LLM が同じ query を持つ方向を
     # 2 つ返すことがあり、文字列で集計すると件数が合算されて二重に表示される。
@@ -466,49 +446,118 @@ def _save_search_candidates(db: Session, state: AgentState, candidates: list) ->
     _log(db, state, AgentStep.SEARCHING, f"検索で{len(rows)}件の候補が見つかりました")
 
 
-def _read_more_for_thin_directions(
+def _fits_the_wish(row: Opportunity, win, wanted_region: str | None) -> bool:
+    """この候補は希望の条件に合うか。**「読んだ」ではなく「合う」で数える。**
+
+    期間・地域・受付を**別々に**見て、どれも外れていないこと。
+    分からない（unknown）は合うとは数えない。
+    """
+    if row.availability == availability.Availability.CLOSED:
+        return False
+    if win is not None:
+        status = search_window.classify(
+            opportunity_type=row.type, start_at=row.start_at, end_at=row.end_at, window=win
+        )
+        if status in (search_window.WindowStatus.ENDED, search_window.WindowStatus.AFTER_WINDOW):
+            return False
+        if status is search_window.WindowStatus.SCHEDULE_UNKNOWN:
+            return False
+    match = region.classify(
+        wanted=wanted_region, location=row.location, opportunity_format=row.format
+    )
+    return match is region.RegionMatch.MATCH
+
+
+def _extract_until_enough(
     db: Session, state: AgentState, sources: list, candidates: list, deferred: list
-) -> list:
-    """候補の少ない探索方向について、後回しにした分を追加で読む（#47）。
+) -> tuple[list, list, list]:
+    """抽出し、条件に合う候補が 0 件の方向があれば読み足して、もう一度抽出する。
 
-    **全方向をやり直さない。** 読んだ本文が 1 件以下の方向だけを対象にする。
+    **「読んだ本文が 1 件以下」では不足を測れない。** 実測で、ポケモン方向は
+    5 件読んでも全部が開催終了だった。数えるのは**条件に合う候補**。
 
-    粗選別は抜粋しか見ていない。一覧サイトの抜粋は中身が無く、実測で
-    `clubberia` `iflyer` `odhackathon` のような**探索元が落ちた**。
-    本文を読めば一覧だと分かるので、**読む機会を作る**のがここの役目。
+    止める条件は 3 つ。**無制限には回さない。**
+
+      - 追加で読む候補が尽きた
+      - 新しく条件に合う候補が増えなかった（`listing_stop_after_empty_rounds`）
+      - 追加取得の上限（`listing_max_fetches`）
     """
     settings = get_settings()
-    if not deferred or settings.listing_max_fetches <= 0:
-        return sources
-
+    win = search_window.SearchWindow.from_dict(state.search_window)
     order = {id(d): i for i, d in enumerate(state.search_directions)}
-    read_per_direction: dict[int, int] = {}
-    for direction, _ in candidates:
-        index = order.get(id(direction))
-        if index is not None:
-            read_per_direction[index] = read_per_direction.get(index, 0) + 1
 
-    # 読んだ本文が 1 件以下の方向。**0 件だけに絞らない**（1 件では選べない）。
-    thin = {i for i in range(len(state.search_directions)) if read_per_direction.get(i, 0) <= 1}
-    if not thin:
-        return sources
+    with cost.step("extraction"):
+        extracted, failed = extract_many(sources)
 
-    extra = [(direction, r) for direction, r in deferred if order.get(id(direction)) in thin][
-        : settings.prefilter_extra_reads
-    ]
-    if not extra:
-        return sources
+    pool = list(deferred)
+    empty_rounds = 0
+    budget = settings.prefilter_extra_reads * max(1, settings.listing_stop_after_empty_rounds)
 
-    _log(
-        db,
-        state,
-        AgentStep.SEARCHING,
-        f"候補の少ない{len(thin)}方向について、{len(extra)}件を追加で読みます",
-    )
-    cost.record_dropped("thin_direction_reads", len(extra))
-    more = _guard_bodies(db, state, _with_bodies([r for _, r in extra]))
-    candidates.extend(extra)
-    return [*sources, *more]
+    # **0 なら読み足さない。** 回数は設定で決まる（従来の挙動へ戻せる）。
+    for _round in range(settings.listing_stop_after_empty_rounds):
+        if not pool or budget <= 0:
+            break
+        # いま条件に合っている候補を方向ごとに数える。
+        by_url = {r.url: order.get(id(d)) for d, r in candidates}
+        fits: dict[int, int] = {}
+        for source_url, item in extracted:
+            index = by_url.get(source_url)
+            if index is None:
+                continue
+            row = Opportunity(
+                type=item.type,
+                start_at=item.start_at,
+                end_at=item.end_at,
+                location=item.location,
+                format=item.format,
+                availability=availability.for_extracted(item)[0],
+            )
+            if _fits_the_wish(row, win, state.wanted_region):
+                fits[index] = fits.get(index, 0) + 1
+
+        thin = [i for i in range(len(state.search_directions)) if fits.get(i, 0) == 0]
+        if not thin:
+            break
+
+        extra = [(d, r) for d, r in pool if order.get(id(d)) in thin][
+            : min(settings.prefilter_extra_reads, budget)
+        ]
+        if not extra:
+            break
+        pool = [c for c in pool if c not in extra]
+        budget -= len(extra)
+
+        _log(
+            db,
+            state,
+            AgentStep.SEARCHING,
+            f"条件に合う候補が無い{len(thin)}方向について、{len(extra)}件を追加で読みます",
+        )
+        cost.record_dropped("thin_direction_reads", len(extra))
+        more_sources = _follow_listings(
+            db, state, _guard_bodies(db, state, _with_bodies([r for _, r in extra]))
+        )
+        with cost.step("extraction"):
+            more, more_failed = extract_many(more_sources)
+
+        before = sum(fits.values())
+        extracted = [*extracted, *more]
+        failed = [*failed, *more_failed]
+        candidates = [*candidates, *extra]
+        if not more:
+            empty_rounds += 1
+        if len(extracted) == before:
+            empty_rounds += 1
+        if empty_rounds >= settings.listing_stop_after_empty_rounds:
+            _log(
+                db,
+                state,
+                AgentStep.SEARCHING,
+                "追加で読んでも候補が増えないため、探索を打ち切ります",
+            )
+            break
+
+    return extracted, failed, candidates
 
 
 def _follow_listings(db: Session, state: AgentState, sources: list) -> list:

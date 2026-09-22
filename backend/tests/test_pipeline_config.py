@@ -338,6 +338,8 @@ def test_prefilter_limits_what_gets_extracted(db, state, monkeypatch):
             search_api_key="k",
             search_pipeline="prefilter",
             prefilter_read_limit=3,
+            # 読み足しを止める。**ここで見るのは「最初に何件へ絞ったか」だけ。**
+            listing_stop_after_empty_rounds=0,
         ),
     )
     monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
@@ -406,6 +408,8 @@ def test_shortfall_reads_more_from_the_deferred_pile(db, state, monkeypatch):
             search_pipeline="prefilter",
             prefilter_read_limit=2,
             prefilter_extra_reads=2,
+            # 読み足しは 1 巡だけ。**回数は設定で決まる。**
+            listing_stop_after_empty_rounds=1,
         ),
     )
     monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
@@ -427,5 +431,6 @@ def test_shortfall_reads_more_from_the_deferred_pile(db, state, monkeypatch):
     monkeypatch.setattr(loop, "extract_many", fake_extract)
     ids = loop._search_and_extract(db, state)
 
-    assert batches == [2, 2]  # 上限どおり 2 件だけ追加
+    # 1 巡ぶんだけ追加される。**巡の数は `listing_stop_after_empty_rounds`。**
+    assert batches == [2, 2]
     assert len(ids) == 3

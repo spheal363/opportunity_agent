@@ -45,6 +45,10 @@ _MARKERS = (
     "security check",
     # 実 run ですり抜けたもの。**語彙は実測で足す。**
     "performing security verification",
+    "human verification",
+    "are you a robot",
+    "one more step",
+    "サイトの安全性を確認",
     "security service to protect against malicious bots",
     "verifies you are not a bot",
     "verify you are a human",

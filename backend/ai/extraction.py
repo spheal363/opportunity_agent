@@ -94,6 +94,12 @@ def extract_many(
         content = _content_of(src)
         if not content:
             return src.url, None
+        # **本文 0 文字は取得失敗。** 空のページを抽出へ流すと、日時も場所も
+        # 取れない「機会」ができる（実測で `Human Verification` が候補に並んだ）。
+        if isinstance(src, PageContent) and not (src.content or "").strip():
+            logger.info("extraction.empty_body url=%s", src.url)
+            cost.record_dropped("empty_body")
+            return src.url, None
         # **アクセス確認・エラーページは取得失敗。** 機会として抽出しない（#47）。
         # 実測で Cloudflare の「Just a moment...」が候補一覧に並んだ。
         # 1 件落としても他の候補は続ける。

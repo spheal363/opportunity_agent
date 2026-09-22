@@ -92,7 +92,8 @@ class Settings(BaseSettings):
     listing_links_per_page: int = 4
     # 1 run 全体で、一覧からの追加取得を何件まで許すか
     listing_max_fetches: int = 12
-    # 追加探索を止める条件。**新しい候補が得られなくなったら止める。**
+    # 条件に合う候補が 0 件の方向について、読み足す巡の上限。
+    # **0 なら読み足さない**（従来の挙動）。新しい候補が増えなくなっても止まる。
     listing_stop_after_empty_rounds: int = 2
 
     # --- モデル振り分け（#26-b）------------------------------------------
