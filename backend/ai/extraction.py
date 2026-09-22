@@ -10,7 +10,7 @@ CHEAP を使わない**。
 
 from datetime import date
 
-from ai import evidence
+from ai import cost, evidence, interstitial
 from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
@@ -93,6 +93,16 @@ def extract_many(
     def one(src: SearchResult | PageContent) -> tuple[str, ExtractedOpportunity | None]:
         content = _content_of(src)
         if not content:
+            return src.url, None
+        # **アクセス確認・エラーページは取得失敗。** 機会として抽出しない（#47）。
+        # 実測で Cloudflare の「Just a moment...」が候補一覧に並んだ。
+        # 1 件落としても他の候補は続ける。
+        reason = interstitial.looks_like_interstitial(
+            title=getattr(src, "title", None), content=content
+        )
+        if reason is not None:
+            logger.info("extraction.interstitial url=%s reason=%s", src.url, reason)
+            cost.record_dropped("interstitial")
             return src.url, None
         try:
             return src.url, extract_opportunity(

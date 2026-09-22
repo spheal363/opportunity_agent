@@ -15,8 +15,9 @@ import { BottomNote, PageIntro } from '../components/app/Chrome';
 import { CardGrid, ResultsHead } from '../components/app/CardGrid';
 import { ResultWelcome } from '../components/app/ResultWelcome';
 import ErrorMessage from '../components/ErrorMessage';
-import { OtherCandidates } from '../components/app/OtherCandidates';
+import { CandidateSections } from '../components/app/CandidateSections';
 import { useRunResult } from '../hooks/useRunResult';
+import { splitCandidates } from '../utils/candidates';
 import { useAppState } from '../state/context';
 
 export default function ResultsPage() {
@@ -36,9 +37,15 @@ export default function ResultsPage() {
 
   const { result, error, loading } = useRunResult(runId);
 
-  const items = result?.selected ?? [];
+  const selected = result?.selected ?? [];
   const others = result?.others ?? [];
   const win = result?.search_window ?? null;
+  // **おすすめ欄は「期間内と確認できたイベント」だけ。**
+  // 日程未確認や通年のものを混ぜると「60日以内が3件」と読まれる。
+  // 期間が分からない run（この列が付く前）は、従来どおり選定をそのまま出す。
+  const items = win
+    ? (splitCandidates(selected, others).find((b) => b.key === 'in_window')?.items ?? [])
+    : selected;
   const notRecorded = result !== null && !result.recorded;
 
   return (
@@ -62,7 +69,13 @@ export default function ResultsPage() {
 
       <ResultsHead
         eyebrow="CURATED FOR YOU"
-        title={items.length ? `あなたに届けたい、${items.length}つの機会` : 'まだ結果がありません'}
+        title={
+          items.length
+            ? `今後60日以内の機会、${items.length}件`
+            : win
+              ? '今後60日以内と確認できたイベントはありません'
+              : 'まだ結果がありません'
+        }
         count={items.length}
       />
       <ErrorMessage error={error} />
@@ -92,8 +105,8 @@ export default function ResultsPage() {
       ) : null}
 
       <CardGrid items={items} isResult />
-      {/* **おすすめとは別枠。** 読んだが選ばなかったものを、件数埋めに使わない。 */}
-      <OtherCandidates items={others} window={win} />
+      {/* **期間との関係で分ける。** 0 件なら 0 件と言い、別枠で埋めない。 */}
+      <CandidateSections selected={selected} others={others} hasWindow={win !== null} />
       <BottomNote />
     </>
   );
