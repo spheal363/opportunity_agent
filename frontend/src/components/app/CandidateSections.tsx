@@ -65,6 +65,8 @@ export function CandidateSections({ selected, others, hasWindow }: Props) {
                   </dd>
                   <dt className="text-muted">期間</dt>
                   <dd className="m-0">{o.window_note ?? '—'}</dd>
+                  <dt className="text-muted">地域</dt>
+                  <dd className="m-0">{o.region_note ?? '—'}</dd>
                   <dt className="text-muted">受付</dt>
                   <dd className="m-0">{availabilityLabel(o)}</dd>
                   <dt className="text-muted">確認</dt>

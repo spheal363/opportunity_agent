@@ -85,6 +85,12 @@ export type Opportunity = {
     | null;
   window_note: string | null;
   /**
+   * 希望した地域との照合（#47）。**受付・期間とはさらに別の軸。**
+   * `unknown` を一致として扱わない。
+   */
+  region_match: 'match' | 'mismatch' | 'unknown' | null;
+  region_note: string | null;
+  /**
    * この URL は**申込先ではなく情報源**か。
    *
    * `true` のとき、申込先は確認できていない。取得元のページへのリンクとして

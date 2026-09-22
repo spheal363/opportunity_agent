@@ -33,34 +33,54 @@ export function splitCandidates(selected: Opportunity[], others: Opportunity[]):
   }
 
   const live = all.filter((o) => !isDropped(o));
+  // **希望地に合わない候補をおすすめに混ぜない（#47）。**
+  // 実測で、希望が「東京 / オンライン」なのに沖縄の現地開催が推薦された。
+  // `unknown`（判断できない）も一致として扱わず、別枠へ出す。
+  const fits = live.filter((o) => o.region_match !== 'mismatch' && o.region_match !== 'unknown');
+  const elsewhere = live.filter((o) => o.region_match === 'mismatch');
+  const placeUnknown = live.filter((o) => o.region_match === 'unknown');
   return [
     {
       key: 'in_window',
       eyebrow: 'IN THE NEXT 60 DAYS',
       title: '今後60日以内と確認できたイベント',
       note: '開催日が対象期間の中にあると確認できたものです。',
-      items: live.filter((o) => o.window_status === 'in_window'),
+      items: fits.filter((o) => o.window_status === 'in_window'),
     },
     {
       key: 'ongoing',
       eyebrow: 'ALREADY RUNNING',
       title: '期間より前に始まり、いまも続いている候補',
       note: '開始は対象期間より前ですが、期間中も続いています。途中から参加できるかは公式ページでご確認ください。',
-      items: live.filter((o) => o.window_status === 'ongoing'),
+      items: fits.filter((o) => o.window_status === 'ongoing'),
     },
     {
       key: 'schedule_unknown',
       eyebrow: 'DATE NOT CONFIRMED',
       title: '日程を確認できなかった候補',
       note: '開催日時を読み取れませんでした。期間内とは断定できません。公式ページでご確認ください。',
-      items: live.filter((o) => o.window_status === 'schedule_unknown'),
+      items: fits.filter((o) => o.window_status === 'schedule_unknown'),
     },
     {
       key: 'not_time_bound',
       eyebrow: 'PROGRAMS AND COMMUNITIES',
       title: '開催期間の条件を当てていない候補',
       note: 'コミュニティ・プログラム・求人など、開催日が 1 点に決まらない種別です。開催期間では絞っていませんが、申込締切と受付状況は下に出しています。',
-      items: live.filter((o) => o.window_status === 'not_time_bound'),
+      items: fits.filter((o) => o.window_status === 'not_time_bound'),
+    },
+    {
+      key: 'place_unknown',
+      eyebrow: 'PLACE NOT CONFIRMED',
+      title: '開催地を確認できなかった候補',
+      note: '開催地または参加形式を読み取れませんでした。希望した地域に合うかは未確認です。一致とは扱っていません。',
+      items: placeUnknown,
+    },
+    {
+      key: 'elsewhere',
+      eyebrow: 'OUTSIDE YOUR AREA',
+      title: '希望した地域での開催を確認できなかった候補',
+      note: '希望した地域での現地開催が確認できず、オンライン参加の根拠もありませんでした。理由は各候補に出しています。',
+      items: elsewhere,
     },
     {
       key: 'dropped',

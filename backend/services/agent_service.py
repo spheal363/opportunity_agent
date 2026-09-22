@@ -4,9 +4,9 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from ai import interstitial
+from ai import interstitial, region
 from ai import window as search_window
-from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity
+from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import (
     AgentLogEntry,
     AgentRunResult,
@@ -65,8 +65,11 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
         for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
     }
     win = search_window.SearchWindow.from_dict(run.search_window)
+    # 希望した地域。**プロフィールの現在値を使う**（run には保存していない）。
+    profile = db.get(UserProfile, run.user_id)
+    wanted = profile.location if profile is not None else None
     # **順位を保つ。** DB の返す順ではなく selected_ids の順。
-    selected = [_summary(rows[i], win) for i in ids if i in rows]
+    selected = [_summary(rows[i], win, wanted) for i in ids if i in rows]
 
     # **推薦しなかったが、読んで抽出できた候補。**
     #
@@ -77,7 +80,7 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
     # 一覧を開くだけで外部 API は呼ばない。DB にある分だけを返す。
     chosen = set(ids)
     others = [
-        _summary(r, win)
+        _summary(r, win, wanted)
         for r in db.query(Opportunity)
         .filter(Opportunity.run_id == run_id, Opportunity.user_id == run.user_id)
         .order_by(Opportunity.score.desc())
@@ -98,12 +101,18 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
     )
 
 
-def _summary(row: Opportunity, win: "search_window.SearchWindow | None") -> OpportunitySummary:
+def _summary(
+    row: Opportunity, win: "search_window.SearchWindow | None", wanted: str | None = None
+) -> OpportunitySummary:
     """期間との関係を付けて返す。**期間が分からない run では付けない。**
 
     この列が付く前の run を、今日の日付で作り直した期間で判定しない。
     """
     out = OpportunitySummary.model_validate(row, from_attributes=True)
+    # **地域の照合は期間と独立。** 期間が分からない run でも出す。
+    match = region.classify(wanted=wanted, location=row.location, opportunity_format=row.format)
+    out.region_match = match.value
+    out.region_note = region.note(match, wanted=wanted, location=row.location)
     if win is None:
         return out
     status = search_window.classify(
