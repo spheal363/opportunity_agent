@@ -9,7 +9,7 @@ from ai.schemas.goal_analysis import GoalAnalysisOutput
 from ai.schemas.link_pick import LinkPickOutput, PickedLink
 from config import Settings
 from db.session import SessionLocal
-from models import AgentRun, Opportunity
+from models import AgentRun
 from schemas.agent import AgentRunStatus
 from tools.search.base import PageContent
 
