@@ -56,6 +56,7 @@ class Step(StrEnum):
     """
 
     GOAL_ANALYSIS = "goal_analysis"
+    DISCOVERY = "discovery"
     SEARCH_PLAN = "search_plan"
     EXTRACTION = "extraction"
     LINK_PICK = "link_pick"
@@ -93,6 +94,13 @@ _ROUTES: dict[Step, Route] = {
         tier=ModelTier.STANDARD,
         reads_untrusted=False,
         reason="目標分析の出力から検索語を組み立てる。外部本文は読まない",
+    ),
+    Step.DISCOVERY: Route(
+        tier=ModelTier.STANDARD,
+        # **モデルの内側で Web を読む。** 本文はこちらの guard を通らないので、
+        # 出力は事実として確定させず「検索で見つかった候補」として扱う。
+        reads_untrusted=True,
+        reason="検索専用モデルが内蔵検索で外部ページを読む。出力は未確認の候補",
     ),
     Step.EXTRACTION: Route(
         tier=ModelTier.STANDARD,

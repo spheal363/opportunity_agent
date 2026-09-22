@@ -268,3 +268,11 @@ backend/experiments/
 # 新規ユーザー検証用の DB。**普段の DB と分ける**（#47）
 verify_*.db
 verify_*.db-journal
+
+# 実験で取得した第三者ページの本文（#47）。
+# **公開リポジトリへ載せない。** 結論は docs/experiments/*.md に書く。
+docs/experiments/**/pages/
+docs/experiments/**/audit-pages/
+docs/experiments/**/audit/
+docs/experiments/**/followup/
+docs/experiments/**/repro/

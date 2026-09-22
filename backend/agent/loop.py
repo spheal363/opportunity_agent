@@ -21,7 +21,7 @@ from urllib.parse import unquote_plus, urlparse
 
 from sqlalchemy.orm import Session
 
-from agent import demo_attack, stub_data
+from agent import demo_attack, discovery_run, stub_data
 from agent.state import AgentState
 from ai import availability, cost, explore, guard, listing, region
 from ai import window as search_window
@@ -127,6 +127,11 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         run = db.get(AgentRun, run_id)
         if run is not None:
             run.search_window = state.search_window
+            # **入力原文をこの run に固定する（#47）。**
+            # 画面は現在のプロフィールを見ていたため、あとからプロフィールを
+            # 編集すると過去 run の探索条件まで変わって見えていた。
+            run.wishes_source = profile.wants_now
+            run.region_source = profile.location
             db.commit()
         _log(
             db,
@@ -149,26 +154,34 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         for wanted in state.goal_analysis.wanted_now:
             _log(db, state, AgentStep.ANALYZING_PROFILE, f"今回探したい機会: {wanted}")
 
-        _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
-        with cost.step("search_plan"):
-            state.search_directions = _plan_search(state, profile)
-        for d in state.search_directions:
-            _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
-
-        _step(db, state, AgentStep.SEARCHING, "Webを探索しています")
-        found = _search_and_extract(db, state)
-        _log(db, state, AgentStep.SEARCHING, f"{len(found)}件のOpportunityを発見")
-
-        _step(db, state, AgentStep.EVALUATING, "Opportunityを評価しています")
-        ranked = _evaluate_and_select(db, state, found)
-        _log(db, state, AgentStep.EVALUATING, f"{len(found)}件から{len(ranked)}件を順位付け")
-
-        _step(db, state, AgentStep.VERIFYING, "上位候補の公式情報を確認しています")
-        _verify_and_finalize(db, state)
-        if state.shortfall_reason:
-            _log(db, state, AgentStep.VERIFYING, state.shortfall_reason)
+        if settings.search_route.strip().lower() == "discovery":
+            # **新しい探索経路（#47）。** 旧経路は下にそのまま残してある。
+            #
+            # 一覧段階では 検索計画 / 本文抽出 / TOP3 推薦 / 全件検証 を行わない。
+            # 検索語はモデルが自分で作るので、ここで組むと**希望を言い換える層が
+            # 二重になる**（実測で、希望が別物へ変換されていた）。
+            discovery_run.run(db, state, profile, win, log=_log, step=_step)
         else:
-            _log(db, state, AgentStep.VERIFYING, f"{len(state.selected_ids)}件を推薦します")
+            _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
+            with cost.step("search_plan"):
+                state.search_directions = _plan_search(state, profile)
+            for d in state.search_directions:
+                _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
+
+            _step(db, state, AgentStep.SEARCHING, "Webを探索しています")
+            found = _search_and_extract(db, state)
+            _log(db, state, AgentStep.SEARCHING, f"{len(found)}件のOpportunityを発見")
+
+            _step(db, state, AgentStep.EVALUATING, "Opportunityを評価しています")
+            ranked = _evaluate_and_select(db, state, found)
+            _log(db, state, AgentStep.EVALUATING, f"{len(found)}件から{len(ranked)}件を順位付け")
+
+            _step(db, state, AgentStep.VERIFYING, "上位候補の公式情報を確認しています")
+            _verify_and_finalize(db, state)
+            if state.shortfall_reason:
+                _log(db, state, AgentStep.VERIFYING, state.shortfall_reason)
+            else:
+                _log(db, state, AgentStep.VERIFYING, f"{len(state.selected_ids)}件を推薦します")
 
         state.status = AgentRunStatus.COMPLETED
         _step(db, state, AgentStep.COMPLETED, "探索が完了しました")

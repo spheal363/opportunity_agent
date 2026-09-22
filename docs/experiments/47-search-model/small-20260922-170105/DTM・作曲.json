@@ -1,0 +1,167 @@
+{
+ "sent": {
+  "model": "openai/gpt-5-search-api",
+  "messages": [
+   {
+    "role": "user",
+    "content": "【希望】初めての曲作りにつながるDTM・作曲のワークショップに出たい\n【地域】東京都内で現地参加できるもの。オンラインのみは対象外。\n【期間】2026年09月22日〜2026年11月21日\n\nこの希望に合う催しを 1〜2 件挙げてください。\n各件について イベント名 / 開催日 / 会場 / 情報源URL を書いてください。\n表でも箇条書きでも構いません。JSON にしなくてよい。\n\n・検索で実在を確認したページの URL だけを出す。URL を作らない。\n・確認できない項目は「不明」と書く。埋めない。\n・一覧ページではなく、個別の催しを挙げる。\n・同じ企画の別日程はまとめて 1 件にする。\n・与えられた希望以外の条件を足さない。職業や経歴を想定しない。\n"
+   }
+  ],
+  "max_tokens": 2000,
+  "web_search_options": {}
+ },
+ "http": 200,
+ "request_id": "202609220801154537048318268d9d63CqGXSJZ",
+ "seconds": 12.2,
+ "body": {
+  "id": "chatcmpl-45c96b76-3f6b-4e5a-9e65-cb8a25d2302f",
+  "object": "chat.completion",
+  "created": 1790064087,
+  "model": "gpt-5-search-api-2025-10-14",
+  "choices": [
+   {
+    "index": 0,
+    "message": {
+     "role": "assistant",
+     "content": "探してみましたが、2026年9〜11月の東京都内、現地参加できる「初めての曲作り／DTM・作曲ワークショップ」に該当しそうなものは、以下の1件が条件に比較的近い催しです。他にぴったり一致するものは、検索時点では見つかりませんでした。\n\n---\n\n### 候補\n\n- **イベント名**: 1日で学ぶDTM入門（WOOD プロアーティスト科 作曲専攻内）  \n  **開催日**: 2026年9月23日（祝・水）、10月12日（祝・月） 他に10月31日（土）も予定されています。 ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n  **会場**: WOOD 新宿校（東京都新宿区新宿2-4-6 フォーシーズンアネックスビル） ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n  **情報源URL**: https://www.wood.ne.jp/pro/m/ ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n\n---\n\n### 解説\n\n- この「1日で学ぶDTM入門」は、「DTM入門」と銘打たれており、初心者でも分かるように基礎から学べる内容です。曲作り未経験の方でも参加可能なワークショップ形式で、現地での参加が求められており、オンラインのみではないものです。 ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n- 日程としては、9月23日・10月12日・10月31日など、希望期間（2026年9月22日〜11月21日）に含まれています。 ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n\n---\n\nもしよければ、このイベントの他に、区や公共施設でのワークショップなどをさらに探すこともできますが、それでも2件目はなかなか見つかりませんでした。追加で探してみますか？",
+     "refusal": null,
+     "annotations": [
+      {
+       "type": "url_citation",
+       "url_citation": {
+        "end_index": 303,
+        "start_index": 240,
+        "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+        "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+       }
+      },
+      {
+       "type": "url_citation",
+       "url_citation": {
+        "end_index": 418,
+        "start_index": 355,
+        "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+        "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+       }
+      },
+      {
+       "type": "url_citation",
+       "url_citation": {
+        "end_index": 528,
+        "start_index": 465,
+        "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+        "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+       }
+      },
+      {
+       "type": "url_citation",
+       "url_citation": {
+        "end_index": 723,
+        "start_index": 660,
+        "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+        "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+       }
+      },
+      {
+       "type": "url_citation",
+       "url_citation": {
+        "end_index": 853,
+        "start_index": 790,
+        "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+        "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+       }
+      }
+     ]
+    },
+    "finish_reason": "stop"
+   }
+  ],
+  "usage": {
+   "prompt_tokens": 31452,
+   "completion_tokens": 541,
+   "total_tokens": 31993,
+   "prompt_tokens_details": {
+    "cached_tokens": 0,
+    "audio_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 0,
+    "audio_tokens": 0,
+    "accepted_prediction_tokens": 0,
+    "rejected_prediction_tokens": 0
+   },
+   "cost_usd": 0.054726
+  },
+  "system_fingerprint": null
+ },
+ "finish_reason": "stop",
+ "content": "探してみましたが、2026年9〜11月の東京都内、現地参加できる「初めての曲作り／DTM・作曲ワークショップ」に該当しそうなものは、以下の1件が条件に比較的近い催しです。他にぴったり一致するものは、検索時点では見つかりませんでした。\n\n---\n\n### 候補\n\n- **イベント名**: 1日で学ぶDTM入門（WOOD プロアーティスト科 作曲専攻内）  \n  **開催日**: 2026年9月23日（祝・水）、10月12日（祝・月） 他に10月31日（土）も予定されています。 ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n  **会場**: WOOD 新宿校（東京都新宿区新宿2-4-6 フォーシーズンアネックスビル） ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n  **情報源URL**: https://www.wood.ne.jp/pro/m/ ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n\n---\n\n### 解説\n\n- この「1日で学ぶDTM入門」は、「DTM入門」と銘打たれており、初心者でも分かるように基礎から学べる内容です。曲作り未経験の方でも参加可能なワークショップ形式で、現地での参加が求められており、オンラインのみではないものです。 ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n- 日程としては、9月23日・10月12日・10月31日など、希望期間（2026年9月22日〜11月21日）に含まれています。 ([wood.ne.jp](https://www.wood.ne.jp/pro/m/?utm_source=openai))  \n\n---\n\nもしよければ、このイベントの他に、区や公共施設でのワークショップなどをさらに探すこともできますが、それでも2件目はなかなか見つかりませんでした。追加で探してみますか？",
+ "content_len": 945,
+ "annotations": [
+  {
+   "type": "url_citation",
+   "url_citation": {
+    "end_index": 303,
+    "start_index": 240,
+    "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+    "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+   }
+  },
+  {
+   "type": "url_citation",
+   "url_citation": {
+    "end_index": 418,
+    "start_index": 355,
+    "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+    "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+   }
+  },
+  {
+   "type": "url_citation",
+   "url_citation": {
+    "end_index": 528,
+    "start_index": 465,
+    "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+    "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+   }
+  },
+  {
+   "type": "url_citation",
+   "url_citation": {
+    "end_index": 723,
+    "start_index": 660,
+    "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+    "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+   }
+  },
+  {
+   "type": "url_citation",
+   "url_citation": {
+    "end_index": 853,
+    "start_index": 790,
+    "title": "作曲学校 社会人が最速でプロを目指せる『ウッド PROアーティスト科 作曲専攻』",
+    "url": "https://www.wood.ne.jp/pro/m/?utm_source=openai"
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 31452,
+  "completion_tokens": 541,
+  "total_tokens": 31993,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "audio_tokens": 0
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 0,
+   "audio_tokens": 0,
+   "accepted_prediction_tokens": 0,
+   "rejected_prediction_tokens": 0
+  },
+  "cost_usd": 0.054726
+ },
+ "cost_usd_inline": 0.054726,
+ "label": "DTM・作曲",
+ "verdict": "正常完了",
+ "cost_usd_settled": 0.054726
+}

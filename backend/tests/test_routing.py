@@ -102,6 +102,8 @@ def test_the_steps_that_read_external_data_are_marked():
     """
     reads = {s for s, r in routing.table() if r.reads_untrusted}
     assert reads == {
+        # 検索専用モデルは**モデルの内側で外部ページを読む**（#47）
+        Step.DISCOVERY,
         Step.EXTRACTION,
         Step.LINK_PICK,
         Step.EVALUATION,

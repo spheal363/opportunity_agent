@@ -1,0 +1,16 @@
+{
+ "list_seconds": 54.1,
+ "detail_seconds": null,
+ "run": {
+  "run_id": "run_193a5f2500f0",
+  "status": "completed",
+  "current_step": "completed",
+  "message": "探索が完了しました",
+  "progress": 100,
+  "error": null,
+  "cost_jpy": 10.2717,
+  "expensive_model_calls": 0
+ },
+ "candidates": [],
+ "detail": null
+}

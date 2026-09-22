@@ -1,0 +1,174 @@
+{
+  "model": "openai/gpt-5",
+  "window": {
+    "start": "2026-09-22",
+    "end": "2026-11-21"
+  },
+  "seconds": 204.2,
+  "requests": 2,
+  "web_search_calls_total": 26,
+  "tokens_total": 105951,
+  "cost_usd_known": [],
+  "cost_unknown_responses": 2,
+  "request_ids": [
+    "202609220742359869327408268d9d6KSZprf1j",
+    "202609220743596141314938268d9d6Sr4wWrGb"
+  ],
+  "by_wish": {
+    "DTM・作曲": [
+      {
+        "name": "初心者向け・作曲のやり方を学ぶ会（作曲勉強会）",
+        "dates": [
+          "2026-10-17"
+        ],
+        "date_note": "10:30–12:30",
+        "venue": null,
+        "region": "東京都江戸川区",
+        "onsite_tokyo": true,
+        "summary": "作曲初心者向けに「作曲のやり方」とヒット曲から学ぶ「曲の仕上げ方」を2時間で学ぶ少人数ワークショップ。",
+        "price": 4980,
+        "eligibility": "作曲初心者向け",
+        "registration": "事前申込（ストアサイトで決済可：クレジットカード／コンビニ払い／PayPal／PayPay残高／楽天ペイ等）",
+        "source_url": "https://sakkyoku.info/studysession/basics-261017/",
+        "evidence": "「2026年10月17日（土）10:30～ 東京開催・作曲勉強会」「初心者向け・作曲のやり方を学ぶ会」「場所 東京都江戸川区内 ※都営船堀駅近く」「参加費 4,980円」などの記載。 ([sakkyoku.info](https://sakkyoku.info/studysession/basics-261017/))"
+      },
+      {
+        "name": "作曲の悩みや相談を持ち寄ってみんなで話す会",
+        "dates": [
+          "2026-09-27"
+        ],
+        "date_note": "10:00–12:00",
+        "venue": null,
+        "region": "東京都墨田区",
+        "onsite_tokyo": true,
+        "summary": "これから作曲を始めたい人や作曲の悩みを共有したい人のための参加型ミートアップ。進行役のもと発表と対話で学ぶ場。",
+        "price": 3000,
+        "eligibility": "これから作曲をやってみたい人、作曲の悩みを共有したい人など",
+        "registration": "事前申込（ストアサイトで決済可）",
+        "source_url": "https://sakkyoku.info/studysession/meetup-260927/",
+        "evidence": "「2026年9月27日（日）10:00～ 東京開催」「場所 東京都墨田内 ※JR両国駅近く」「参加費 3,000円」「これから作曲をやってみたくて、きっかけを探している人」等の記載。 ([sakkyoku.info](https://sakkyoku.info/studysession/meetup-260927/))"
+      }
+    ],
+    "ポケモン": []
+  },
+  "calls": [
+    {
+      "http": 200,
+      "request_id": "202609220742359869327408268d9d6KSZprf1j",
+      "seconds": 83.8,
+      "response_id": "resp_06be23d1ca7f104f006ab2316c627c8196ac5e899f8fe4f6c9",
+      "web_search_calls": 13,
+      "output_kinds": [
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "message"
+      ],
+      "usage": {
+        "input_tokens": 44885,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4608
+        },
+        "output_tokens": 5829,
+        "output_tokens_details": {
+          "reasoning_tokens": 4864
+        },
+        "total_tokens": 50714
+      },
+      "cost_usd": null,
+      "text": "{\"candidates\":[{\"name\":\"初心者向け・作曲のやり方を学ぶ会（作曲勉強会）\",\"dates\":[\"2026-10-17\"],\"date_note\":\"10:30–12:30\",\"venue\":null,\"region\":\"東京都江戸川区\",\"onsite_tokyo\":true,\"summary\":\"作曲初心者向けに「作曲のやり方」とヒット曲から学ぶ「曲の仕上げ方」を2時間で学ぶ少人数ワークショップ。\",\"price\":4980,\"eligibility\":\"作曲初心者向け\",\"registration\":\"事前申込（ストアサイトで決済可：クレジットカード／コンビニ払い／PayPal／PayPay残高／楽天ペイ等）\",\"source_url\":\"https://sakkyoku.info/studysession/basics-261017/\",\"evidence\":\"「2026年10月17日（土）10:30～ 東京開催・作曲勉強会」「初心者向け・作曲のやり方を学ぶ会」「場所 東京都江戸川区内 ※都営船堀駅近く」「参加費 4,980円」などの記載。 ([sakkyoku.info](https://sakkyoku.info/studysession/basics-261017/))\"},{\"name\":\"作曲の悩みや相談を持ち寄ってみんなで話す会\",\"dates\":[\"2026-09-27\"],\"date_note\":\"10:00–12:00\",\"venue\":null,\"region\":\"東京都墨田区\",\"onsite_tokyo\":true,\"summary\":\"これから作曲を始めたい人や作曲の悩みを共有したい人のための参加型ミートアップ。進行役のもと発表と対話で学ぶ場。\",\"price\":3000,\"eligibility\":\"これから作曲をやってみたい人、作曲の悩みを共有したい人など\",\"registration\":\"事前申込（ストアサイトで決済可）\",\"source_url\":\"https://sakkyoku.info/studysession/meetup-260927/\",\"evidence\":\"「2026年9月27日（日）10:00～ 東京開催」「場所 東京都墨田内 ※JR両国駅近く」「参加費 3,000円」「これから作曲をやってみたくて、きっかけを探している人」等の記載。 ([sakkyoku.info](https://sakkyoku.info/studysession/meetup-260927/))\"}],\"note\":\"指定期間（2026-09-22〜2026-11-21）・都内現地開催・DTM/作曲の入門に該当する催しとして確実に確認できたのは2件でした。追加調査をご希望の場合は検索範囲（スクールの体験講座や機材メーカー主催の入門ワークショップ等）を広げて再探索します。\"}",
+      "citations": [
+        {
+          "title": "【2026年10月17日（土）10:30～ 東京開催・作曲勉強会】初心者向け・作曲のやり方を学ぶ会 | うちやま作曲教室",
+          "url": "https://sakkyoku.info/studysession/basics-261017/",
+          "type": "url_citation"
+        },
+        {
+          "title": "【2026年9月27日（日）10:00～ 東京開催】作曲の悩みや相談を持ち寄ってみんなで話す会 | うちやま作曲教室",
+          "url": "https://sakkyoku.info/studysession/meetup-260927/",
+          "type": "url_citation"
+        }
+      ],
+      "wish": "DTM・作曲",
+      "kind": "初回"
+    },
+    {
+      "http": 200,
+      "request_id": "202609220743596141314938268d9d6Sr4wWrGb",
+      "seconds": 120.4,
+      "response_id": "resp_030eca169b337960006ab231bfaba08193b27bb64532fbf0f7",
+      "web_search_calls": 13,
+      "output_kinds": [
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning"
+      ],
+      "usage": {
+        "input_tokens": 47088,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4608
+        },
+        "output_tokens": 8149,
+        "output_tokens_details": {
+          "reasoning_tokens": 7872
+        },
+        "total_tokens": 55237
+      },
+      "cost_usd": null,
+      "text": "",
+      "citations": [],
+      "wish": "ポケモン",
+      "kind": "初回"
+    }
+  ]
+}

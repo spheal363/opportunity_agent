@@ -97,6 +97,21 @@ class Settings(BaseSettings):
     # **0 なら読み足さない**（従来の挙動）。新しい候補が増えなくなっても止まる。
     listing_stop_after_empty_rounds: int = 2
 
+    # --- 探索経路（#47）---------------------------------------------------
+    # SEARCH_ROUTE=legacy     **既定。** 従来の 検索->精読->抽出->評価->推薦
+    # SEARCH_ROUTE=discovery  検索専用モデルで候補を集め、一覧を先に出す
+    #
+    # **旧経路は壊さない。** 切り替えで戻せる。
+    search_route: str = "legacy"  # legacy | discovery
+    # 検索専用モデル。内蔵検索が応答に含まれる（`web_search_options`）。
+    discovery_model: str = "openai/gpt-5-search-api"
+    # 希望ごとに何件求めるか。**必達ノルマではない。水増しさせない。**
+    discovery_per_wish: int = 5
+    # 不足方向への追加探索の上限巡数。0 なら追加しない。
+    discovery_extra_rounds: int = 2
+    # 1 リクエストの出力上限。**reasoning も含む上限**なので余裕を取る。
+    discovery_max_tokens: int = 4000
+
     # --- モデル振り分け（#26-b）------------------------------------------
     # LLM_ROUTING=policy    **既定。** 工程ごとの方針に従う（`ai/routing.py`）
     # LLM_ROUTING=standard  表を無視して全工程 STANDARD。振り分け前へ戻す
