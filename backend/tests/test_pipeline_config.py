@@ -49,7 +49,15 @@ def test_missing_keys_are_named_not_silently_ignored():
     """
     from config import missing_keys
 
-    missing = missing_keys(Settings(_env_file=None, search_provider="serper", evaluator="jev"))
+    missing = missing_keys(
+        Settings(
+            _env_file=None,
+            search_route="legacy",
+            search_provider="serper",
+            evaluator="jev",
+            orcarouter_api_key="x",
+        )
+    )
     assert any("SERPER_API_KEY" in m for m in missing)
     assert any("TYPESAFE_API_KEY" in m for m in missing)
 
@@ -61,9 +69,11 @@ def test_jina_needs_no_key():
     missing = missing_keys(
         Settings(
             _env_file=None,
+            search_route="legacy",
             search_provider="serper",
             page_fetcher="jina",
             evaluator="jev",
+            orcarouter_api_key="k",
             serper_api_key="x",
             typesafe_api_key="y",
         )
@@ -338,6 +348,8 @@ def test_prefilter_limits_what_gets_extracted(db, state, monkeypatch):
             search_api_key="k",
             search_pipeline="prefilter",
             prefilter_read_limit=3,
+            # 読み足しを止める。**ここで見るのは「最初に何件へ絞ったか」だけ。**
+            listing_stop_after_empty_rounds=0,
         ),
     )
     monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
@@ -406,6 +418,8 @@ def test_shortfall_reads_more_from_the_deferred_pile(db, state, monkeypatch):
             search_pipeline="prefilter",
             prefilter_read_limit=2,
             prefilter_extra_reads=2,
+            # 読み足しは 1 巡だけ。**回数は設定で決まる。**
+            listing_stop_after_empty_rounds=1,
         ),
     )
     monkeypatch.setattr(loop.registry, "invoke", _fake_registry(fx.TAVILY_RESULTS))
@@ -427,5 +441,64 @@ def test_shortfall_reads_more_from_the_deferred_pile(db, state, monkeypatch):
     monkeypatch.setattr(loop, "extract_many", fake_extract)
     ids = loop._search_and_extract(db, state)
 
-    assert batches == [2, 2]  # 上限どおり 2 件だけ追加
+    # 1 巡ぶんだけ追加される。**巡の数は `listing_stop_after_empty_rounds`。**
+    assert batches == [2, 2]
     assert len(ids) == 3
+
+
+# --- 経路ごとの鍵（#47）---------------------------------------------------
+
+
+def test_設定未指定なら新しい経路を選ぶ():
+    """**既定は discovery。** 設定を書かなくてもこちらが走る。"""
+    assert Settings(_env_file=None).search_route == "discovery"
+
+
+def test_legacyを明示すれば旧経路へ戻せる():
+    assert Settings(_env_file=None, search_route="legacy").search_route == "legacy"
+
+
+def test_discoveryは使わないサービスの鍵を要求しない():
+    """検索はモデルの内側で行われる。**Serper も TypeSafe も使わない。**"""
+    from config import missing_keys
+
+    missing = missing_keys(
+        Settings(
+            _env_file=None,
+            orcarouter_api_key="k",
+            serper_api_key=None,
+            search_api_key=None,
+            typesafe_api_key=None,
+        )
+    )
+    assert missing == []
+
+
+def test_どの経路でもOrcaRouterの鍵は要る():
+    """**黙って別経路へ切り替えない。** 理由を名前で返す。"""
+    from config import missing_keys
+
+    for route in ("discovery", "legacy"):
+        missing = missing_keys(
+            Settings(_env_file=None, search_route=route, orcarouter_api_key=None)
+        )
+        assert any("ORCAROUTER_API_KEY" in m for m in missing), route
+
+
+def test_任意機能の鍵は通常の探索を止めない():
+    """詳細確認（Jina）や Calendar が未設定でも探索は始められる。
+
+    **使う時点で確かめる。** ここで止めない。
+    """
+    from config import missing_keys
+
+    missing = missing_keys(
+        Settings(
+            _env_file=None,
+            orcarouter_api_key="k",
+            jina_api_key=None,
+            google_client_id=None,
+            google_client_secret=None,
+        )
+    )
+    assert missing == []

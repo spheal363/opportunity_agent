@@ -1,0 +1,662 @@
+{
+  "step": "search_plan",
+  "models": {
+    "standard": "google/gemini-2.5-flash",
+    "cheap": "openai/gpt-4o-mini"
+  },
+  "repeats": 2,
+  "no_retry_no_fallback": true,
+  "budget": {
+    "llm_requests": 12,
+    "actual_usd": 0.025471999999999998,
+    "estimated_usd_for_unknown": 0.0,
+    "unknown_cost_responses": 0,
+    "schema_failures": 0,
+    "retries": 0,
+    "fallbacks": 0,
+    "jev_failures": 0,
+    "stopped": null,
+    "limits": {
+      "llm_requests": 80,
+      "spent_usd": 0.5,
+      "unknown_cost_responses": 20,
+      "jev_failures": 3
+    },
+    "note": "**上限は「超えたら次を投げない」。** 並列実行中に飛んでいるリクエストは止まらないため、上限を少し超えることがある"
+  },
+  "summary": {
+    "standard": {
+      "model": "google/gemini-2.5-flash",
+      "requests": 6,
+      "schema_ok": "6/6",
+      "median_latency_ms": 8344,
+      "total_jpy": 3.5679,
+      "actual_usd": 0.023784,
+      "actual_usd_note": null,
+      "reasoning_tokens": 7274,
+      "passed": {
+        "count_in_range": "6/6",
+        "has_serendipity": "6/6",
+        "keeps_goal_terms": "6/6",
+        "keeps_location": "6/6",
+        "japanese_ok": "6/6",
+        "covers_all_goals": "6/6",
+        "no_invented_year": "6/6"
+      },
+      "median_distinct_categories": 3.5,
+      "any_article_words": [],
+      "uncovered_goals": [],
+      "invented_years": []
+    },
+    "cheap": {
+      "model": "openai/gpt-4o-mini",
+      "requests": 6,
+      "schema_ok": "6/6",
+      "median_latency_ms": 2282,
+      "total_jpy": 0.2564,
+      "actual_usd": 0.001688,
+      "actual_usd_note": null,
+      "reasoning_tokens": 0,
+      "passed": {
+        "count_in_range": "6/6",
+        "has_serendipity": "6/6",
+        "keeps_goal_terms": "6/6",
+        "keeps_location": "6/6",
+        "japanese_ok": "6/6",
+        "covers_all_goals": "4/6",
+        "no_invented_year": "6/6"
+      },
+      "median_distinct_categories": 3.0,
+      "any_article_words": [],
+      "uncovered_goals": [
+        "Entrepreneurship"
+      ],
+      "invented_years": []
+    }
+  },
+  "attempts": [
+    {
+      "case": "jp_engineer",
+      "tier": "standard",
+      "run": 1,
+      "model": "google/gemini-2.5-flash",
+      "ok": true,
+      "error": null,
+      "latency_ms": 9204,
+      "attempts": 1,
+      "prompt_tokens": 896,
+      "completion_tokens": 1172,
+      "reasoning_tokens": 897,
+      "jpy": 0.4798,
+      "actual_usd": 0.003198,
+      "queries": [
+        "AI プロダクト開発 ハッカソン 東京 募集",
+        "起業支援 プログラム 東京 参加者募集",
+        "AI 音楽 ハッカソン 東京 参加",
+        "AI 教育 テック コミュニティ 東京"
+      ],
+      "categories": [
+        "event",
+        "accelerator",
+        "event",
+        "community"
+      ],
+      "reasons": [
+        "AIプロダクトの開発経験を積むための実践的な機会を探します。",
+        "将来の起業に役立つ知識やネットワークを得られるプログラムを探します。",
+        "興味のあるAIと音楽を組み合わせたユニークな開発イベントを見つけ、新しいアイデアを試す機会を探します。",
+        "AIと教育に関心を持つ人々との交流を通じて、知識を深めたり協力者を見つけたりする機会を探します。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 4,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 3,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 4
+      }
+    },
+    {
+      "case": "jp_engineer",
+      "tier": "standard",
+      "run": 2,
+      "model": "google/gemini-2.5-flash",
+      "ok": true,
+      "error": null,
+      "latency_ms": 8022,
+      "attempts": 1,
+      "prompt_tokens": 896,
+      "completion_tokens": 1572,
+      "reasoning_tokens": 1289,
+      "jpy": 0.6298,
+      "actual_usd": 0.004198,
+      "queries": [
+        "AI プロダクト開発 ハッカソン 東京 参加者募集",
+        "AI スタートアップ アクセラレーター 東京 募集",
+        "AI 音楽 テクノロジー コミュニティ 東京 参加",
+        "AI 教育 ハッカソン 東京 募集"
+      ],
+      "categories": [
+        "hackathon",
+        "accelerator",
+        "community",
+        "hackathon"
+      ],
+      "reasons": [
+        "AIプロダクトの開発経験を直接積むためのイベントを探します。",
+        "将来の起業に向けた知識やネットワークを得るためのプログラムを探します。",
+        "音楽分野でのAIの応用に関心を持つ人々と交流し、新たな開発のヒントや協業の機会を見つけます。",
+        "教育分野でのAI活用に関わる開発イベントに参加し、興味の幅を広げつつ経験を積みます。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 4,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 4,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 4
+      }
+    },
+    {
+      "case": "jp_engineer",
+      "tier": "cheap",
+      "run": 1,
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "error": null,
+      "latency_ms": 2424,
+      "attempts": 1,
+      "prompt_tokens": 1108,
+      "completion_tokens": 211,
+      "reasoning_tokens": 0,
+      "jpy": 0.0445,
+      "actual_usd": 0.000292,
+      "queries": [
+        "AIプロダクト ハッカソン 東京 募集",
+        "AI 教育 勉強会 東京 参加者募集",
+        "AI 音楽 コンペティション 募集"
+      ],
+      "categories": [
+        "hackathon",
+        "community",
+        "competition"
+      ],
+      "reasons": [
+        "AIプロダクトの開発経験を積むためのハッカソンを探します。",
+        "AIと教育をテーマにしたコミュニティでの学びの機会を探します。",
+        "AIと音楽を組み合わせたコンペティションに参加することで新しい発想を得たいです。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 3,
+        "article_words": [],
+        "covers_all_goals": false,
+        "uncovered_goals": [
+          "Entrepreneurship"
+        ],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 3
+      }
+    },
+    {
+      "case": "jp_engineer",
+      "tier": "cheap",
+      "run": 2,
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "error": null,
+      "latency_ms": 2290,
+      "attempts": 1,
+      "prompt_tokens": 1108,
+      "completion_tokens": 205,
+      "reasoning_tokens": 0,
+      "jpy": 0.0439,
+      "actual_usd": 0.00029,
+      "queries": [
+        "AIプロダクト開発 勉強会 東京 参加者募集",
+        "AI 音楽 コミュニティ 東京",
+        "AI ハッカソン 東京 募集"
+      ],
+      "categories": [
+        "event",
+        "community",
+        "hackathon"
+      ],
+      "reasons": [
+        "AIプロダクトの開発に役立つ勉強会を探しています。",
+        "AIと音楽に関するコミュニティに参加して新しい知識を得たいです。",
+        "ハッカソンで実践的なAIプロダクト開発を体験したいです。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 2,
+        "article_words": [],
+        "covers_all_goals": false,
+        "uncovered_goals": [
+          "Entrepreneurship"
+        ],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 3
+      }
+    },
+    {
+      "case": "global_only",
+      "tier": "standard",
+      "run": 1,
+      "model": "google/gemini-2.5-flash",
+      "ok": true,
+      "error": null,
+      "latency_ms": 8148,
+      "attempts": 1,
+      "prompt_tokens": 890,
+      "completion_tokens": 1498,
+      "reasoning_tokens": 1276,
+      "jpy": 0.6018,
+      "actual_usd": 0.004012,
+      "queries": [
+        "international tech community Berlin English events",
+        "open source projects Berlin English contributors wanted",
+        "tech conference Berlin international English registration"
+      ],
+      "categories": [
+        "community",
+        "other",
+        "event"
+      ],
+      "reasons": [
+        "ベルリンの英語圏テクノロジーコミュニティにおけるイベントや交流会を探し、活動の幅を広げるため。",
+        "英語でのオープンソースプロジェクトへの参加機会や、コントリビューター募集を探し、実践的な活動を通じて貢献するため。",
+        "ベルリンで開催される、英語話者向けの国際的なテックカンファレンスに参加し、多様なバックグラウンドを持つ人々と交流する機会を見つけるため。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 0.0,
+        "japanese_ok": true,
+        "recruiting_words": 1,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 3
+      }
+    },
+    {
+      "case": "global_only",
+      "tier": "standard",
+      "run": 2,
+      "model": "google/gemini-2.5-flash",
+      "ok": true,
+      "error": null,
+      "latency_ms": 8540,
+      "attempts": 1,
+      "prompt_tokens": 890,
+      "completion_tokens": 1477,
+      "reasoning_tokens": 1194,
+      "jpy": 0.5939,
+      "actual_usd": 0.00396,
+      "queries": [
+        "Berlin international tech meetup English speaking",
+        "Berlin open source event English",
+        "open source contributor workshop Berlin",
+        "Berlin international tech hackathon English"
+      ],
+      "categories": [
+        "community",
+        "event",
+        "other",
+        "hackathon"
+      ],
+      "reasons": [
+        "ベルリンで英語話者向けの国際的なテックミートアップやコミュニティを探し、参加して交流を広げるため。",
+        "ベルリンで英語で開催されるオープンソース関連のイベントやコミュニティを探し、興味のある分野で活動機会を得るため。",
+        "オープンソースプロジェクトへの具体的な貢献方法を学べるワークショップやイベントを探し、実践的な経験を積むため。",
+        "ベルリンで開催される国際的なテックハッカソンを探し、チームでの開発経験やネットワーキングの機会を得るため。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 4,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 0.0,
+        "japanese_ok": true,
+        "recruiting_words": 0,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 4,
+        "distinct_queries": 4
+      }
+    },
+    {
+      "case": "global_only",
+      "tier": "cheap",
+      "run": 1,
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "error": null,
+      "latency_ms": 2356,
+      "attempts": 1,
+      "prompt_tokens": 1109,
+      "completion_tokens": 186,
+      "reasoning_tokens": 0,
+      "jpy": 0.0422,
+      "actual_usd": 0.000278,
+      "queries": [
+        "open source tech community Berlin events",
+        "tech meetups Berlin",
+        "remote open source projects"
+      ],
+      "categories": [
+        "community",
+        "community",
+        "freelance"
+      ],
+      "reasons": [
+        "オープンソースやテクノロジーに関するコミュニティのイベントを探すため。",
+        "現地のテックミートアップでネットワークを広げるため。",
+        "リモートで参加できるオープンソースプロジェクトを見つけるため。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 0.0,
+        "japanese_ok": true,
+        "recruiting_words": 0,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 2,
+        "distinct_queries": 3
+      }
+    },
+    {
+      "case": "global_only",
+      "tier": "cheap",
+      "run": 2,
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "error": null,
+      "latency_ms": 2274,
+      "attempts": 1,
+      "prompt_tokens": 1109,
+      "completion_tokens": 180,
+      "reasoning_tokens": 0,
+      "jpy": 0.0417,
+      "actual_usd": 0.000274,
+      "queries": [
+        "open source tech meetup Berlin",
+        "international tech community events Berlin",
+        "open source projects Berlin apply"
+      ],
+      "categories": [
+        "community",
+        "community",
+        "freelance"
+      ],
+      "reasons": [
+        "オープンソースに関するテックミートアップでネットワークを広げたい。",
+        "国際的なテックコミュニティのイベントに参加してみたい。",
+        "オープンソースプロジェクトに参加してスキルを磨きたい。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 0.0,
+        "japanese_ok": true,
+        "recruiting_words": 1,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 2,
+        "distinct_queries": 3
+      }
+    },
+    {
+      "case": "sparse",
+      "tier": "standard",
+      "run": 1,
+      "model": "google/gemini-2.5-flash",
+      "ok": true,
+      "error": null,
+      "latency_ms": 11068,
+      "attempts": 1,
+      "prompt_tokens": 873,
+      "completion_tokens": 1818,
+      "reasoning_tokens": 1558,
+      "jpy": 0.721,
+      "actual_usd": 0.004806,
+      "queries": [
+        "デザイン ワークショップ 開催 募集",
+        "デザイン 学習講座 スクール 募集",
+        "デザイン コミュニティ 勉強会 参加",
+        "デザイン コンペティション 募集"
+      ],
+      "categories": [
+        "event",
+        "other",
+        "community",
+        "competition"
+      ],
+      "reasons": [
+        "デザインの基礎や特定のスキルを実践的に学べるワークショップやイベントを探します。",
+        "体系的にデザインを学べるオンライン講座や専門スクールの情報を探します。",
+        "デザインに関心のある人々と繋がり、情報交換や共同学習ができるコミュニティを探します。",
+        "学んだデザインスキルを試し、アウトプットする機会となるコンテストや実践的なイベントを探します。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 4,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 4,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 4,
+        "distinct_queries": 4
+      }
+    },
+    {
+      "case": "sparse",
+      "tier": "standard",
+      "run": 2,
+      "model": "google/gemini-2.5-flash",
+      "ok": true,
+      "error": null,
+      "latency_ms": 6612,
+      "attempts": 1,
+      "prompt_tokens": 870,
+      "completion_tokens": 1340,
+      "reasoning_tokens": 1060,
+      "jpy": 0.5416,
+      "actual_usd": 0.00361,
+      "queries": [
+        "デザインスクール 講座 募集",
+        "デザインワークショップ イベント 開催",
+        "デザイン コンペティション 募集",
+        "デザイン コミュニティ ミートアップ 参加"
+      ],
+      "categories": [
+        "other",
+        "event",
+        "competition",
+        "community"
+      ],
+      "reasons": [
+        "デザインの基礎から応用まで体系的に学べるスクールやオンライン講座を探します。",
+        "実践的なスキルを習得したり、最新のデザイン動向に触れられるワークショップやイベントを探します。",
+        "自分のデザインスキルを試したり、他の参加者の作品から刺激を受けたりできるコンペティションを探し、学びの機会とします。",
+        "デザインに関心を持つ人々が集まるコミュニティや交流会を探し、情報交換や人脈形成を通じて学びを深めます。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 4,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 4,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 4,
+        "distinct_queries": 4
+      }
+    },
+    {
+      "case": "sparse",
+      "tier": "cheap",
+      "run": 1,
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "error": null,
+      "latency_ms": 2274,
+      "attempts": 1,
+      "prompt_tokens": 1080,
+      "completion_tokens": 203,
+      "reasoning_tokens": 0,
+      "jpy": 0.0431,
+      "actual_usd": 0.000284,
+      "queries": [
+        "デザイン ワークショップ 募集",
+        "デザイン コミュニティ 参加者募集",
+        "デザイン 学ぶためのリソース"
+      ],
+      "categories": [
+        "event",
+        "community",
+        "other"
+      ],
+      "reasons": [
+        "実際に手を動かしながら学ぶことで、デザインのスキルを身に付けたい。",
+        "仲間や先輩と交流しながら学ぶことで、新たな発見があるかもしれない。",
+        "独学でデザインを学ぶための参考になる情報を探したい。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 2,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 3
+      }
+    },
+    {
+      "case": "sparse",
+      "tier": "cheap",
+      "run": 2,
+      "model": "openai/gpt-4o-mini",
+      "ok": true,
+      "error": null,
+      "latency_ms": 2244,
+      "attempts": 1,
+      "prompt_tokens": 1086,
+      "completion_tokens": 178,
+      "reasoning_tokens": 0,
+      "jpy": 0.041,
+      "actual_usd": 0.00027,
+      "queries": [
+        "デザイン 勉強会 参加者募集",
+        "デザイン ハッカソン 募集",
+        "デザイン コミュニティ Meetup"
+      ],
+      "categories": [
+        "event",
+        "hackathon",
+        "community"
+      ],
+      "reasons": [
+        "デザインを学ぶためのイベントを探しています。",
+        "実践的な経験を通じてデザインを学びたいです。",
+        "同じ興味を持つ仲間とつながりたいです。"
+      ],
+      "checks": {
+        "count_in_range": true,
+        "count": 3,
+        "has_serendipity": true,
+        "keeps_goal_terms": true,
+        "keeps_location": true,
+        "japanese_ratio": 1.0,
+        "japanese_ok": true,
+        "recruiting_words": 2,
+        "article_words": [],
+        "covers_all_goals": true,
+        "uncovered_goals": [],
+        "no_invented_year": true,
+        "invented_years": [],
+        "distinct_categories": 3,
+        "distinct_queries": 3
+      }
+    }
+  ]
+}

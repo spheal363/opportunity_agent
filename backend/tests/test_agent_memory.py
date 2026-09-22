@@ -166,7 +166,7 @@ def _profile_snapshot(db) -> dict:
     return {c.name: getattr(row, c.name) for c in UserProfile.__table__.columns}
 
 
-def test_stub_run_stores_memory_and_leaves_profile_alone(client, profile_payload, db):
+def test_stub_run_stores_memory_and_leaves_profile_alone(client, profile_payload, db, legacy_route):
     """run → 👎2件 → 再 run で Memory 行ができる。**プロフィールは変わらない。**"""
     assert client.put("/api/profile", json=profile_payload, headers=PAGE).status_code == 200
     _run(client)

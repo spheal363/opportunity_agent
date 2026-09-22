@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from ai import interstitial, region
+from ai import window as search_window
 from config import get_settings
-from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity
+from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import (
     AgentLogEntry,
     AgentRunCreated,
@@ -18,6 +20,7 @@ from schemas.agent import (
     AgentRunStatus,
     AgentRunTrigger,
     AgentStep,
+    SearchCandidate,
 )
 from schemas.opportunity import OpportunitySummary
 from services.run_lifecycle import active_runs, expire_abandoned_runs, start_lock
@@ -126,13 +129,55 @@ def get_run(db: Session, run_id: str, user_id: str) -> AgentRunState | None:
     row = db.get(AgentRun, run_id)
     if row is None or row.user_id != user_id:
         return None
-    return AgentRunState.model_validate(row, from_attributes=True)
+    state = AgentRunState.model_validate(row, from_attributes=True)
+    # **原文とは別枠。** AI が整理した方向を、原文の置き換えに使わない。
+    state.goal_directions = _goal_directions(row)
+    return state
 
 
 def list_logs(db: Session, run_id: str) -> list[AgentLogEntry]:
     """run の Log。**呼ぶ前に `get_run` で所有者を確かめること。**"""
     rows = db.query(AgentLog).filter(AgentLog.run_id == run_id).order_by(AgentLog.id.asc()).all()
     return [AgentLogEntry.model_validate(r, from_attributes=True) for r in rows]
+
+
+def _profile_changed_since(db: Session, run) -> bool:
+    """この run のあとにプロフィールが編集されたか（#47）。
+
+    **編集しただけでは探索は走らない。** 画面が「いまの希望の結果」に
+    見えてしまうので、区別できるようにする。
+    """
+    profile = db.get(UserProfile, run.user_id)
+    if profile is None or profile.updated_at is None or run.created_at is None:
+        return False
+    return profile.updated_at > run.created_at
+
+
+def _goal_directions(run) -> list[str]:
+    """AI が整理した探索方向。**原文の置き換えには使わない。**"""
+    ga = run.goal_analysis or {}
+    return list(ga.get("wanted_now") or [])
+
+
+def latest_result(db: Session, user_id: str) -> AgentRunResult | None:
+    """**そのユーザーの最新の完了 run**の結果（#47）。
+
+    ホームはここを見る。`GET /api/opportunities` は保存一覧の母集合で、
+    **複数 run の候補が混ざる**。実測で、ホームが過去 run の候補まで
+    全部並べ、「3つの機会」の横に 59 と出ていた。
+
+    **評価できなかった run でも、古い run のおすすめで埋めない。**
+    最新の run の結果をそのまま返す。
+    """
+    row = (
+        db.query(AgentRun)
+        .filter(AgentRun.user_id == user_id, AgentRun.status == AgentRunStatus.COMPLETED.value)
+        # 同じ秒に 2 件あっても順序が決まるようにする。
+        .order_by(AgentRun.created_at.desc(), AgentRun.updated_at.desc())
+        .first()
+    )
+    # **他人の run は見えない。** #86 で足した user_id を必ず通す。
+    return get_result(db, row.run_id, user_id) if row is not None else None
 
 
 def get_result(db: Session, run_id: str, user_id: str) -> AgentRunResult | None:
@@ -155,7 +200,16 @@ def get_result(db: Session, run_id: str, user_id: str) -> AgentRunResult | None:
     if ids is None:
         # **失敗したときこそ理由が要る。** 「記録されていません」だけでは、
         # 設定が足りないのか、探しても見つからなかったのかが分からない。
-        return AgentRunResult(run_id=run_id, status=run.status, recorded=False, error=run.error)
+        return AgentRunResult(
+            run_id=run_id,
+            status=run.status,
+            recorded=False,
+            error=run.error,
+            wishes_source=run.wishes_source,
+            region_source=run.region_source,
+            goal_directions=_goal_directions(run),
+            discovery_route=run.discovery_answers is not None,
+        )
 
     rows = {
         r.opportunity_id: r
@@ -163,16 +217,144 @@ def get_result(db: Session, run_id: str, user_id: str) -> AgentRunResult | None:
         .filter(Opportunity.opportunity_id.in_(ids), Opportunity.user_id == user_id)
         .all()
     }
+    win = search_window.SearchWindow.from_dict(run.search_window)
+    # 希望した地域。**プロフィールの現在値を使う**（run には保存していない）。
+    profile = db.get(UserProfile, run.user_id)
+    wanted = profile.location if profile is not None else None
     # **順位を保つ。** DB の返す順ではなく selected_ids の順。
-    selected = [
-        OpportunitySummary.model_validate(rows[i], from_attributes=True) for i in ids if i in rows
+    selected = [_summary(rows[i], win, wanted) for i in ids if i in rows]
+
+    # **推薦しなかったが、読んで抽出できた候補。**
+    #
+    # 条件は「この run で見つけ」「本文から抽出できている」こと。
+    # 検索しただけで読んでいない候補は `Opportunity` の行にならないので、
+    # ここには入らない。**未読の保留候補を、確認済みの推薦と同じ扱いにしない。**
+    #
+    # 一覧を開くだけで外部 API は呼ばない。DB にある分だけを返す。
+    chosen = set(ids)
+    others = [
+        _summary(r, win, wanted)
+        for r in db.query(Opportunity)
+        .filter(Opportunity.run_id == run_id, Opportunity.user_id == run.user_id)
+        .order_by(Opportunity.score.desc())
+        .all()
+        if r.opportunity_id not in chosen
     ]
     return AgentRunResult(
         run_id=run_id,
         status=run.status,
+        wishes_source=run.wishes_source,
+        region_source=run.region_source,
+        goal_directions=_goal_directions(run),
+        discovery_route=run.discovery_answers is not None,
+        recommended_count=run.recommended_count or 0,
+        profile_changed_since=_profile_changed_since(db, run),
         recorded=True,
         selected=selected,
+        others=others,
+        search_candidates=_search_candidates(db, run, chosen, win),
         shortfall_reason=run.shortfall_reason,
+        search_window=({**win.to_dict(), "days": win.days} if win else None),
         # **失敗の理由を隠さない。** 設定不足なら直せる。
         error=run.error,
     )
+
+
+def _summary(
+    row: Opportunity, win: "search_window.SearchWindow | None", wanted: str | None = None
+) -> OpportunitySummary:
+    """期間との関係を付けて返す。**期間が分からない run では付けない。**
+
+    この列が付く前の run を、今日の日付で作り直した期間で判定しない。
+    """
+    out = OpportunitySummary.model_validate(row, from_attributes=True)
+    # **地域の照合は期間と独立。** 期間が分からない run でも出す。
+    match = region.classify(
+        wanted=wanted,
+        location=row.location,
+        opportunity_format=row.format,
+        region=row.region,
+        online_participation=row.online_participation,
+    )
+    out.region_match = match.value
+    out.region_note = region.note(match, wanted=wanted, location=row.location)
+    if win is None:
+        return out
+    status = search_window.classify(
+        opportunity_type=row.type,
+        start_at=row.start_at,
+        end_at=row.end_at,
+        window=win,
+    )
+    out.window_status = status.value
+    out.window_note = search_window.label(status, win)
+    return out
+
+
+def _search_candidates(
+    db: Session, run: AgentRun, chosen: set[str], win: "search_window.SearchWindow | None"
+) -> list[SearchCandidate]:
+    """検索で見つかった候補を一覧にする。**外部 API は呼ばない。**
+
+    保存済みの検索候補と、抽出できた Opportunity 行を URL で突き合わせる。
+
+    **読んでいない候補に日時や受付状況を付けない。** 検索結果の公開日や
+    抜粋中の日付を開催日として流用しない。分からないものは分からないまま返す。
+
+    この列が付く前の run では空を返す。**件数を水増ししない。**
+    """
+    rows_all = (
+        db.query(Opportunity)
+        .filter(Opportunity.run_id == run.run_id, Opportunity.user_id == run.user_id)
+        .all()
+    )
+    saved = run.search_candidates or []
+    if not saved:
+        # **この列が付く前の run。** 検索候補そのものは残っていない。
+        # 読んで抽出できた分だけは Opportunity から復元できるので、それを出す。
+        # **読まなかった候補は復元できない。** 件数を 20 に水増ししない。
+        saved = [{"title": r.title, "url": r.url} for r in rows_all if r.url]
+
+    rows = {r.url: r for r in rows_all if r.url}
+    out: list[SearchCandidate] = []
+    seen: set[str] = set()
+    for item in saved:
+        url = (item or {}).get("url")
+        if not url or url in seen:
+            # **同じ URL を 2 度出さない。**
+            continue
+        seen.add(url)
+        row = rows.get(url)
+        # **取得失敗の中間ページは通常の候補として出さない（#47）。**
+        # 古い run にはフィルタを通す前の行が残っている。
+        if interstitial.looks_like_interstitial(
+            title=(row.title if row is not None else item.get("title")),
+            content=(row.description if row is not None else None),
+        ):
+            continue
+        if row is None:
+            out.append(SearchCandidate(title=(item.get("title") or url)[:200], url=url, read=False))
+            continue
+        out.append(
+            SearchCandidate(
+                title=row.title or item.get("title") or url,
+                url=url,
+                read=True,
+                recommended=row.opportunity_id in chosen,
+                start_at=row.start_at,
+                start_at_is_date_only=row.start_at_is_date_only,
+                window_status=(
+                    search_window.classify(
+                        opportunity_type=row.type,
+                        start_at=row.start_at,
+                        end_at=row.end_at,
+                        window=win,
+                    ).value
+                    if win
+                    else None
+                ),
+                availability=row.availability,
+                verified=bool(row.verified),
+            )
+        )
+    return out

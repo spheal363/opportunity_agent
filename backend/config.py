@@ -109,6 +109,41 @@ class Settings(BaseSettings):
     # プロセスが落ちて running のまま残った run に、自動探索を止められないように
     auto_explore_abandoned_after_minutes: int = Field(default=30, ge=1)
 
+    # --- 一覧ページからの探索（#47）---------------------------------------
+    # **最初の実験条件であって、製品として最適と決まった値ではない。**
+    # 実測してから調整する。0 にすると一覧を辿らない（従来の挙動へ戻る）。
+    #
+    # 候補が足りない希望について、一覧を何ページ辿るか
+    listing_pages_per_wish: int = 2
+    # 1 つの一覧から、個別イベントを何件まで読むか
+    # **品質優先で増やした。** 参考にする出力は 1 ジャンル 10 件規模。
+    listing_links_per_page: int = 8
+    # 1 run 全体で、一覧からの追加取得を何件まで許すか
+    listing_max_fetches: int = 24
+    # 条件に合う候補が 0 件の方向について、読み足す巡の上限。
+    # **0 なら読み足さない**（従来の挙動）。新しい候補が増えなくなっても止まる。
+    listing_stop_after_empty_rounds: int = 2
+
+    # --- 探索経路（#47）---------------------------------------------------
+    # SEARCH_ROUTE=discovery  **既定。** 検索専用モデルで候補を集め、一覧を先に出す
+    # SEARCH_ROUTE=legacy     従来の 検索->精読->抽出->評価->推薦
+    #
+    # **旧経路は壊さない。** `SEARCH_ROUTE=legacy` で戻せる。
+    search_route: str = "discovery"  # discovery | legacy
+    # 検索専用モデル。内蔵検索が応答に含まれる（`web_search_options`）。
+    discovery_model: str = "openai/gpt-5-search-api"
+    # 希望ごとに何件求めるか。**必達ノルマではない。水増しさせない。**
+    discovery_per_wish: int = 5
+    # 不足方向への追加探索の上限巡数。0 なら追加しない。
+    discovery_extra_rounds: int = 2
+    # 1 リクエストの出力上限。**reasoning も含む上限**なので余裕を取る。
+    discovery_max_tokens: int = 4000
+
+    # --- モデル振り分け（#26-b）------------------------------------------
+    # LLM_ROUTING=policy    **既定。** 工程ごとの方針に従う（`ai/routing.py`）
+    # LLM_ROUTING=standard  表を無視して全工程 STANDARD。振り分け前へ戻す
+    llm_routing: str = "policy"  # policy | standard
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.frontend_url.split(",") if o.strip()]
@@ -118,7 +153,12 @@ class Settings(BaseSettings):
 #
 # 以前は鍵が無いと検索が方向ごとに失敗し、候補 0 件で終わっていた。
 # 「何も見つからなかった」と「鍵が無い」は別のこと。
-_REQUIRED_KEYS = {
+# 旧経路（legacy）で、その設定のときに要る鍵。
+# **足りなければ黙って別構成へ落とさない。**
+#
+# 以前は鍵が無いと検索が方向ごとに失敗し、候補 0 件で終わっていた。
+# 「何も見つからなかった」と「鍵が無い」は別のこと。
+_LEGACY_REQUIRED_KEYS = {
     "search_provider": {
         "tavily": ("search_api_key", "SEARCH_API_KEY"),
         "serper": ("serper_api_key", "SERPER_API_KEY"),
@@ -131,16 +171,32 @@ FALLBACK_TO_A = "SEARCH_PROVIDER=tavily PAGE_FETCHER=tavily EVALUATOR=llm SEARCH
 
 
 def missing_keys(settings: "Settings") -> list[str]:
-    """いまの構成に足りない鍵。**空なら走らせてよい。**
+    """**いま走らせる経路が実際に使う**鍵のうち、足りないもの。空なら走ってよい。
 
-    `page_fetcher=jina` は鍵が無くても動く（20 RPM）ので、ここには挙げない。
+    経路によって使うサービスが違う。使わないサービスの鍵で探索を止めない。
+
+        discovery  OrcaRouter だけ。検索はモデルの内側で行われる
+        legacy     OrcaRouter ＋ その設定の検索 provider ＋ 評価器
+
+    **任意機能の鍵はここで見ない。** 詳細確認（Jina）や Calendar が
+    未設定でも、通常の検索は止めない。**その機能を使う時点で確かめる。**
+    （`page_fetcher=jina` は鍵が無くても動く。20 RPM）
     """
     missing: list[str] = []
-    for field, table in _REQUIRED_KEYS.items():
+
+    # **どの経路でも LLM は要る。** ここが無いと何も始まらない。
+    if not settings.orcarouter_api_key:
+        missing.append("ORCAROUTER_API_KEY（どの経路でも必要）")
+
+    if settings.search_route.strip().lower() == "discovery":
+        # 検索はモデルの内側。**Serper も Jev も使わない。**
+        return missing
+
+    for field, table in _LEGACY_REQUIRED_KEYS.items():
         chosen = (getattr(settings, field) or "").strip().lower()
         need = table.get(chosen)
         if need and not getattr(settings, need[0]):
-            missing.append(f"{need[1]}（{field}={chosen} に必要）")
+            missing.append(f"{need[1]}（SEARCH_ROUTE=legacy の {field}={chosen} に必要）")
     return missing
 
 

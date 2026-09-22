@@ -1,0 +1,394 @@
+{
+  "model": "openai/gpt-5",
+  "window": {
+    "start": "2026-09-22",
+    "end": "2026-11-21"
+  },
+  "seconds": 443.8,
+  "requests": 4,
+  "web_search_calls_total": 52,
+  "tokens_total": 190698,
+  "cost_usd_known": [],
+  "cost_unknown_responses": 4,
+  "request_ids": [
+    "20260922073439353476988268d9d60v4NZvHG",
+    "20260922073621535162538268d9d6vO8pc42m",
+    "202609220738159098132008268d9d680WxFLkm",
+    "202609220740032216786198268d9d6s8XhSYD8"
+  ],
+  "by_wish": {
+    "音楽": [
+      {
+        "name": "Efdemin , Mod.1",
+        "dates": [
+          "2026-10-02"
+        ],
+        "date_note": "23:00–05:30 JST",
+        "venue": "VENT",
+        "region": "東京都港区",
+        "onsite_tokyo": true,
+        "summary": "ベルリンのEfdeminとバルセロナのMod.1が出演するテクノ・ナイト。四つ打ち中心。",
+        "price": "前売 ¥2,500 / 当日 ¥4,000 / 0時前 ¥2,000",
+        "eligibility": "20歳以上・写真付き身分証必須・サンダル不可",
+        "registration": "RA Ticketsで前売あり",
+        "source_url": "https://ra.co/events/2517359",
+        "evidence": "Date Fri, 2 Oct 2026 23:00–05:30、LIMITED ADVANCE TICKET ¥2,500、DOOR ¥4,000、BEFORE 0AM ¥2,000、Must be 20+ with photo ID / sandals not accepted."
+      },
+      {
+        "name": "RA25: Tokyo",
+        "dates": [
+          "2026-10-03"
+        ],
+        "date_note": "22:00–05:00 JST",
+        "venue": "HVEN",
+        "region": "東京都目黒区",
+        "onsite_tokyo": true,
+        "summary": "Resident Advisor 25周年パーティー。テクノ〜テックハウス中心のラインアップ。",
+        "price": null,
+        "eligibility": null,
+        "registration": "RA Ticketsで販売",
+        "source_url": "https://ja.ra.co/events/2497453",
+        "evidence": "会場: HVEN（目黒区上目黒1-6-10）。2026/10/03 22:00–05:00。記載ジャンル: deep psychedelic techno / groove-led tech house。"
+      },
+      {
+        "name": "Cromwell by WTW (TECHNO)",
+        "dates": [
+          "2026-10-08"
+        ],
+        "date_note": "23:00–04:30 JST",
+        "venue": "WOMB",
+        "region": "東京都渋谷区",
+        "onsite_tokyo": true,
+        "summary": "Toki Fukoらが出演するヒプノティック・テクノの夜。四つ打ち中心。",
+        "price": "¥1,500",
+        "eligibility": "20歳以上",
+        "registration": "RAページに案内あり",
+        "source_url": "https://ra.co/events/2534046",
+        "evidence": "Date Thu, Oct 8, 2026 23:00–04:30。Cost ¥1500、Min. age 20+。会場: WOMB（渋谷区円山町2-16）。"
+      },
+      {
+        "name": "D.Dan",
+        "dates": [
+          "2026-10-11"
+        ],
+        "date_note": "23:00–05:30 JST",
+        "venue": "VENT",
+        "region": "東京都港区",
+        "onsite_tokyo": true,
+        "summary": "ベルリンのMala JuntaレジデントD.Danを迎える高速テクノ。四つ打ち。",
+        "price": "前売 ¥2,500 / 当日 ¥4,000 / 0時前 ¥2,000",
+        "eligibility": "20歳以上・写真付き身分証必須・サンダル不可",
+        "registration": "RA Ticketsで前売あり",
+        "source_url": "https://ra.co/events/2495128",
+        "evidence": "Sun, 11 Oct 2026 23:00–05:30。LIMITED ADVANCE TICKET ¥2,500、DOOR ¥4,000、BEFORE 0AM ¥2,000、20+ with physical photo ID、no sandals。"
+      },
+      {
+        "name": "XDB / PACIFIC MODE x Solstice",
+        "dates": [
+          "2026-10-24"
+        ],
+        "date_note": "23:00–05:30 JST",
+        "venue": "VENT",
+        "region": "東京都港区",
+        "onsite_tokyo": true,
+        "summary": "XDBを迎えたハウス／テクノのパーティー。四つ打ち。",
+        "price": "前売 ¥2,500 / 当日 ¥4,000 / 0時前 ¥2,000",
+        "eligibility": "20歳以上・写真付き身分証必須・サンダル不可",
+        "registration": "RAページのプロモーショナルリンクで前売",
+        "source_url": "https://ra.co/events/2529281",
+        "evidence": "Sat, Oct 24, 2026 23:00–05:30。LIMITED ADVANCE TICKET ¥2,500、DOOR ¥4,000、BEFORE 0AM ¥2,000 の記載あり。"
+      },
+      {
+        "name": "Sandrien / ku-haku",
+        "dates": [
+          "2026-11-07"
+        ],
+        "date_note": "23:00–05:30 JST",
+        "venue": "VENT",
+        "region": "東京都港区",
+        "onsite_tokyo": true,
+        "summary": "アムステルダムのテクノDJ・Sandrienを招くテクノ・ナイト。四つ打ち。",
+        "price": "¥4,000",
+        "eligibility": "20歳以上",
+        "registration": "RA Tickets",
+        "source_url": "https://ra.co/events/2539495",
+        "evidence": "Sat, 7 Nov 2026。Cost 4000、Min. age 20+、会場: VENT（港区南青山3-18-19）。"
+      },
+      {
+        "name": "CC:DISCO",
+        "dates": [
+          "2026-11-20"
+        ],
+        "date_note": "23:00–05:30 JST",
+        "venue": "VENT",
+        "region": "東京都港区",
+        "onsite_tokyo": true,
+        "summary": "オーストラリアのDJ・CC:DISCO! によるディスコ／ハウス中心の一夜。四つ打ち。",
+        "price": null,
+        "eligibility": null,
+        "registration": "RA Tickets",
+        "source_url": "https://ra.co/events/2529321",
+        "evidence": "Fri, Nov 20, 2026。会場: VENT（港区南青山）。"
+      }
+    ],
+    "DTM・作曲": [],
+    "ハッカソン": [
+      {
+        "name": "ETHGlobal Tokyo 2026",
+        "dates": [
+          "2026-09-25",
+          "2026-09-26",
+          "2026-09-27"
+        ],
+        "date_note": "36時間規模の現地ハッカソン。提出締切は2026-09-27 09:00 JST。",
+        "venue": null,
+        "region": "東京都",
+        "onsite_tokyo": true,
+        "summary": "Ethereum/Web3のプロダクトを現地で開発・デモする国際ハッカソン。",
+        "price": "無料",
+        "eligibility": null,
+        "registration": "事前申込制（公式サイトからエントリー）",
+        "source_url": "https://ethglobal.com/events?event=tokyo2026",
+        "evidence": "公式イベント一覧に「ETHGlobal Tokyo 2026 | IRL Hackathon | 2026-09-25〜27」と明記。詳細ページに提出締切 2026-09-27 09:00 JST と記載。外部イベント紹介（YARD）に in-person（現地開催）、無料の旨。"
+      },
+      {
+        "name": "JPHACKS 2026 Hack Day（東京会場）",
+        "dates": [
+          "2026-10-17",
+          "2026-10-18",
+          "2026-10-24",
+          "2026-10-25",
+          "2026-11-15"
+        ],
+        "date_note": "Hack DayはA日程(10/17-18)とB日程(10/24-25)で現地2日間開発。11/15はAward Day（進出チームのみ必須）。",
+        "venue": "複数会場（東京理科大学 神楽坂キャンパス 森戸記念館／東京大学 工学部二号館）",
+        "region": "東京都",
+        "onsite_tokyo": true,
+        "summary": "学生向けの全国規模ハッカソン。東京会場で2日間のチーム開発と成果発表を実施。",
+        "price": "無料",
+        "eligibility": "学生限定（大学生・大学院生・専門・高専、満18歳以上）",
+        "registration": "事前申込制（エントリー受付は公式スケジュール参照）",
+        "source_url": "https://jphacks.com/2026/detail/",
+        "evidence": "概要ページにHack Day A=10/17-18、B=10/24-25、Award Day=11/15の日程を掲載。東京会場Aページに会場（東京理科大学 神楽坂キャンパス 森戸記念館、住所・タイムライン）、学生対象・参加費無料の記載。東京会場Bページに会場（東京大学 工学部二号館、住所・タイムライン）、学生対象・参加費無料の記載。"
+      }
+    ],
+    "ポケモン": []
+  },
+  "calls": [
+    {
+      "http": 200,
+      "request_id": "20260922073439353476988268d9d60v4NZvHG",
+      "seconds": 102.2,
+      "response_id": "resp_08ad869eca061258006ab22f8f1ba08190bfe918f7f8d578f6",
+      "web_search_calls": 13,
+      "output_kinds": [
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "message"
+      ],
+      "usage": {
+        "input_tokens": 30096,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4224
+        },
+        "output_tokens": 7818,
+        "output_tokens_details": {
+          "reasoning_tokens": 6016
+        },
+        "total_tokens": 37914
+      },
+      "cost_usd": null,
+      "text": "{\"candidates\":[{\"name\":\"Efdemin , Mod.1\",\"dates\":[\"2026-10-02\"],\"date_note\":\"23:00–05:30 JST\",\"venue\":\"VENT\",\"region\":\"東京都港区\",\"onsite_tokyo\":true,\"summary\":\"ベルリンのEfdeminとバルセロナのMod.1が出演するテクノ・ナイト。四つ打ち中心。\",\"price\":\"前売 ¥2,500 / 当日 ¥4,000 / 0時前 ¥2,000\",\"eligibility\":\"20歳以上・写真付き身分証必須・サンダル不可\",\"registration\":\"RA Ticketsで前売あり\",\"source_url\":\"https://ra.co/events/2517359\",\"evidence\":\"Date Fri, 2 Oct 2026 23:00–05:30、LIMITED ADVANCE TICKET ¥2,500、DOOR ¥4,000、BEFORE 0AM ¥2,000、Must be 20+ with photo ID / sandals not accepted.\"},{\"name\":\"RA25: Tokyo\",\"dates\":[\"2026-10-03\"],\"date_note\":\"22:00–05:00 JST\",\"venue\":\"HVEN\",\"region\":\"東京都目黒区\",\"onsite_tokyo\":true,\"summary\":\"Resident Advisor 25周年パーティー。テクノ〜テックハウス中心のラインアップ。\",\"price\":null,\"eligibility\":null,\"registration\":\"RA Ticketsで販売\",\"source_url\":\"https://ja.ra.co/events/2497453\",\"evidence\":\"会場: HVEN（目黒区上目黒1-6-10）。2026/10/03 22:00–05:00。記載ジャンル: deep psychedelic techno / groove-led tech house。\"},{\"name\":\"Cromwell by WTW (TECHNO)\",\"dates\":[\"2026-10-08\"],\"date_note\":\"23:00–04:30 JST\",\"venue\":\"WOMB\",\"region\":\"東京都渋谷区\",\"onsite_tokyo\":true,\"summary\":\"Toki Fukoらが出演するヒプノティック・テクノの夜。四つ打ち中心。\",\"price\":\"¥1,500\",\"eligibility\":\"20歳以上\",\"registration\":\"RAページに案内あり\",\"source_url\":\"https://ra.co/events/2534046\",\"evidence\":\"Date Thu, Oct 8, 2026 23:00–04:30。Cost ¥1500、Min. age 20+。会場: WOMB（渋谷区円山町2-16）。\"},{\"name\":\"D.Dan\",\"dates\":[\"2026-10-11\"],\"date_note\":\"23:00–05:30 JST\",\"venue\":\"VENT\",\"region\":\"東京都港区\",\"onsite_tokyo\":true,\"summary\":\"ベルリンのMala JuntaレジデントD.Danを迎える高速テクノ。四つ打ち。\",\"price\":\"前売 ¥2,500 / 当日 ¥4,000 / 0時前 ¥2,000\",\"eligibility\":\"20歳以上・写真付き身分証必須・サンダル不可\",\"registration\":\"RA Ticketsで前売あり\",\"source_url\":\"https://ra.co/events/2495128\",\"evidence\":\"Sun, 11 Oct 2026 23:00–05:30。LIMITED ADVANCE TICKET ¥2,500、DOOR ¥4,000、BEFORE 0AM ¥2,000、20+ with physical photo ID、no sandals。\"},{\"name\":\"XDB / PACIFIC MODE x Solstice\",\"dates\":[\"2026-10-24\"],\"date_note\":\"23:00–05:30 JST\",\"venue\":\"VENT\",\"region\":\"東京都港区\",\"onsite_tokyo\":true,\"summary\":\"XDBを迎えたハウス／テクノのパーティー。四つ打ち。\",\"price\":\"前売 ¥2,500 / 当日 ¥4,000 / 0時前 ¥2,000\",\"eligibility\":\"20歳以上・写真付き身分証必須・サンダル不可\",\"registration\":\"RAページのプロモーショナルリンクで前売\",\"source_url\":\"https://ra.co/events/2529281\",\"evidence\":\"Sat, Oct 24, 2026 23:00–05:30。LIMITED ADVANCE TICKET ¥2,500、DOOR ¥4,000、BEFORE 0AM ¥2,000 の記載あり。\"},{\"name\":\"Sandrien / ku-haku\",\"dates\":[\"2026-11-07\"],\"date_note\":\"23:00–05:30 JST\",\"venue\":\"VENT\",\"region\":\"東京都港区\",\"onsite_tokyo\":true,\"summary\":\"アムステルダムのテクノDJ・Sandrienを招くテクノ・ナイト。四つ打ち。\",\"price\":\"¥4,000\",\"eligibility\":\"20歳以上\",\"registration\":\"RA Tickets\",\"source_url\":\"https://ra.co/events/2539495\",\"evidence\":\"Sat, 7 Nov 2026。Cost 4000、Min. age 20+、会場: VENT（港区南青山3-18-19）。\"},{\"name\":\"CC:DISCO\",\"dates\":[\"2026-11-20\"],\"date_note\":\"23:00–05:30 JST\",\"venue\":\"VENT\",\"region\":\"東京都港区\",\"onsite_tokyo\":true,\"summary\":\"オーストラリアのDJ・CC:DISCO! によるディスコ／ハウス中心の一夜。四つ打ち。\",\"price\":null,\"eligibility\":null,\"registration\":\"RA Tickets\",\"source_url\":\"https://ra.co/events/2529321\",\"evidence\":\"Fri, Nov 20, 2026。会場: VENT（港区南青山）。\"}],\"note\":\"時間は現地（JST）。掲載内容は各公式ページの更新に従い変更される場合があります。\"}",
+      "citations": [],
+      "wish": "音楽",
+      "kind": "初回"
+    },
+    {
+      "http": 200,
+      "request_id": "20260922073621535162538268d9d6vO8pc42m",
+      "seconds": 114.9,
+      "response_id": "resp_0453d87ae478f514006ab22ff51f5c81908b716e3666ea2399",
+      "web_search_calls": 13,
+      "output_kinds": [
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "message"
+      ],
+      "usage": {
+        "input_tokens": 44414,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4480
+        },
+        "output_tokens": 8517,
+        "output_tokens_details": {
+          "reasoning_tokens": 7488
+        },
+        "total_tokens": 52931
+      },
+      "cost_usd": null,
+      "text": "{\"candidates\":[{\"name\":\"初心者向け・作曲のやり方を学ぶ会（東京開催・作曲勉強会）\",\"dates\":[\"2026-10-17\"],\"date_note\":\"10:30-12:30\",\"venue\":null,\"region\":\"東京都江戸川区\",\"onsite_tokyo\":true,\"summary\":\"作曲初心者向けに、ゼロから曲の大枠を作る手順や仕上げ方を2時間で学ぶ少人数勉強会。\",\"price\":\"4,980円\",\"eligibility\":\"作曲初心者対象・定員10名\",\"registration\":\"ページ内のストアサイトから申込\",\"source_url\":\"https://sakkyoku.info/studysession/basics-261017/\",\"evidence\":\"日 2026年10月17日（土）／時間 10:30～12:30（2時間）／場所 東京都江戸川区内（都営船堀駅近く）／定員 10名／参加費 4,980円。\"},{\"name\":\"MIDI検定4級 短期取得講座（東京校／CMSリカレンス）\",\"dates\":[\"2026-10-03\",\"2026-10-10\",\"2026-10-11\",\"2026-10-17\",\"2026-10-25\",\"2026-10-31\",\"2026-11-07\",\"2026-11-14\"],\"date_note\":\"13:00-18:30（時間帯変動の可能性あり）\",\"venue\":null,\"region\":\"東京都\",\"onsite_tokyo\":true,\"summary\":\"ミュージッククリエイター入門対応のMIDI検定4級・短期講座。東京校で少人数（〜3名）またはマンツーマンで実施。\",\"price\":\"29,000円（別途 受験料1,500円）\",\"eligibility\":null,\"registration\":\"メールまたはLINEで申込。受講予定日の1か月前申込・21日前までに振込。\",\"source_url\":\"https://dtmschool.recurrence.net/2026/08/11/260811m2341011/\",\"evidence\":\"東京校 ",
+      "citations": [],
+      "wish": "DTM・作曲",
+      "kind": "初回"
+    },
+    {
+      "http": 200,
+      "request_id": "202609220738159098132008268d9d680WxFLkm",
+      "seconds": 107.3,
+      "response_id": "resp_010a36ab62f91d8f006ab23067f9988190a27c51f7022d8fcd",
+      "web_search_calls": 13,
+      "output_kinds": [
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "message"
+      ],
+      "usage": {
+        "input_tokens": 33366,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4480
+        },
+        "output_tokens": 8236,
+        "output_tokens_details": {
+          "reasoning_tokens": 7168
+        },
+        "total_tokens": 41602
+      },
+      "cost_usd": null,
+      "text": "{\"candidates\":[{\"name\":\"ETHGlobal Tokyo 2026\",\"dates\":[\"2026-09-25\",\"2026-09-26\",\"2026-09-27\"],\"date_note\":\"36時間規模の現地ハッカソン。提出締切は2026-09-27 09:00 JST。\",\"venue\":null,\"region\":\"東京都\",\"onsite_tokyo\":true,\"summary\":\"Ethereum/Web3のプロダクトを現地で開発・デモする国際ハッカソン。\",\"price\":\"無料\",\"eligibility\":null,\"registration\":\"事前申込制（公式サイトからエントリー）\",\"source_url\":\"https://ethglobal.com/events?event=tokyo2026\",\"evidence\":\"公式イベント一覧に「ETHGlobal Tokyo 2026 | IRL Hackathon | 2026-09-25〜27」と明記。詳細ページに提出締切 2026-09-27 09:00 JST と記載。外部イベント紹介（YARD）に in-person（現地開催）、無料の旨。\"},{\"name\":\"JPHACKS 2026 Hack Day（東京会場）\",\"dates\":[\"2026-10-17\",\"2026-10-18\",\"2026-10-24\",\"2026-10-25\",\"2026-11-15\"],\"date_note\":\"Hack DayはA日程(10/17-18)とB日程(10/24-25)で現地2日間開発。11/15はAward Day（進出チームのみ必須）。\",\"venue\":\"複数会場（東京理科大学 神楽坂キャンパス 森戸記念館／東京大学 工学部二号館）\",\"region\":\"東京都\",\"onsite_tokyo\":true,\"summary\":\"学生向けの全国規模ハッカソン。東京会場で2日間のチーム開発と成果発表を実施。\",\"price\":\"無料\",\"eligibility\":\"学生限定（大学生・大学院生・専門・高専、満18歳以上）\",\"registration\":\"事前申込制（エントリー受付は公式スケジュール参照）\",\"source_url\":\"https://jphacks.com/2026/detail/\",\"evidence\":\"概要ページにHack Day A=10/17-18、B=10/24-25、Award Day=11/15の日程を掲載。東京会場Aページに会場（東京理科大学 神楽坂キャンパス 森戸記念館、住所・タイムライン）、学生対象・参加費無料の記載。東京会場Bページに会場（東京大学 工学部二号館、住所・タイムライン）、学生対象・参加費無料の記載。\"}],\"note\":\"現時点で東京都内の現地参加でプロダクト開発ができる催しを2件のみ確実に確認できました。ほか3〜5件の追加調査が必要です。続けて探索しますか？\"}",
+      "citations": [],
+      "wish": "ハッカソン",
+      "kind": "初回"
+    },
+    {
+      "http": 200,
+      "request_id": "202609220740032216786198268d9d6s8XhSYD8",
+      "seconds": 119.5,
+      "response_id": "resp_0e29e5087d84440e006ab230d41ca48193b50ed03ddec80f9e",
+      "web_search_calls": 13,
+      "output_kinds": [
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning",
+        "web_search_call",
+        "reasoning"
+      ],
+      "usage": {
+        "input_tokens": 49951,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 4480
+        },
+        "output_tokens": 8300,
+        "output_tokens_details": {
+          "reasoning_tokens": 8192
+        },
+        "total_tokens": 58251
+      },
+      "cost_usd": null,
+      "text": "",
+      "citations": [],
+      "wish": "ポケモン",
+      "kind": "初回"
+    }
+  ]
+}

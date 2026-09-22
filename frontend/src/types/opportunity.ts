@@ -21,20 +21,10 @@ export type CostKind = 'free' | 'paid' | 'partially_free' | 'unknown';
 
 /** 締切が何に対するものか。backend/ai/schemas/extraction.py と対応。 */
 export type DeadlineKind =
-  | 'application'
-  | 'registration'
-  | 'early_bird'
-  | 'speaker'
-  | 'other'
-  | 'unknown';
+  'application' | 'registration' | 'early_bird' | 'speaker' | 'other' | 'unknown';
 
 export type OpportunityStatus =
-  | 'discovered'
-  | 'recommended'
-  | 'interested'
-  | 'registered'
-  | 'attended'
-  | 'dismissed';
+  'discovered' | 'recommended' | 'interested' | 'registered' | 'attended' | 'dismissed';
 
 /**
  * `GET /api/opportunities`。ユーザーへ提示済みの候補**すべて**。
@@ -43,6 +33,15 @@ export type OpportunityStatus =
  * `GET /api/agent/runs/{run_id}/result` で取る。こちらは保存一覧・次の一歩の
  * 母集合なので、件数を絞らない。
  */
+/** 詳細確認で直した 1 項目（#47）。 */
+export type Correction = {
+  field: string;
+  before: string | null;
+  after: string | null;
+  source: string;
+  checked_at: string | null;
+};
+
 export type Opportunity = {
   opportunity_id: string;
   type: OpportunityType;
@@ -60,7 +59,30 @@ export type Opportunity = {
   reason: string | null;
   match_reasons: string[];
 
+  /**
+   * **詳細確認を実行したかどうか。**
+   * 日付・場所・受付・参加資格がすべて確認済みという意味ではない（#47）。
+   * 何が確認できたかは `confirmed_fields` を見る。
+   */
   verified: boolean;
+  /** **複数日開催を期間として出すために一覧でも返す（#47）。** */
+  end_at: string | null;
+  end_at_is_date_only: boolean | null;
+  /** どの希望から出た候補か。分割後の短いラベル。 */
+  wish: string | null;
+  /** **元の入力そのまま。** 分割で原文を失わないために持つ。 */
+  wish_source: string | null;
+  /** **詳細確認で実際に確認できた項目名。** 空なら未確認。 */
+  confirmed_fields: string[];
+  /** 訂正の履歴。**上書きせず積む。** */
+  corrections: Correction[];
+  detail_checked_at: string | null;
+  /** **LLM 評価を行ったか。** false の候補は `score` を表示に使わない。 */
+  evaluated: boolean;
+  /** 会期の途中 1 日で参加できるか／全日必須か。**根拠が無ければ null。** */
+  participation_span: string | null;
+  /** 評価で挙がった、判断に必要な未確認事項。**推測で埋めない。** */
+  unknowns: string[];
 
   /**
    * いま応募・参加できるか。**`verified`（情報を確認できたか）とは別の軸。**
@@ -81,6 +103,25 @@ export type Opportunity = {
    */
   start_at_is_date_only: boolean | null;
   deadline_is_date_only: boolean | null;
+  /**
+   * 探索期間との関係（#47）。**受付状況とは別の軸。**
+   * 期間内でも申込が締め切られていることがある。null は期間が分からない run。
+   */
+  window_status:
+    | 'in_window'
+    | 'ongoing'
+    | 'after_window'
+    | 'ended'
+    | 'schedule_unknown'
+    | 'not_time_bound'
+    | null;
+  window_note: string | null;
+  /**
+   * 希望した地域との照合（#47）。**受付・期間とはさらに別の軸。**
+   * `unknown` を一致として扱わない。
+   */
+  region_match: 'match' | 'mismatch' | 'unknown' | null;
+  region_note: string | null;
   /**
    * この URL は**申込先ではなく情報源**か。
    *
@@ -104,7 +145,6 @@ export type Opportunity = {
 /** GET /api/opportunities/{id}（詳細） */
 export type OpportunityDetail = Opportunity & {
   source: string | null;
-  end_at: string | null;
   format: OpportunityFormat | null;
   eligibility: string | null;
   cost: number | null;
@@ -114,7 +154,6 @@ export type OpportunityDetail = Opportunity & {
    */
   cost_kind: CostKind | null;
 
-  end_at_is_date_only: boolean | null;
   /** その締切が何に対するものか。**早割の期限を申込締切として見せない。** */
   deadline_kind: DeadlineKind | null;
   /** 判断の根拠になったページ上の表記。 */

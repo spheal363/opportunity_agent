@@ -1,0 +1,162 @@
+[
+  {
+    "wish": "音楽",
+    "name": "Efdemin , Mod.1",
+    "dates": [
+      "2026-10-02"
+    ],
+    "venue": "VENT",
+    "claimed_url": "https://ra.co/events/2517359",
+    "checked_url": "https://livepocket.jp/e/vent_20261002",
+    "date_hit": 1,
+    "venue_hit": true,
+    "verdict": "確認済み",
+    "why": ""
+  },
+  {
+    "wish": "音楽",
+    "name": "RA25: Tokyo",
+    "dates": [
+      "2026-10-03"
+    ],
+    "venue": "HVEN",
+    "claimed_url": "https://ja.ra.co/events/2497453",
+    "checked_url": "https://nightlifetokyo.com/ja/tokyo/events/c49f47b7-0e26-4104-b12c-db6101e78b15",
+    "date_hit": 0,
+    "venue_hit": true,
+    "verdict": "未確認",
+    "why": "別出典に日程を確認できず"
+  },
+  {
+    "wish": "音楽",
+    "name": "Cromwell by WTW (TECHNO)",
+    "dates": [
+      "2026-10-08"
+    ],
+    "venue": "WOMB",
+    "claimed_url": "https://ra.co/events/2534046",
+    "checked_url": "https://www.xsmusic.es/events/cromwell-by-wtw-techno-2026-10-08",
+    "date_hit": 0,
+    "venue_hit": true,
+    "verdict": "未確認",
+    "why": "別出典に日程を確認できず"
+  },
+  {
+    "wish": "音楽",
+    "name": "D.Dan",
+    "dates": [
+      "2026-10-11"
+    ],
+    "venue": "VENT",
+    "claimed_url": "https://ra.co/events/2495128",
+    "checked_url": "https://nightlifetokyo.com/en/tokyo/events/6889c133-ff4f-4807-a248-dfe9c37670e6",
+    "date_hit": 0,
+    "venue_hit": true,
+    "verdict": "未確認",
+    "why": "別出典に日程を確認できず"
+  },
+  {
+    "wish": "音楽",
+    "name": "XDB / PACIFIC MODE x Solstice",
+    "dates": [
+      "2026-10-24"
+    ],
+    "venue": "VENT",
+    "claimed_url": "https://ra.co/events/2529281",
+    "checked_url": "https://orixa.fm/event/xdb-pacific-mode-x-solstice/34745",
+    "date_hit": 0,
+    "venue_hit": true,
+    "verdict": "未確認",
+    "why": "別出典に日程を確認できず"
+  },
+  {
+    "wish": "音楽",
+    "name": "Sandrien / ku-haku",
+    "dates": [
+      "2026-11-07"
+    ],
+    "venue": "VENT",
+    "claimed_url": "https://ra.co/events/2539495",
+    "checked_url": "https://livepocket.jp/e/vent_20261107",
+    "date_hit": 1,
+    "venue_hit": true,
+    "verdict": "確認済み",
+    "why": ""
+  },
+  {
+    "wish": "音楽",
+    "name": "CC:DISCO",
+    "dates": [
+      "2026-11-20"
+    ],
+    "venue": "VENT",
+    "claimed_url": "https://ra.co/events/2529321",
+    "checked_url": "https://livepocket.jp/e/vent_20261120",
+    "date_hit": 1,
+    "venue_hit": true,
+    "verdict": "確認済み",
+    "why": ""
+  },
+  {
+    "wish": "ハッカソン",
+    "name": "ETHGlobal Tokyo 2026",
+    "dates": [
+      "2026-09-25",
+      "2026-09-26",
+      "2026-09-27"
+    ],
+    "venue": "東京都",
+    "claimed_url": "https://ethglobal.com/events?event=tokyo2026",
+    "checked_url": "https://ethglobal.com/events?event=tokyo2026",
+    "date_hit": 2,
+    "venue_hit": false,
+    "verdict": "一部確認",
+    "why": "2/3 の日程のみ一致"
+  },
+  {
+    "wish": "ハッカソン",
+    "name": "JPHACKS 2026 Hack Day（東京会場）",
+    "dates": [
+      "2026-10-17",
+      "2026-10-18",
+      "2026-10-24",
+      "2026-10-25",
+      "2026-11-15"
+    ],
+    "venue": "複数会場（東京理科大学 神楽坂キャンパス 森戸記念館／東京大学 工学部二号館）",
+    "claimed_url": "https://jphacks.com/2026/detail/",
+    "checked_url": "https://jphacks.com/2026/detail/",
+    "date_hit": 3,
+    "venue_hit": false,
+    "verdict": "一部確認",
+    "why": "3/5 の日程のみ一致"
+  },
+  {
+    "wish": "DTM・作曲",
+    "name": "初心者向け・作曲のやり方を学ぶ会（作曲勉強会）",
+    "dates": [
+      "2026-10-17"
+    ],
+    "venue": "東京都江戸川区",
+    "claimed_url": "https://sakkyoku.info/studysession/basics-261017/",
+    "checked_url": "https://sakkyoku.info/studysession/basics-261017/",
+    "date_hit": 1,
+    "venue_hit": true,
+    "verdict": "確認済み",
+    "why": ""
+  },
+  {
+    "wish": "DTM・作曲",
+    "name": "作曲の悩みや相談を持ち寄ってみんなで話す会",
+    "dates": [
+      "2026-09-27"
+    ],
+    "venue": "東京都墨田区",
+    "claimed_url": "https://sakkyoku.info/studysession/meetup-260927/",
+    "checked_url": "https://sakkyoku.info/studysession/meetup-260927/",
+    "date_hit": 1,
+    "venue_hit": true,
+    "verdict": "確認済み",
+    "why": ""
+  }
+]

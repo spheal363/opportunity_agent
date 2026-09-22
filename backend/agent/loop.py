@@ -21,9 +21,10 @@ from urllib.parse import unquote_plus, urlparse
 
 from sqlalchemy.orm import Session
 
-from agent import demo_attack, reflection, stub_data
+from agent import demo_attack, discovery_run, reflection, stub_data
 from agent.state import AgentState
-from ai import availability, cost, guard
+from ai import availability, cost, explore, guard, listing, region
+from ai import window as search_window
 from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
 from ai.extraction import extract_many
@@ -32,7 +33,7 @@ from ai.jev.prefilter import rank_for_reading
 from ai.llm import LLMError
 from ai.schemas import GoalAnalysisOutput, SearchDirection
 from ai.schemas.evaluation import EvaluationOutput
-from ai.schemas.extraction import GATING_DEADLINES, ExtractedOpportunity
+from ai.schemas.extraction import GATING_DEADLINES, DeadlineKind, ExtractedOpportunity
 from ai.schemas.goal_analysis import GoalAnalysisInput
 from ai.search_plan import plan_search
 from ai.verification import verify_with_page
@@ -105,12 +106,20 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         if not settings.agent_stub_mode and (missing := config_missing_keys(settings)):
             # **黙って別構成へ落とさない。** 鍵が無いことと、候補が
             # 見つからないことは別。理由が分かる形で止める。
+            # **どの経路の話かを書く。** 使わないサービスの鍵を
+            # 求めているように見えないようにする。
+            route = settings.search_route.strip().lower()
+            hint = (
+                f"旧経路へ戻すには SEARCH_ROUTE=legacy（そのときは {FALLBACK_TO_A}）"
+                if route == "discovery"
+                else f"構成 A へ戻すには {FALLBACK_TO_A}"
+            )
             _fail(
                 db,
                 state,
-                "探索に必要な設定が足りません: "
+                f"探索に必要な設定が足りません（SEARCH_ROUTE={route}）: "
                 + "、".join(missing)
-                + f"。構成 A へ戻すには {FALLBACK_TO_A}",
+                + f"。{hint}",
             )
             return
         profile = db.get(UserProfile, user_id)
@@ -118,35 +127,75 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
             _fail(db, state, "プロフィールが登録されていません")
             return
 
+        # **期間はここで確定する（#47）。** 以降どこでも今日を取り直さない。
+        # 探索は 2 分ほどかかるので、途中で日付が変わると判定がずれる。
+        win = search_window.for_now()
+        state.search_window = win.to_dict()
+        state.wanted_region = profile.location
+        run = db.get(AgentRun, run_id)
+        if run is not None:
+            run.search_window = state.search_window
+            # **入力原文をこの run に固定する（#47）。**
+            # 画面は現在のプロフィールを見ていたため、あとからプロフィールを
+            # 編集すると過去 run の探索条件まで変わって見えていた。
+            run.wishes_source = profile.wants_now
+            run.region_source = profile.location
+            db.commit()
+        _log(
+            db,
+            state,
+            AgentStep.ANALYZING_PROFILE,
+            f"探索の対象期間: {win.start:%Y/%m/%d}〜{win.end:%Y/%m/%d}"
+            f"（{win.days}日間 / {win.timezone}）",
+        )
+
         _step(db, state, AgentStep.ANALYZING_PROFILE, "プロフィールを分析しています")
         # ⑧ Reflection は run の冒頭で行う（フィードバックを受けた時点ではない）。
         # 毎回すべての反応から作り直すので、押した順番や途中で落ちた run に左右されない。
         # **AgentStep は増やさない**（API Schema の変更になる）。プロフィール分析の一部として出す。
-        learned = _reflect(db, state)
+        # **経路によって、学習を使うかが違う。** Log の書き方を合わせる。
+        route = settings.search_route.strip().lower()
+        learned = _reflect(db, state, applies=route != "discovery")
         with cost.step("goal_analysis"):
             state.goal_analysis = _analyze_goal(profile)
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
+        # **分析の全出力を残す。** 要約しか記録していなかったため、
+        # 「どこで希望が落ちたか」を後から追えなかった（#47）。
+        run = db.get(AgentRun, run_id)
+        if run is not None:
+            run.goal_analysis = state.goal_analysis.model_dump()
+            db.commit()
+        for wanted in state.goal_analysis.wanted_now:
+            _log(db, state, AgentStep.ANALYZING_PROFILE, f"今回探したい機会: {wanted}")
 
-        _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
-        with cost.step("search_plan"):
-            state.search_directions = _plan_search(state, profile, learned, db=db)
-        for d in state.search_directions:
-            _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
-
-        _step(db, state, AgentStep.SEARCHING, "Webを探索しています")
-        found = _search_and_extract(db, state)
-        _log(db, state, AgentStep.SEARCHING, f"{len(found)}件のOpportunityを発見")
-
-        _step(db, state, AgentStep.EVALUATING, "Opportunityを評価しています")
-        ranked = _evaluate_and_select(db, state, found, learned)
-        _log(db, state, AgentStep.EVALUATING, f"{len(found)}件から{len(ranked)}件を順位付け")
-
-        _step(db, state, AgentStep.VERIFYING, "上位候補の公式情報を確認しています")
-        _verify_and_finalize(db, state)
-        if state.shortfall_reason:
-            _log(db, state, AgentStep.VERIFYING, state.shortfall_reason)
+        if route == "discovery":
+            # **新しい探索経路（#47）。** 旧経路は下にそのまま残してある。
+            #
+            # 一覧段階では 検索計画 / 本文抽出 / TOP3 推薦 / 全件検証 を行わない。
+            # 検索語はモデルが自分で作るので、ここで組むと**希望を言い換える層が
+            # 二重になる**（実測で、希望が別物へ変換されていた）。
+            discovery_run.run(db, state, profile, win, log=_log, step=_step)
         else:
-            _log(db, state, AgentStep.VERIFYING, f"{len(state.selected_ids)}件を推薦します")
+            _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
+            with cost.step("search_plan"):
+                state.search_directions = _plan_search(state, profile, learned, db=db)
+            for d in state.search_directions:
+                _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
+
+            _step(db, state, AgentStep.SEARCHING, "Webを探索しています")
+            found = _search_and_extract(db, state)
+            _log(db, state, AgentStep.SEARCHING, f"{len(found)}件のOpportunityを発見")
+
+            _step(db, state, AgentStep.EVALUATING, "Opportunityを評価しています")
+            ranked = _evaluate_and_select(db, state, found, learned)
+            _log(db, state, AgentStep.EVALUATING, f"{len(found)}件から{len(ranked)}件を順位付け")
+
+            _step(db, state, AgentStep.VERIFYING, "上位候補の公式情報を確認しています")
+            _verify_and_finalize(db, state)
+            if state.shortfall_reason:
+                _log(db, state, AgentStep.VERIFYING, state.shortfall_reason)
+            else:
+                _log(db, state, AgentStep.VERIFYING, f"{len(state.selected_ids)}件を推薦します")
 
         state.status = AgentRunStatus.COMPLETED
         _step(db, state, AgentStep.COMPLETED, "探索が完了しました")
@@ -176,11 +225,15 @@ def _public_error(exc: Exception) -> str:
 # --------------------------------------------------------------------------
 
 
-def _reflect(db: Session, state: AgentState) -> reflection.Learned:
+def _reflect(db: Session, state: AgentState, *, applies: bool) -> reflection.Learned:
     """⑧ Reflection。前回までの反応を振り返る（#48）。
 
     **LLM を使わない**ので stub でも同じコードが走る（API キー無しのデモでも見える）。
     振り返りに失敗しても探索は止めない。学習を反映しない、いつもの探索に戻るだけ。
+
+    `applies` は、この run の経路が学習を**実際に使うか**。
+    **使わない経路で「反映しました」と読める Log を出さない（#47）。**
+    検索専用モデルの経路は、反応を検索にも評価にも渡していない。
     """
     try:
         learned = reflection.reflect(db, state.user_id, run_id=state.run_id)
@@ -195,6 +248,9 @@ def _reflect(db: Session, state: AgentState) -> reflection.Learned:
         )
         return reflection.NOTHING
     if message := reflection.describe(learned):
+        if not applies:
+            # **この経路では今回の検索・評価に渡していない。** そう書く。
+            message += "（この探索では反映していません。反応は次に活かせるよう保存しています）"
         _log(db, state, AgentStep.ANALYZING_PROFILE, message)
     return learned
 
@@ -206,12 +262,16 @@ def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
 
     return analyze_goal(
         GoalAnalysisInput(
+            # **初回フォームの 2 欄が中心。** 以前の項目は下で補足として渡す。
+            wants_now=profile.wants_now,
+            future_goals=profile.future_goals,
             occupation=profile.occupation,
             skills=profile.skills or [],
             interests=profile.interests or [],
             goals=profile.goals or [],
             about=profile.about,
-        )
+        ),
+        location=profile.location,
     )
 
 
@@ -235,12 +295,19 @@ def _plan_search(
     if goal is None:  # 順序を崩した呼び出しへの保険
         raise RuntimeError("goal analysis の前に search planning を呼んでいます")
 
+    win = search_window.SearchWindow.from_dict(state.search_window)
     learned = learned or reflection.NOTHING
     directions = plan_search(
         goal_summary=goal.goal_summary,
         goal_directions=goal.goal_directions,
         interest_connections=goal.interest_connections,
+        # **要約だけを渡さない。** 実測で、7 行の希望が要約 1〜2 文へ潰れ、
+        # 起業とプロダクト開発だけが後段へ渡っていた（#47）。
+        wanted_now=goal.wanted_now,
+        background_goals=goal.background_goals,
         location=profile.location,
+        # **run 開始時に確定した期間**を明示して渡す（#47）。
+        window=(f"{win.start:%Y年%m月%d日}〜{win.end:%Y年%m月%d日}" if win else None),
         feedback_summary=reflection.plan_summary(learned),
     )
     if db is not None and (note := reflection.plan_note(learned)):
@@ -293,6 +360,11 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         state.discovered_ids = []
         return []
 
+    # **検索で見つかった候補を run に残す（#47）。**
+    # 粗選別より前に保存するので、読まなかった分も含めて全件が残る。
+    # 結果画面の一覧がこれを使う。**本文は保存しない。**
+    _save_search_candidates(db, state, candidates)
+
     # --- ② 本文の指示らしき文を取り除く -------------------------------------
     # **LLM に渡す前にコードで取り除く（#27）。** 読む候補を選ぶ Jev も
     # 検索結果の文を読むので、優先順位を付けるより先に通す。
@@ -308,25 +380,16 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # 取ってきた本文も Web 由来。抽出へ渡す前に検査する。
     sources = _guard_bodies(db, state, _with_bodies([r for _, r in candidates]))
 
-    # --- ⑤ 全候補をまとめて抽出する -----------------------------------------
-    # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
-    # 実測では方向ごとだと 137 秒、まとめると 1 方向分の時間で済む。
-    with cost.step("extraction"):
-        extracted, failed = extract_many(sources)
+    # --- ⑤ 一覧ページは「探索元」として先へ進む -----------------------------
+    # **一覧を個別イベントとして数えない。** 実測で、音楽方向は一覧 4 件と
+    # 記事 1 件で個別イベントが 0 件だった。ここが無いと先へ届かない。
+    sources = _follow_listings(db, state, sources)
 
-    # 読んだ結果、候補がほとんど残らなかったときは後回しにした分から足す。
-    # **上限を設ける。無制限には増やさない。**
-    if deferred and len(extracted) < TOP_N:
-        extra = deferred[: get_settings().prefilter_extra_reads]
-        _log(db, state, AgentStep.SEARCHING, f"候補が足りないため{len(extra)}件を追加で読みます")
-        with cost.step("extraction"):
-            more, more_failed = extract_many(
-                _guard_bodies(db, state, _with_bodies([r for _, r in extra]))
-            )
-        extracted = [*extracted, *more]
-        failed = [*failed, *more_failed]
-        candidates = [*candidates, *extra]
-        cost.record_dropped("prefilter_extra_reads", len(extra))
+    # --- ⑥ 抽出し、足りない方向があれば読み足す -----------------------------
+    # **「何件読んだか」では不足を測れない。** 何件読んでも終了済み・地域違い
+    # なら希望を満たしていない（実測）。**条件に合う候補の数**で測り、
+    # 足りない方向だけ読み足して、もう一度抽出する。
+    extracted, failed, candidates = _extract_until_enough(db, state, sources, candidates, deferred)
 
     # クエリ文字列ではなく**方向の位置**を鍵にする。LLM が同じ query を持つ方向を
     # 2 つ返すことがあり、文字列で集計すると件数が合算されて二重に表示される。
@@ -436,6 +499,221 @@ def _with_bodies(results: list[SearchResult]) -> list[SearchResult | PageContent
         page = pages.get(r.url)
         merged.append(page if page is not None else r)
     return merged
+
+
+def _save_search_candidates(db: Session, state: AgentState, candidates: list) -> None:
+    """検索で見つかった候補を run に残す。**タイトルと URL だけ。**
+
+    再読み込みしても一覧を出せるようにするため。本文を残すと、取得元の
+    利用条件に関わるうえ DB も膨らむので、残さない。
+    """
+    order = {id(d): i for i, d in enumerate(state.search_directions)}
+    rows = [
+        {"title": r.title, "url": r.url, "direction": order.get(id(direction))}
+        for direction, r in candidates
+    ]
+    run = db.get(AgentRun, state.run_id)
+    if run is not None:
+        run.search_candidates = rows
+        db.commit()
+    _log(db, state, AgentStep.SEARCHING, f"検索で{len(rows)}件の候補が見つかりました")
+
+
+def _fits_the_wish(row: Opportunity, win, wanted_region: str | None) -> bool:
+    """この候補は希望の条件に合うか。**「読んだ」ではなく「合う」で数える。**
+
+    期間・地域・受付を**別々に**見て、どれも外れていないこと。
+    分からない（unknown）は合うとは数えない。
+    """
+    if row.availability == availability.Availability.CLOSED:
+        return False
+    if win is not None:
+        status = search_window.classify(
+            opportunity_type=row.type, start_at=row.start_at, end_at=row.end_at, window=win
+        )
+        if status in (search_window.WindowStatus.ENDED, search_window.WindowStatus.AFTER_WINDOW):
+            return False
+        if status is search_window.WindowStatus.SCHEDULE_UNKNOWN:
+            return False
+    match = region.classify(
+        wanted=wanted_region,
+        location=row.location,
+        opportunity_format=row.format,
+        region=row.region,
+        online_participation=row.online_participation,
+    )
+    return match is region.RegionMatch.MATCH
+
+
+def _extract_until_enough(
+    db: Session, state: AgentState, sources: list, candidates: list, deferred: list
+) -> tuple[list, list, list]:
+    """抽出し、条件に合う候補が 0 件の方向があれば読み足して、もう一度抽出する。
+
+    **「読んだ本文が 1 件以下」では不足を測れない。** 実測で、ポケモン方向は
+    5 件読んでも全部が開催終了だった。数えるのは**条件に合う候補**。
+
+    止める条件は 3 つ。**無制限には回さない。**
+
+      - 追加で読む候補が尽きた
+      - 新しく条件に合う候補が増えなかった（`listing_stop_after_empty_rounds`）
+      - 追加取得の上限（`listing_max_fetches`）
+    """
+    settings = get_settings()
+    win = search_window.SearchWindow.from_dict(state.search_window)
+    order = {id(d): i for i, d in enumerate(state.search_directions)}
+
+    with cost.step("extraction"):
+        extracted, failed = extract_many(sources)
+
+    pool = list(deferred)
+    empty_rounds = 0
+    budget = settings.prefilter_extra_reads * max(1, settings.listing_stop_after_empty_rounds)
+
+    # **0 なら読み足さない。** 回数は設定で決まる（従来の挙動へ戻せる）。
+    for _round in range(settings.listing_stop_after_empty_rounds):
+        if not pool or budget <= 0:
+            break
+        # いま条件に合っている候補を方向ごとに数える。
+        by_url = {r.url: order.get(id(d)) for d, r in candidates}
+        fits: dict[int, int] = {}
+        for source_url, item in extracted:
+            index = by_url.get(source_url)
+            if index is None:
+                continue
+            row = Opportunity(
+                type=item.type,
+                start_at=item.start_at,
+                end_at=item.end_at,
+                location=item.location,
+                format=item.format,
+                region=item.region,
+                online_participation=item.online_participation,
+                availability=availability.for_extracted(item)[0],
+            )
+            if _fits_the_wish(row, win, state.wanted_region):
+                fits[index] = fits.get(index, 0) + 1
+
+        thin = [i for i in range(len(state.search_directions)) if fits.get(i, 0) == 0]
+        if not thin:
+            break
+
+        extra = [(d, r) for d, r in pool if order.get(id(d)) in thin][
+            : min(settings.prefilter_extra_reads, budget)
+        ]
+        if not extra:
+            break
+        pool = [c for c in pool if c not in extra]
+        budget -= len(extra)
+
+        _log(
+            db,
+            state,
+            AgentStep.SEARCHING,
+            f"条件に合う候補が無い{len(thin)}方向について、{len(extra)}件を追加で読みます",
+        )
+        cost.record_dropped("thin_direction_reads", len(extra))
+        more_sources = _follow_listings(
+            db, state, _guard_bodies(db, state, _with_bodies([r for _, r in extra]))
+        )
+        with cost.step("extraction"):
+            more, more_failed = extract_many(more_sources)
+
+        before = sum(fits.values())
+        extracted = [*extracted, *more]
+        failed = [*failed, *more_failed]
+        candidates = [*candidates, *extra]
+        if not more:
+            empty_rounds += 1
+        if len(extracted) == before:
+            empty_rounds += 1
+        if empty_rounds >= settings.listing_stop_after_empty_rounds:
+            _log(
+                db,
+                state,
+                AgentStep.SEARCHING,
+                "追加で読んでも候補が増えないため、探索を打ち切ります",
+            )
+            break
+
+    return extracted, failed, candidates
+
+
+def _follow_listings(db: Session, state: AgentState, sources: list) -> list:
+    """一覧ページから個別イベントのページまで進む（#47）。
+
+    **一覧はそのまま抽出へ回さない。** 1 ページに複数のイベントが載っており、
+    1 件の機会へ潰すと中身が混ざる。代わりに本文のリンクから個別ページを
+    取り、それを抽出の入力に足す。**一覧自体も残す**（一覧しか手がかりが
+    無いときに、取得元として画面へ出せるようにするため）。
+
+    上限は設定で変える（`config.py` の `LISTING_*`）。
+    **最初の実験条件であって、製品として最適と決まった値ではない。**
+    """
+    settings = get_settings()
+    budget = settings.listing_max_fetches
+    if budget <= 0:
+        return sources
+
+    goal = state.goal_analysis
+    wishes = list(goal.wanted_now) if goal else []
+    win = search_window.SearchWindow.from_dict(state.search_window)
+    window_text = f"{win.start:%Y年%m月%d日}〜{win.end:%Y年%m月%d日}" if win else None
+    profile_location = state.wanted_region
+
+    added: list = []
+    pages = 0
+    for source in sources:
+        if budget <= 0 or pages >= settings.listing_pages_per_wish * max(1, len(wishes)):
+            break
+        if not isinstance(source, PageContent):
+            continue
+        # **構造は門だけ。** 一覧か記事かは explore が本文を読んで判断する
+        # （同形リンクは記事の関連記事欄にも並ぶ、という実測のため）。
+        if not listing.may_be_listing(source.content, base_url=source.url):
+            continue
+
+        pages += 1
+        with cost.step("listing"):
+            result = explore.follow(
+                source,
+                wishes=wishes,
+                location=profile_location,
+                window=window_text,
+                limit=min(settings.listing_links_per_page, budget),
+                fetch=_fetch_pages,
+            )
+        budget -= len(result.pages)
+        added.extend(result.pages)
+        cost.record_dropped("listing_pages", 1)
+        _log(
+            db,
+            state,
+            AgentStep.SEARCHING,
+            f"一覧ページから{len(result.pages)}件の個別イベントを読みました"
+            f"（リンク{result.links_found}件から{result.picked}件を選択）",
+        )
+        for url, why in result.failures:
+            # **取れなかったことを隠さない。** URL は出すが本文は出さない。
+            logger.info("listing.failed url=%s reason=%s", url, why)
+
+    if added:
+        cost.record_dropped("listing_individual_pages", len(added))
+    return [*sources, *added]
+
+
+def _fetch_pages(urls: list[str]) -> list:
+    """URL の一覧から本文を取る。**取れなかった分は黙って落とす。**
+
+    呼び出し側（`ai/explore.py`）が、取れなかった URL を理由付きで記録する。
+    """
+    if not urls:
+        return []
+    try:
+        return registry.invoke("read_page", url=urls).data["pages"]
+    except SearchError as exc:
+        logger.warning("listing.fetch_failed reason=%s", exc)
+        return []
 
 
 def _guard_bodies(
@@ -588,6 +866,8 @@ def _save_extracted(
     row.deadline = item.deadline
     row.location = item.location
     row.format = item.format
+    row.region = item.region
+    row.online_participation = item.online_participation
     row.eligibility = item.eligibility
     row.cost = item.cost
     # **何に対する締切・料金か。** ページ全体の受付状況を一括で決めないため。
@@ -1007,6 +1287,24 @@ def _verified_availability(row: Opportunity, out) -> tuple[str, str | None]:
     #
     # ここを `_is_past` に揃えると、当日のぶんが `closed` を素通しする側へ
     # 倒れる。**揃えないこと自体が意図。**
+    # **検証自身が「参加の締切」と言っているなら、倒さない。**
+    #
+    # 実測で、申込締切が 2023 年 12 月のアクセラレーターが推薦に残った。
+    # 検証は「申込の締切が過ぎています」と書いていたのに、抽出段階で
+    # `deadline_kind` を `unknown` にしか倒せなかったために、この見張りが
+    # 「参加の締切か確認できない」として `unknown` へ戻していた。
+    #
+    # **古い日付だから閉じるのではない。** 検証が読み取った終了の根拠が、
+    # 推薦する行動（応募・参加登録）に対応する締切や開催終了を指しているか
+    # で決める。指していなければ従来どおり `unknown` へ倒す。
+    # **区分が分かっているときは、そちらを優先する。** 早割・登壇者募集と
+    # 分類できているなら、検証が何と書いていようと参加は塞がれていない。
+    # 検証の文言に頼るのは、抽出が区分を決められなかったときだけ。
+    if row.deadline_kind in (None, DeadlineKind.UNKNOWN.value) and _closes_the_recommended_action(
+        out
+    ):
+        return out.availability, out.availability_reason
+
     if (
         row.deadline is not None
         and row.deadline_kind not in _GATING_KINDS
@@ -1018,6 +1316,45 @@ def _verified_availability(row: Opportunity, out) -> tuple[str, str | None]:
             "それが参加の締切かどうかを確認できませんでした",
         )
     return out.availability, out.availability_reason
+
+
+# 検証が書いた終了の根拠のうち、**推薦する行動を塞ぐもの**。
+#
+# 「早割の締切」「登壇者募集の締切」は参加を塞がないので入れない。
+# ここに無い語しか出てこなければ、従来どおり `unknown` へ倒す。
+_ACTION_CLOSING = (
+    "申込の締切",
+    "申込締切",
+    "応募の締切",
+    "応募締切",
+    "募集の締切",
+    "募集締切",
+    "参加申込",
+    "参加登録",
+    "受付を終了",
+    "受付終了",
+    "募集を終了",
+    "募集は終了",
+    "応募を締め切",
+    "申込を締め切",
+    "開催が終了",
+    "開催は終了",
+    "終了しました",
+)
+
+# **「早割」「登壇」が付いていたら採らない。** 参加そのものは塞がない。
+_NOT_ACTION_CLOSING = ("早割", "早期割引", "early bird", "登壇者", "発表者", "cfp", "スピーカー")
+
+
+def _closes_the_recommended_action(out) -> bool:
+    """検証の根拠が、推薦する行動を塞いでいるか。
+
+    見るのは検証が書いた文だけ。**日付の古さでは決めない。**
+    """
+    text = " ".join(filter(None, [out.availability_reason, *getattr(out, "warnings", [])])).lower()
+    if any(w in text for w in _NOT_ACTION_CLOSING):
+        return False
+    return any(w.lower() in text for w in _ACTION_CLOSING)
 
 
 def _set_availability(

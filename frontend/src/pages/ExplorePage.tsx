@@ -48,7 +48,8 @@ export default function ExplorePage() {
   const runId = params.get('run_id');
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  const { profile, refreshOpportunities, startRun, showToast, openAutoRun } = useAppState();
+  // **`profile` は探索の軸の表示には使わない（#47）。** run に固定した原文を出す。
+  const { refreshOpportunities, startRun, showToast, openAutoRun } = useAppState();
   const { run, logs, error, watch, setWatch } = useAgentRun(runId);
   const [starting, setStarting] = useState(false);
 
@@ -303,22 +304,44 @@ export default function ExplorePage() {
           <div className={INSPECTOR_CARD}>
             <span className={EYEBROW}>YOUR COMPASS</span>
             <h3 className="text-[17px] font-medium mt-[8px] mb-[12px]">今回の探索の軸</h3>
-            <p className="text-[15px] leading-[1.9] mt-[12px] mb-[16px]">
-              {(profile?.goals ?? []).join(' / ') || '目標はまだ設定されていません'}
-            </p>
-            <div className="flex flex-wrap gap-[6px]">
-              {(profile?.interests ?? []).map((interest) => (
-                <span
-                  key={interest}
-                  className="text-[12px] px-[9px] py-[3px] rounded-[20px] bg-[#eef0e8] text-[#657454]"
-                >
-                  {interest}
+            {/*
+              **この run の入力原文をそのまま出す（#47）。**
+              以前は現在のプロフィールを表示していたため、あとから
+              プロフィールを編集すると過去 run の条件まで変わって見えた。
+              **AI の要約や英語の分類名で原文を置き換えない。**
+            */}
+            {run?.wishes_source ? (
+              <p className="text-[15px] leading-[1.9] mt-[12px] mb-[16px] whitespace-pre-line">
+                {run.wishes_source}
+              </p>
+            ) : (
+              <p className="text-[14px] leading-[1.9] mt-[12px] mb-[16px] text-muted">
+                この探索の入力原文は保存されていません。
+                <span className="block">
+                  （この項目が付く前の探索です。現在のプロフィールでは補っていません）
                 </span>
-              ))}
-            </div>
+              </p>
+            )}
+            {/* **AI が整理した結果は別枠。** 原文の置き換えには使わない。 */}
+            {run?.goal_directions?.length ? (
+              <div className="border-t border-line pt-[13px] mt-[4px]">
+                <span className="text-[12px] text-[#7a8977] block mb-[6px]">
+                  AIが整理した探索方向
+                </span>
+                <div className="flex flex-wrap gap-[6px]">
+                  {run.goal_directions.map((d) => (
+                    <span
+                      key={d}
+                      className="text-[12px] px-[9px] py-[3px] rounded-[20px] bg-[#eef0e8] text-[#657454]"
+                    >
+                      {d}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-[7px] border-t border-line pt-[15px] mt-[18px] text-[13px] text-[#777f70]">
-              <span>⌖ {profile?.location ?? '地域未設定'}</span>
-              <span>◷ {profile?.occupation ?? '立場未設定'}</span>
+              <span>⌖ {run?.region_source ?? '（この探索の地域は保存されていません）'}</span>
             </div>
           </div>
 

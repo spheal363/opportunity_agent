@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { fetchOpportunity } from '../../api';
+import { checkDetail, fetchOpportunity } from '../../api';
 import {
   availabilityLabel,
   categoryLabel,
@@ -28,6 +28,24 @@ const H3 = 'text-[16px] font-bold tracking-[.04em] mt-[24px] mb-[7px]';
 
 type Step = 'detail' | 'prepare' | 'done';
 
+/** 確認できた項目の表示名。**「確認した」と言える範囲だけを書く。** */
+function confirmedLabel(field: string): string {
+  return (
+    {
+      start_at: '開催日',
+      end_at: '終了日',
+      location: '会場',
+      region: '地域',
+      deadline: '締切',
+      cost: '料金',
+      eligibility_stated: '参加条件の記載',
+      // **申込先だと確認したのではない。** その URL が出典ページにあっただけ。
+      application_url_on_page: '出典ページ内のリンク',
+      window_recomputed: '期間の再判定',
+    }[field] ?? field
+  );
+}
+
 export function DetailDialog() {
   const {
     detailId,
@@ -48,6 +66,9 @@ export function DetailDialog() {
   const [step, setStep] = useState<Step>('detail');
   const [note, setLocalNote] = useState('');
   const [calendar, setCalendar] = useState<CalendarOutcome>('skipped');
+  // 詳細確認（#47）。**選んだ候補だけ**出典を取りに行く。
+  // 連打しても二重に走らないよう、実行中は押せなくする。
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     if (!detailId) return;
@@ -147,8 +168,54 @@ export function DetailDialog() {
             </dd>
             <dt className="text-muted">公式情報</dt>
             <dd className="m-0">
-              {item.verified ? `確認済み（${formatDateTime(item.verified_at)}）` : '未確認'}
+              {/*
+                **`verified` は「確認を実行したか」。**
+                日付・場所・受付・参加資格がすべて確認済みという意味ではない。
+                何が確認できたかは confirmed_fields を出す。
+              */}
+              {item.verified
+                ? `出典を確認しました（${formatDateTime(item.verified_at)}）`
+                : '検索で見つかった候補（出典は未確認）'}
+              {item.verified && item.confirmed_fields.length > 0 ? (
+                <span className="block text-muted text-[13px]">
+                  確認できた項目: {item.confirmed_fields.map(confirmedLabel).join(' / ')}
+                </span>
+              ) : null}
+              {item.verified && item.confirmed_fields.length === 0 ? (
+                <span className="block text-muted text-[13px]">
+                  出典を取得できず、確認できた項目はありません
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="mt-2 block underline disabled:opacity-50"
+                disabled={checking}
+                onClick={async () => {
+                  setChecking(true);
+                  try {
+                    setItem(await checkDetail(item.opportunity_id));
+                  } catch {
+                    setError('詳細を確認できませんでした');
+                  } finally {
+                    setChecking(false);
+                  }
+                }}
+              >
+                {checking ? '確認しています…' : '詳細を確認する'}
+              </button>
             </dd>
+            {item.corrections.length > 0 ? (
+              <>
+                <dt className="text-muted">出典との差分</dt>
+                <dd className="m-0">
+                  {item.corrections.map((c, i) => (
+                    <span key={i} className="block text-[13px]">
+                      {confirmedLabel(c.field)}: {c.before ?? '（なし）'} → {c.after ?? '（なし）'}
+                    </span>
+                  ))}
+                </dd>
+              </>
+            ) : null}
             {/* 「情報を確認できたか」と「いま申し込めるか」は別。両方を出す。 */}
             <dt className="text-muted">受付状況</dt>
             <dd className="m-0">
@@ -235,9 +302,7 @@ export function DetailDialog() {
             </p>
           ) : null}
           {item.recommended_action ? (
-            <p className="text-[14px] text-muted">
-              次に取れる行動：{item.recommended_action}
-            </p>
+            <p className="text-[14px] text-muted">次に取れる行動：{item.recommended_action}</p>
           ) : null}
 
           <label className="block text-[14px] mt-[20px] mb-[7px]" htmlFor="application">

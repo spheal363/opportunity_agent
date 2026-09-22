@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 
-import { addToCalendar, ApiRequestError, checkCalendarAvailability } from '../../api';
+import {
+  addToCalendar,
+  ApiRequestError,
+  checkCalendarAvailability,
+  fetchCalendarPreview,
+} from '../../api';
 import { useAppState } from '../../state/context';
-import type { CalendarConflict, OpportunityDetail } from '../../types';
+import type { CalendarConflict, CalendarEventPreview, OpportunityDetail } from '../../types';
 import { formatDateTime } from '../../utils/date';
 import { EYEBROW, PRIMARY, TEXT_BUTTON } from './styles';
 
@@ -38,6 +43,8 @@ export function CalendarPanel({ item, blockedReason, onProceed }: Props) {
   const { showToast } = useAppState();
   const hasStart = Boolean(item.start_at);
   const [availability, setAvailability] = useState<Availability>({ kind: 'loading' });
+  // **実際に送る内容。** 候補の行から別に組み立てない（ずれる）。
+  const [preview, setPreview] = useState<CalendarEventPreview | null>(null);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -45,12 +52,20 @@ export function CalendarPanel({ item, blockedReason, onProceed }: Props) {
     // 開催日時が無い機会は Backend も確認しない（推測で埋めない）。
     if (!hasStart) return;
     let cancelled = false;
+    fetchCalendarPreview(item.opportunity_id)
+      .then((e) => {
+        if (!cancelled) setPreview(e);
+      })
+      .catch(() => {
+        // 確認内容が取れなくても空き確認は続ける。**推測で埋めない。**
+      });
     checkCalendarAvailability(item.opportunity_id)
       .then((res) => {
         if (cancelled) return;
         setAvailability(
           res.available ? { kind: 'free' } : { kind: 'busy', conflicts: res.conflicts },
         );
+        setPreview(res.event);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -94,20 +109,44 @@ export function CalendarPanel({ item, blockedReason, onProceed }: Props) {
             <p className="mt-[8px] mb-[12px]">
               この内容で、あなたの Google カレンダーに予定を入れます。
             </p>
-            <dl className="grid grid-cols-[80px_1fr] gap-[8px] m-0">
+            <dl className="grid grid-cols-[92px_1fr] gap-[8px] m-0">
               <dt className="text-muted">予定名</dt>
-              <dd className="m-0">{item.title}</dd>
+              <dd className="m-0">{preview ? preview.title : item.title}</dd>
               <dt className="text-muted">日時</dt>
               <dd className="m-0">
-                {rangeLabel(item.start_at, item.end_at)}
-                {endIsPlaceholder(item.start_at, item.end_at) ? (
-                  <span className="block text-muted text-[13px]">
-                    終了時刻は分かっていないため、仮に {PLACEHOLDER_HOURS} 時間で入れます。
-                  </span>
-                ) : null}
+                {preview?.all_day ? (
+                  <>
+                    {dayLabel(preview.start_at, preview.timezone)}
+                    <span className="block text-muted text-[13px]">
+                      開始時刻が分かっていないため、終日の予定として追加します。
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    {rangeLabel(preview?.start_at ?? item.start_at, preview?.end_at ?? item.end_at)}
+                    {(preview?.end_is_placeholder ??
+                    endIsPlaceholder(item.start_at, item.end_at)) ? (
+                      <span className="block text-muted text-[13px]">
+                        終了時刻は分かっていないため、仮に {PLACEHOLDER_HOURS} 時間で入れます。
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </dd>
+              <dt className="text-muted">タイムゾーン</dt>
+              <dd className="m-0">{preview?.timezone ?? '確認しています…'}</dd>
               <dt className="text-muted">場所</dt>
-              <dd className="m-0">{item.location ?? '場所未定'}</dd>
+              <dd className="m-0">{preview?.location ?? item.location ?? '場所未定'}</dd>
+              <dt className="text-muted">出典</dt>
+              <dd className="m-0 break-all">
+                {preview?.source_url ? (
+                  <a href={preview.source_url} target="_blank" rel="noreferrer noopener">
+                    {preview.source_url}
+                  </a>
+                ) : (
+                  '出典 URL なし'
+                )}
+              </dd>
               <dt className="text-muted">空き状況</dt>
               <dd className="m-0">
                 <AvailabilityLabel availability={availability} />
@@ -148,7 +187,8 @@ export function CalendarPanel({ item, blockedReason, onProceed }: Props) {
         </button>
       )}
       <p className="text-[14px] text-muted my-[22px]">
-        応募は行いません。実際に参加するときは、公式ページで日時と申込方法をご確認ください。
+        <strong>予定の追加は参加申込ではありません。</strong>
+        申込はご自身で、公式ページから行ってください。日時と申込方法も公式ページでご確認ください。
       </p>
     </>
   );
@@ -212,4 +252,15 @@ function rangeLabel(start: string, end: string | null | undefined): string {
       ? new Intl.DateTimeFormat('ja-JP', { timeStyle: 'short' }).format(e)
       : formatDateTime(e.toISOString());
   return `${formatDateTime(start)} 〜 ${endText}`;
+}
+
+/** 終日予定の日付。**時刻を出さない。** 出典に時刻が無いため。 */
+function dayLabel(start: string, timezone: string): string {
+  return new Date(start).toLocaleDateString('ja-JP', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  });
 }

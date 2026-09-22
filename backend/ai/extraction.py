@@ -10,11 +10,12 @@ CHEAP を使わない**。
 
 from datetime import date
 
-from ai import evidence
+from ai import cost, evidence, interstitial
 from ai.concurrency import map_parallel
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import extraction as prompt
+from ai.routing import Step
 from ai.schemas.extraction import MAX_PAGE_CONTENT_CHARS, ExtractedOpportunity
 from logging_config import get_logger
 from tools.search.base import PageContent, SearchResult
@@ -41,7 +42,7 @@ def extract_opportunity(
     page_content: str,
     *,
     today: date | None = None,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
     source_title: str | None = None,
 ) -> ExtractedOpportunity:
     """1 ページから Opportunity の事実を抽出する。
@@ -53,7 +54,8 @@ def extract_opportunity(
         schema=ExtractedOpportunity,
         system=prompt.SYSTEM,
         user=prompt.build_user(source_url, content, today=today, source_title=source_title),
-        # Untrusted Data を読ませるため CHEAP は使わない
+        # Untrusted Data を読ませるため CHEAP は使わない（`ai/routing.py` が縛る）
+        step=Step.EXTRACTION,
         tier=tier,
         max_tokens=EXTRACTION_MAX_TOKENS,
     )
@@ -73,7 +75,7 @@ def extract_many(
     sources: list[SearchResult | PageContent],
     *,
     today: date | None = None,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> tuple[list[tuple[str, ExtractedOpportunity]], list[str]]:
     """複数ページから抽出する。
 
@@ -91,6 +93,22 @@ def extract_many(
     def one(src: SearchResult | PageContent) -> tuple[str, ExtractedOpportunity | None]:
         content = _content_of(src)
         if not content:
+            return src.url, None
+        # **本文 0 文字は取得失敗。** 空のページを抽出へ流すと、日時も場所も
+        # 取れない「機会」ができる（実測で `Human Verification` が候補に並んだ）。
+        if isinstance(src, PageContent) and not (src.content or "").strip():
+            logger.info("extraction.empty_body url=%s", src.url)
+            cost.record_dropped("empty_body")
+            return src.url, None
+        # **アクセス確認・エラーページは取得失敗。** 機会として抽出しない（#47）。
+        # 実測で Cloudflare の「Just a moment...」が候補一覧に並んだ。
+        # 1 件落としても他の候補は続ける。
+        reason = interstitial.looks_like_interstitial(
+            title=getattr(src, "title", None), content=content
+        )
+        if reason is not None:
+            logger.info("extraction.interstitial url=%s reason=%s", src.url, reason)
+            cost.record_dropped("interstitial")
             return src.url, None
         try:
             return src.url, extract_opportunity(

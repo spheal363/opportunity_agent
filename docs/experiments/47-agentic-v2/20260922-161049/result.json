@@ -1,0 +1,1773 @@
+{
+  "model": "anthropic/claude-opus-4.7",
+  "discover_reason": "新しい有効候補が 3 往復増えなかった",
+  "stopped": null,
+  "missing_wishes": [
+    "DTM・作曲",
+    "ポケモン"
+  ],
+  "programs": 12,
+  "dates": 21,
+  "by_wish": {
+    "音楽": {
+      "企画": 5,
+      "日程": 6
+    },
+    "DTM・作曲": {
+      "企画": 2,
+      "日程": 2
+    },
+    "ハッカソン": {
+      "企画": 3,
+      "日程": 5
+    },
+    "ポケモン": {
+      "企画": 2,
+      "日程": 8
+    }
+  },
+  "tool_calls": 90,
+  "llm_calls": 58,
+  "seconds": 596.0,
+  "actual_usd": 1.930582,
+  "responses_without_cost": 0,
+  "request_ids": [
+    "202609220710496740118208268d9d6Dd8uAH5l",
+    "202609220711012311211338268d9d6R6txGBgz",
+    "202609220711187387202208268d9d6NKbys1qx",
+    "202609220711514474091288268d9d6YpVhyiME",
+    "202609220712026886136538268d9d6ILLyeOjs",
+    "202609220712386568745068268d9d6RbZvC0xn",
+    "202609220712512147027938268d9d6Xa5QgrM4",
+    "202609220712588396826218268d9d6xLAx41G6",
+    "202609220713238370889368268d9d6cP5JxCrj",
+    "202609220713297069275798268d9d6jWy5IbdI",
+    "202609220713361511312508268d9d6Dd9J2MPD",
+    "20260922071348258257698268d9d6veYh6dVx",
+    "202609220713585787196358268d9d69KVHOw6m",
+    "202609220714036768163858268d9d68k2ZvjFO",
+    "202609220714079532179258268d9d6rIP5Obpj",
+    "2026092207141289593608268d9d6v0Xl1xJk",
+    "202609220714162065055138268d9d6KGKIETxQ",
+    "202609220714222457005558268d9d6T65FNh0k",
+    "202609220714384246671568268d9d6RbXeZCW9",
+    "202609220714551190055768268d9d6slkXHz6l",
+    "202609220715007931172118268d9d6EeUx67LB",
+    "202609220715053584858998268d9d6Oq4VeJ4A",
+    "202609220715187766376088268d9d6AUsN5f7O",
+    "202609220715257512706188268d9d67ilE5X2u",
+    "202609220715377582266908268d9d6Ck3XUTOR",
+    "202609220715476516922598268d9d656JBNwm5",
+    "202609220715552414169938268d9d6pSweWCUX",
+    "202609220716033170587718268d9d6POx5P8qY",
+    "202609220716214503697328268d9d63zIhIUEX",
+    "20260922071634377130668268d9d6NswnWBTt",
+    "202609220716389723825368268d9d6VoL9lWmL",
+    "202609220716473584305928268d9d6XxNZfU5y",
+    "202609220716535980655498268d9d65kPz7Qfq",
+    "202609220717003082520718268d9d64NfvIlNc",
+    "202609220717042257946688268d9d64kG3Swkr",
+    "202609220717075258720598268d9d6NuX6vp8H",
+    "202609220717214498888248268d9d6uT0EVjWL",
+    "20260922071728109645068268d9d6JWIx6M7Y",
+    "202609220717339897260208268d9d6rKbPdiS4",
+    "202609220717486606576898268d9d6GEoIdZAt",
+    "202609220718002564070808268d9d6USPA00Dn",
+    "20260922071806934110918268d9d6NLXaYp8E",
+    "20260922071814773238538268d9d64nrBZo5s",
+    "202609220718268191225218268d9d6zMZgpY2x",
+    "202609220718413456470538268d9d6gS6qZ5c5",
+    "202609220718515445041648268d9d6Tnvko9ON",
+    "202609220718581248105448268d9d6tSqTPsOb",
+    "202609220719086587951378268d9d6fztJA9f6",
+    "202609220719162428160088268d9d6VJE8y7eh",
+    "202609220719261738545748268d9d6Tz8vwY2c",
+    "202609220719308825910068268d9d6WpJIbEZP",
+    "202609220719375972054638268d9d6jsaeHXv3",
+    "202609220719489440127598268d9d6Y7huZNoc",
+    "202609220719575473810858268d9d6wSLJqDvS",
+    "20260922072006748145568268d9d6oc5dsJ0G",
+    "202609220720168240050548268d9d6pu61RLpg",
+    "202609220720279173931428268d9d6qkz0EuZR",
+    "202609220720321819852658268d9d6RblMOSzU"
+  ],
+  "entries": [
+    {
+      "id": "ed2c3e927c",
+      "wish": "ポケモン",
+      "name": "伝説のポケモンと出会う レジェンドリサーチ in日本橋＆八重洲",
+      "dates": [
+        "2026-09-22",
+        "2026-09-23",
+        "2026-09-24",
+        "2026-09-25",
+        "2026-11-21"
+      ],
+      "date_note": "会期 2026/9/9〜11/29 の期間内。対象期間中はいつでも参加可能",
+      "venue": "日本橋・八重洲エリア",
+      "region": "東京都",
+      "source_url": "https://mitsui-shopping-park.com/urban/legend-research/",
+      "found_via": "検索『ポケモン イベント 東京 2026年 秋』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://mitsui-shopping-park.com/urban/legend-research/",
+        "confident": "確認できた",
+        "eligibility": "不明（年齢制限の記載なし。謎解きにはインターネット接続可能なスマホ等の持参が必要）",
+        "evidence_quote": "Event period 2026. 9.9 (Wed)  11.29 (Sun) Location Nihonbashi /Yaesu",
+        "evidence_url": "https://mitsui-shopping-park.com/urban/legend-research/",
+        "held_on": [
+          "2026-09-09〜2026-11-29"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "謎解きキット引換券 3,300円（税込）。街の像・装飾は無料で観覧可",
+        "region": "東京都中央区",
+        "registration": "Mitsui Shopping Park Ticket / チケットぴあで販売中（当日まで購入可、ただし前日までに売切れる場合あり、当日現地支払い不可）",
+        "venue": "日本橋・八重洲エリア（受付：日本橋三井タワー1F／グッズ：東京ミッドタウン八重洲5F）"
+      }
+    },
+    {
+      "id": "1adb75b1ac",
+      "wish": "ハッカソン",
+      "name": "都知事杯オープンデータ・ハッカソン 2026 Final Stage",
+      "dates": [
+        "2026-10-17"
+      ],
+      "date_note": "",
+      "venue": null,
+      "region": "東京都",
+      "source_url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "found_via": "検索『ハッカソン 東京 2026年10月 11月』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://odh-tokyo2026-final.peatix.com/",
+        "confident": "確認できた",
+        "eligibility": "不明（視聴は誰でも可、出場は一次審査を通過した24件のチームに限定）",
+        "evidence_quote": "都知事杯オープンデータ・ハッカソン2026「Final Stage」を10月17日（土曜日）に開催します。 ... 令和8年10月17日（土曜日）13時00分から18時00分まで（予定） ... 当日の様子はオンラインで配信し、最優秀賞である「都知事杯」など8つの賞を決定します。 ... 当日の様子はオンラインでご覧いただけます。 ... 視聴及び投票を行うためには、事前に申込みが必要です。 Peatix（外部サイトへリンク）からご登録をお願いします。",
+        "evidence_url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+        "held_on": [
+          "2026-10-17"
+        ],
+        "onsite_tokyo": "いいえ",
+        "price": "不明",
+        "region": "東京都（主催：東京都デジタルサービス局）",
+        "registration": "Peatixで事前申込受付中（視聴・投票用）",
+        "venue": "不明（オンライン配信。出場チームのプレゼン会場は本文に明記なし）"
+      }
+    },
+    {
+      "id": "b2195b9c6d",
+      "wish": "ハッカソン",
+      "name": "Workato Agentic AI ハッカソン 2026",
+      "dates": [
+        "2026-11-18",
+        "2026-11-19"
+      ],
+      "date_note": "",
+      "venue": "東京マリオットホテル",
+      "region": "東京都",
+      "source_url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+      "found_via": "検索『ハッカソン 東京 2026年10月 11月』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+        "confident": "確認できた",
+        "eligibility": "日本の法人企業に勤務する18歳以上の方。所属組織から必要な承諾を得ていること。2〜3名のチーム制（1名からの申込可、JWUGを通じてチームメンバーを募集可）。",
+        "evidence_quote": "日時：2026年11月18日（水）16:30 〜 18:30　会場：東京マリオットホテル（品川）「World of Workato Tokyo 2026」会場内 ／ 2026年10月16日 参加申し込み締め切り（含む、作品構想シート提出）必須 ／ 参加いただける方 ✓日本の法人企業に勤務する18歳以上の方",
+        "evidence_url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+        "held_on": [
+          "2026-11-18",
+          "2026-11-19"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "参加費無料",
+        "region": "東京都（品川）",
+        "registration": "参加申し込み締め切り：2026年10月16日（作品構想シート提出含む）。ファイナリスト発表は2026年10月28日。",
+        "venue": "東京マリオットホテル（品川）「World of Workato Tokyo 2026」会場内"
+      }
+    },
+    {
+      "id": "9c279810fe",
+      "wish": "ハッカソン",
+      "name": "SPAJAM 2026 第5回 Google Play 東京予選",
+      "dates": [
+        "2026-10-24",
+        "2026-10-25"
+      ],
+      "date_note": "",
+      "venue": "Google日本本社（渋谷ストリーム）",
+      "region": "東京都",
+      "source_url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+      "found_via": "検索『SPAJAM 2026 東京予選 日程』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+        "confident": "確認できた",
+        "eligibility": "最大5名のチーム参加。社会人・フリーランス・中学生・高校生・高専生・大学生・大学院生・専門学校生・その他。同一チームで本選参加経験者は3名まで",
+        "evidence_quote": "第5回 Google Play 東京予選 開催日程：2026年10月24日(土)〜25日(日) 会場：Google日本本社（渋谷ストリーム） 応募締切：2026年10月5日(月)",
+        "evidence_url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+        "held_on": [
+          "2026-10-24",
+          "2026-10-25"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "不明",
+        "region": "東京都渋谷区",
+        "registration": "応募受付中（締切 2026年10月5日）／定員超過時は抽選",
+        "venue": "Google日本本社（渋谷ストリーム）"
+      }
+    },
+    {
+      "id": "7eb53e765e",
+      "wish": "音楽",
+      "name": "MUTEK.JP 2026 11th Edition",
+      "dates": [
+        "2026-11-20",
+        "2026-11-21"
+      ],
+      "date_note": "会期は11/20〜23。4日間のうち対象期間内は11/20・11/21",
+      "venue": "MoN Takanawa: The Museum of Narratives（TAKANAWA GATEWAY CITY内）",
+      "region": "東京都",
+      "source_url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+      "found_via": "検索『MUTEK.JP 2026 高輪ゲートウェイ』",
+      "note": "電子音楽・テクノを含むフェスティバル。Max Cooper など登場",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://mutekjp.zaiko.io/",
+        "confident": "確認できた",
+        "eligibility": "入場は18歳以上に限る（U25チケットを含む）。入場時に写真付き身分証明書による本人確認あり",
+        "evidence_quote": "名 称：MUTEK.JP 2026 11th Edition 日 程：2026年11月20日（金）〜23日（月・祝）［4日間］ 会 場：MoN Takanawa: The Museum of Narratives（TAKANAWA GATEWAY CITY 内）",
+        "evidence_url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+        "held_on": [
+          "2026-11-20",
+          "2026-11-21",
+          "2026-11-22",
+          "2026-11-23"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "Passport Phase 1 ¥25,000／Phase 2 ¥30,000／Premium Seat ¥40,000／1Day Phase 1 8,000円／Phase 2 10,000円／U25 5,000円／当日券 13,000円 ほか",
+        "region": "東京都港区",
+        "registration": "申込受付中（Passport Phase 1：9月9日〜10月20日 ¥25,000／1Day Ticket Phase 1：9月9日〜10月20日 8,000円 など販売中）",
+        "venue": "MoN Takanawa: The Museum of Narratives（TAKANAWA GATEWAY CITY 内）"
+      }
+    },
+    {
+      "id": "5a6be9047f",
+      "wish": "ポケモン",
+      "name": "ポケモンカードゲーム 30th CELEBRATION EVENT (東京)",
+      "dates": [
+        "2026-10-25",
+        "2026-10-31",
+        "2026-11-01"
+      ],
+      "date_note": "東京開催日 10/25、および 10/31・11/1",
+      "venue": null,
+      "region": "東京都",
+      "source_url": "https://www.30th.pokemon-card.com/event/30thevent/",
+      "found_via": "検索『ポケモンセンター イベント 東京 2026年10月11月』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://www.30th.pokemon-card.com/event/30thevent/entry",
+        "confident": "確認できた",
+        "eligibility": "不明",
+        "evidence_quote": "千葉会場 開催日時 2026 年 10 月 25 日(日) 9:00~19:30 開催場所 幕張メッセ 国際展示場 展示ホール4〜7 / 大阪会場 開催日時 2026 年 10 月 31 日(土)・11 月 1 日(日) 9:00~19:30 開催場所 インテックス大阪 6号館Bゾーン",
+        "evidence_url": "https://www.30th.pokemon-card.com/event/30thevent/",
+        "held_on": [
+          "2026-10-25",
+          "2026-10-31",
+          "2026-11-01"
+        ],
+        "onsite_tokyo": "いいえ",
+        "price": "不明",
+        "region": "千葉県・大阪府（東京都内会場なし）",
+        "registration": "不明（応募受付の記載あり／詳細未確認）",
+        "venue": "幕張メッセ 国際展示場 展示ホール4〜7（千葉県）／インテックス大阪 6号館Bゾーン（大阪府）"
+      }
+    },
+    {
+      "id": "b633e22805",
+      "wish": "DTM・作曲",
+      "name": "はじめてのDTM！作曲体験（東京スクールオブミュージック専門学校渋谷）",
+      "dates": [
+        "2026-10-04"
+      ],
+      "date_note": "",
+      "venue": "東京スクールオブミュージック専門学校渋谷",
+      "region": "東京都",
+      "source_url": "https://www.best-shingaku.net/smt/campus874.html?code=4373690",
+      "found_via": "検索『DTM ワークショップ 初心者 東京』",
+      "note": "オープンキャンパス内の体験レッスン",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://form.shibuya.ac.jp/event/form.html?event_code=50678&form_code=185&_event_date=2026/10/04",
+        "confident": "確認できた",
+        "eligibility": "不明（オープンキャンパスとして案内、学校説明会と体験レッスンを含む。年齢等の明記なし）",
+        "evidence_quote": "はじめてのDTM！作曲体験 パソコンで曲を作ってみたいけど、どうやってやるんだろう...そんなあなたに、曲づくりのノウハウをゼロから丁寧に教えます！ 開催日程 09/22(火) 12:00~ 10/04(日) 12:00~ 会場：姉妹校「東京ダンス俳優＆舞台芸術専門学校」",
+        "evidence_url": "https://www.shibuya.ac.jp/opencampus/2146/",
+        "held_on": [
+          "2026-09-22",
+          "2026-10-04"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "不明",
+        "region": "東京都渋谷区",
+        "registration": "申込受付中（Webフォームおよび LINE で受付）",
+        "venue": "姉妹校「東京ダンス俳優＆舞台芸術専門学校」（DA TOKYO、東京都渋谷区渋谷2-19-21 のTSM渋谷姉妹校）"
+      }
+    },
+    {
+      "id": "36f0cf4f55",
+      "wish": "音楽",
+      "name": "SOUNDGATE @ ZEROTOKYO",
+      "dates": [
+        "2026-10-10"
+      ],
+      "date_note": "",
+      "venue": "ZEROTOKYO（新宿歌舞伎町）",
+      "region": "東京都",
+      "source_url": "https://x.com/ZEROTOKYO_JAPAN",
+      "found_via": "検索『ZEROTOKYO 2026年10月』",
+      "note": "石野卓球、砂原良徳、SEKITOVA、Seimei、Carpainterらによるハードテクノ・テクノ大規模パーティー",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://zerotokyo.zaiko.io/e/soundgate-1010",
+        "confident": "確認できた",
+        "eligibility": "20歳以上（特定遊興飲食店許可店のため全員IDチェック）",
+        "evidence_quote": "2026.10.10 SAT 日本が世界に誇るトップアーティストが集結！ 石野卓球、砂原良徳、SEKITOVA、Seimei、Carpainterらが一堂に会する『SOUNDGATE』開催！ OPEN 11PM PRICE DOOR：¥4,000- FASTPASS TICKET：¥3,500-（優先入場・入場料金含む）",
+        "evidence_url": "https://zerotokyo.jp/event/soundgate-1010/",
+        "held_on": [
+          "2026-10-10"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "DOOR ¥4,000／FASTPASS TICKET ¥3,500（優先入場・入場料金含む）",
+        "region": "東京都新宿区",
+        "registration": "前売りチケット販売中（Resident Advisor 等）／当日ドア入場可",
+        "venue": "ZEROTOKYO（東急歌舞伎町タワー B1-B4、東京都新宿区歌舞伎町1-29-1）"
+      }
+    },
+    {
+      "id": "93fb19761f",
+      "wish": "音楽",
+      "name": "agefarre 2026 - ageHa×velfarre 15th Anniversary CLUB EDITION",
+      "dates": [
+        "2026-10-11"
+      ],
+      "date_note": "",
+      "venue": "ZEROTOKYO（新宿歌舞伎町）",
+      "region": "東京都",
+      "source_url": "https://ja.ra.co/clubs/210778",
+      "found_via": "RA ページ『ZEROTOKYO』",
+      "note": "Remo-con, Ferry Corsten, Yamariki, BEPPU, Ko Kimura, YOSHIMASA ら。四つ打ちダンスミュージック中心",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://zerotokyo.jp/event/agefarre-2026-1011/",
+        "confident": "確認できた",
+        "eligibility": "20歳未満入場不可（顔写真付きIDでのIDチェックあり）。U-25 TICKETは25歳以下限定。",
+        "evidence_quote": "2026.10.11 SUN　agefarre 15周年は原点であるクラブに回帰!! BACK TO CLUB PARTY!! ／ ■ZEROTOKYO(Zepp Shinjuku) ／ OPEN PART.1 3PM / PART 2. 11PM ／ 20歳未満の方のご入場は一切お断りさせて頂きます。 ／ U-25 TICKET / 25歳以下限定：¥5,500　GA / 一般前売り TIER 1：¥6,500　DELUXE TICKET TIER 1：¥11,500 ※SOLD OUT",
+        "evidence_url": "https://zerotokyo.jp/event/agefarre-2026-1011/",
+        "held_on": [
+          "2026-10-11"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "1 DAY通しチケット U-25 ¥5,500 / GA前売 TIER 1 ¥6,500 / DELUXE TIER 1 ¥11,500(SOLD OUT)。PART.2 CLUB TIME単券 U-25 ¥3,500 / GA前売 ¥4,500 / DELUXE ¥8,500。当日一般はTBA。",
+        "region": "東京都新宿区",
+        "registration": "前売りチケット販売中（DELUXE TICKET TIER 1はSOLD OUT、当日一般はTBA）",
+        "venue": "ZEROTOKYO (Zepp Shinjuku) ／ 東急歌舞伎町タワーフロントエリア（東京都新宿区歌舞伎町）"
+      }
+    },
+    {
+      "id": "ec4468a01b",
+      "wish": "音楽",
+      "name": "-ALL NIGHT LONG- (TECHNO) @ WOMB",
+      "dates": [
+        "2026-10-02"
+      ],
+      "date_note": "",
+      "venue": "WOMB（渋谷）",
+      "region": "東京都",
+      "source_url": "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+      "found_via": "検索『WOMB 2026年10月』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://iflyer.tv/events/362594",
+        "confident": "確認できた",
+        "eligibility": "20歳以上（会場の深夜イベント方針。23歳以下は当日入場料¥1500オフ）",
+        "evidence_quote": "2F OCCA B2B DJ MARIA. -ALL NIGHT LONG- 4F HI-C, MUSTACHE X, LEVOLANT 1F VAKT FLOOR -VAKT 1ST ANNIVERSARY- MIDNIGHT TRAFFIC - 4H SET -, TRY3YE ... 2026年10月2日金曜日 ... ⚫前売券販売はイベント当日の8PMまで ⚫23歳以下当日入場料¥1500オフ",
+        "evidence_url": "https://iflyer.tv/events/362594",
+        "held_on": [
+          "2026-10-02"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "23歳以下当日入場料¥1500オフ（前売・当日料金の総額は本文に明記なし）",
+        "region": "東京都渋谷区",
+        "registration": "前売券販売中（当日20時まで）",
+        "venue": "WOMB（東京都渋谷区円山町2-16）"
+      }
+    },
+    {
+      "id": "45b9a21cca",
+      "wish": "音楽",
+      "name": "J × BEYOND @ WOMB",
+      "dates": [
+        "2026-10-03"
+      ],
+      "date_note": "",
+      "venue": "WOMB（渋谷）",
+      "region": "東京都",
+      "source_url": "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+      "found_via": "検索『WOMB 2026年10月』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://womb.zaiko.io/e/womb100326",
+        "confident": "確認できた",
+        "eligibility": "深夜クラブイベントのため 20歳以上・写真付き身分証明書必要（WOMB 会場基準）。23歳以下は割引適用",
+        "evidence_quote": "10/03 SAT 23:00-4:30 J × BEYOND TECHNO / HOUSE DOOR: ¥3500 *BEFORE 0:00 & UNDER 23: ¥2000 ADVANCE TICKETS: ¥3000",
+        "evidence_url": "https://www.womb.co.jp/ja/events/100326",
+        "held_on": [
+          "2026-10-03"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "前売 ¥3000 / 当日 ¥3500（0時前・23歳以下は ¥2000）",
+        "region": "東京都渋谷区",
+        "registration": "前売券販売中（イベント当日の8PMまで）",
+        "venue": "WOMB（東京都渋谷区円山町2-16）"
+      }
+    },
+    {
+      "id": "9bcb281d3b",
+      "wish": "DTM・作曲",
+      "name": "JBG音楽院 2026年10月期 無料体験レッスン＆学校説明会",
+      "dates": [],
+      "date_note": "体験日は高頻度に複数日で実施。個別日程はサイトで確認",
+      "venue": "JBG音楽院（東京）",
+      "region": "東京都",
+      "source_url": "https://jbg-ongakuin.com/",
+      "found_via": "検索『DTM・作曲 ワークショップ 東京』",
+      "note": "",
+      "checked": true,
+      "check_result": {
+        "apply_url": "https://jbg-ongakuin.com/news/orientation2610/",
+        "confident": "一部確認",
+        "eligibility": "JBG音楽院・作曲・DTMに興味のある方、入学を検討中の方（社会人向け・年齢制限の記載なし）",
+        "evidence_quote": "募集校 東京校（池尻大橋）／大阪校（梅田）／オンライン校　参加費 無料　形式 校舎での対面 または オンライン　対象 JBG音楽院・作曲・DTMにご興味のある方、入学を検討中の方",
+        "evidence_url": "https://jbg-ongakuin.com/news/orientation2610/",
+        "held_on": [
+          "随時開催（申込フォームで第一〜第三希望日を選択）"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "無料",
+        "region": "東京都世田谷区",
+        "registration": "申込受付中（無料の学校説明会＆体験レッスン、定員制・随時開催）",
+        "venue": "JBG音楽院 東京校（東京都世田谷区池尻3丁目19−1 I.Oビル6階、池尻大橋）"
+      }
+    }
+  ],
+  "rejected": [],
+  "served_slices": [
+    {
+      "url": "https://www.shimamura.co.jp/update/shops/ohmiya/dtm-recording/86537/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 14630
+    },
+    {
+      "url": "https://mitsui-shopping-park.com/urban/legend-research/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 16305
+    },
+    {
+      "url": "https://mitsui-shopping-park.com/urban/legend-research/",
+      "cursor": 5000,
+      "served": 5000,
+      "total": 16305
+    },
+    {
+      "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "cursor": 0,
+      "served": 5000,
+      "total": 50000
+    },
+    {
+      "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "cursor": 5000,
+      "served": 5000,
+      "total": 50000
+    },
+    {
+      "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "cursor": 20000,
+      "served": 5000,
+      "total": 50000
+    },
+    {
+      "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "cursor": 35000,
+      "served": 5000,
+      "total": 50000
+    },
+    {
+      "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "cursor": 40000,
+      "served": 5000,
+      "total": 50000
+    },
+    {
+      "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+      "cursor": 45000,
+      "served": 5000,
+      "total": 50000
+    },
+    {
+      "url": "https://odh-tokyo2026-final.peatix.com/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 16331
+    },
+    {
+      "url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+      "cursor": 0,
+      "served": 5000,
+      "total": 7982
+    },
+    {
+      "url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+      "cursor": 5000,
+      "served": 2982,
+      "total": 7982
+    },
+    {
+      "url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+      "cursor": 0,
+      "served": 1767,
+      "total": 1767
+    },
+    {
+      "url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+      "cursor": 0,
+      "served": 5000,
+      "total": 12096
+    },
+    {
+      "url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+      "cursor": 5000,
+      "served": 5000,
+      "total": 12096
+    },
+    {
+      "url": "https://tokyo.mutek.org/jp/tickets-2026",
+      "cursor": 0,
+      "served": 2916,
+      "total": 2916
+    },
+    {
+      "url": "https://www.30th.pokemon-card.com/event/30thevent/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 20147
+    },
+    {
+      "url": "https://www.best-shingaku.net/smt/campus874.html?code=4373690",
+      "cursor": 0,
+      "served": 290,
+      "total": 290
+    },
+    {
+      "url": "https://www.shibuya.ac.jp/opencampus/2146/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 15768
+    },
+    {
+      "url": "https://www.shibuya.ac.jp/opencampus/2146/",
+      "cursor": 5000,
+      "served": 5000,
+      "total": 15768
+    },
+    {
+      "url": "https://zerotokyo.jp/event/soundgate-1010/",
+      "cursor": 0,
+      "served": 2920,
+      "total": 2920
+    },
+    {
+      "url": "https://zerotokyo.jp/system",
+      "cursor": 0,
+      "served": 2164,
+      "total": 2164
+    },
+    {
+      "url": "https://zerotokyo.jp/event/agefarre-2026-1011/",
+      "cursor": 0,
+      "served": 4588,
+      "total": 4588
+    },
+    {
+      "url": "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+      "cursor": 0,
+      "served": 5000,
+      "total": 14776
+    },
+    {
+      "url": "https://iflyer.tv/womb/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 12668
+    },
+    {
+      "url": "https://iflyer.tv/events/362594",
+      "cursor": 0,
+      "served": 735,
+      "total": 735
+    },
+    {
+      "url": "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+      "cursor": 0,
+      "served": 5000,
+      "total": 14776
+    },
+    {
+      "url": "https://housemusiclovers.net/events/j-beyond-womb-2026-10-03-67599/",
+      "cursor": 0,
+      "served": 939,
+      "total": 939
+    },
+    {
+      "url": "https://www.womb.co.jp/ja/events/100326",
+      "cursor": 0,
+      "served": 5000,
+      "total": 6598
+    },
+    {
+      "url": "https://jbg-ongakuin.com/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 7889
+    },
+    {
+      "url": "https://jbg-ongakuin.com/news/orientation2610/",
+      "cursor": 0,
+      "served": 5000,
+      "total": 14007
+    },
+    {
+      "url": "https://jbg-ongakuin.com/news/orientation2610/",
+      "cursor": 5000,
+      "served": 5000,
+      "total": 14007
+    }
+  ],
+  "fetched_urls": [
+    "https://housemusiclovers.net/events/j-beyond-womb-2026-10-03-67599/",
+    "https://iflyer.tv/events/362594",
+    "https://iflyer.tv/womb/",
+    "https://jbg-ongakuin.com/",
+    "https://jbg-ongakuin.com/news/orientation2610/",
+    "https://mitsui-shopping-park.com/urban/legend-research/",
+    "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+    "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+    "https://odh-tokyo2026-final.peatix.com/",
+    "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+    "https://tokyo.mutek.org/jp/tickets-2026",
+    "https://www.30th.pokemon-card.com/event/30thevent/",
+    "https://www.best-shingaku.net/smt/campus874.html?code=4373690",
+    "https://www.craftstadium.com/hackathon/spajam-2026-5",
+    "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+    "https://www.shibuya.ac.jp/opencampus/2146/",
+    "https://www.shimamura.co.jp/update/shops/ohmiya/dtm-recording/86537/",
+    "https://www.womb.co.jp/ja/events/100326",
+    "https://zerotokyo.jp/event/agefarre-2026-1011/",
+    "https://zerotokyo.jp/event/soundgate-1010/",
+    "https://zerotokyo.jp/system"
+  ],
+  "transcript": [
+    {
+      "phase": "discover",
+      "tool": "ledger_status",
+      "args": {},
+      "chars": 175
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "東京 テクノ ハウス クラブイベント 2026年10月"
+      },
+      "chars": 1928
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "DTM 初心者 ワークショップ 東京 2026"
+      },
+      "chars": 2084
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ハッカソン 東京 2026年10月 11月"
+      },
+      "chars": 1972
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ポケモン イベント 東京 2026年 秋"
+      },
+      "chars": 1768
+    },
+    {
+      "phase": "discover",
+      "tool": "add_candidates",
+      "args": {
+        "candidates": [
+          {
+            "date_note": "会期 2026/9/9〜11/29 の期間内。対象期間中はいつでも参加可能",
+            "dates": [
+              "2026-09-22",
+              "2026-09-23",
+              "2026-09-24",
+              "2026-09-25",
+              "2026-11-21"
+            ],
+            "found_via": "検索『ポケモン イベント 東京 2026年 秋』",
+            "name": "伝説のポケモンと出会う レジェンドリサーチ in日本橋＆八重洲",
+            "region": "東京都",
+            "source_url": "https://mitsui-shopping-park.com/urban/legend-research/",
+            "venue": "日本橋・八重洲エリア",
+            "wish": "ポケモン"
+          },
+          {
+            "dates": [
+              "2026-10-17"
+            ],
+            "found_via": "検索『ハッカソン 東京 2026年10月 11月』",
+            "name": "都知事杯オープンデータ・ハッカソン 2026 Final Stage",
+            "region": "東京都",
+            "source_url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+            "wish": "ハッカソン"
+          },
+          {
+            "dates": [
+              "2026-11-18",
+              "2026-11-19"
+            ],
+            "found_via": "検索『ハッカソン 東京 2026年10月 11月』",
+            "name": "Workato Agentic AI ハッカソン 2026",
+            "region": "東京都",
+            "source_url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+            "venue": "東京マリオットホテル",
+            "wish": "ハッカソン"
+          }
+        ]
+      },
+      "chars": 604
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "MUTEK.JP 2026 高輪ゲートウェイ 日程"
+      },
+      "chars": 2437
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "DTM ワークショップ 初心者 東京 2026年10月"
+      },
+      "chars": 1931
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ポケモンセンター イベント 東京 2026年10月 11月"
+      },
+      "chars": 2244
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "SPAJAM 2026 東京予選 日程"
+      },
+      "chars": 1872
+    },
+    {
+      "phase": "discover",
+      "tool": "add_candidates",
+      "args": {
+        "candidates": [
+          {
+            "dates": [
+              "2026-10-24",
+              "2026-10-25"
+            ],
+            "found_via": "検索『SPAJAM 2026 東京予選 日程』",
+            "name": "SPAJAM 2026 第5回 Google Play 東京予選",
+            "region": "東京都",
+            "source_url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+            "venue": "Google日本本社（渋谷ストリーム）",
+            "wish": "ハッカソン"
+          },
+          {
+            "date_note": "会期は11/20〜23。4日間のうち対象期間内は11/20・11/21",
+            "dates": [
+              "2026-11-20",
+              "2026-11-21"
+            ],
+            "found_via": "検索『MUTEK.JP 2026 高輪ゲートウェイ』",
+            "name": "MUTEK.JP 2026 11th Edition",
+            "note": "電子音楽・テクノを含むフェスティバル。Max Cooper など登場",
+            "region": "東京都",
+            "source_url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+            "venue": "MoN Takanawa: The Museum of Narratives（TAKANAWA GATEWAY CITY内）",
+            "wish": "音楽"
+          },
+          {
+            "date_note": "東京開催日 10/25、および 10/31・11/1",
+            "dates": [
+              "2026-10-25",
+              "2026-10-31",
+              "2026-11-01"
+            ],
+            "found_via": "検索『ポケモンセンター イベント 東京 2026年10月11月』",
+            "name": "ポケモンカードゲーム 30th CELEBRATION EVENT (東京)",
+            "region": "東京都",
+            "source_url": "https://www.30th.pokemon-card.com/event/30thevent/",
+            "wish": "ポケモン"
+          },
+          {
+            "dates": [
+              "2026-10-04"
+            ],
+            "found_via": "検索『DTM ワークショップ 初心者 東京』",
+            "name": "はじめてのDTM！作曲体験（東京スクールオブミュージック専門学校渋谷）",
+            "note": "オープンキャンパス内の体験レッスン",
+            "region": "東京都",
+            "source_url": "https://www.best-shingaku.net/smt/campus874.html?code=4373690",
+            "venue": "東京スクールオブミュージック専門学校渋谷",
+            "wish": "DTM・作曲"
+          }
+        ]
+      },
+      "chars": 1067
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "DTM 体験 講座 東京 2026年11月 初心者"
+      },
+      "chars": 1864
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "東京 テクノ ハウス クラブ 2026年10月 パーティー"
+      },
+      "chars": 1892
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ハッカソン 東京 2026年9月 開催"
+      },
+      "chars": 1949
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "WOMB 東京 テクノ 2026年10月"
+      },
+      "chars": 2035
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ZEROTOKYO イベント 2026年10月 11月"
+      },
+      "chars": 2058
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "VENT 東京 techno house 2026 October November"
+      },
+      "chars": 1966
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "DTM 体験レッスン イベント 東京 2026年10月 11月"
+      },
+      "chars": 1946
+    },
+    {
+      "phase": "discover",
+      "tool": "add_candidates",
+      "args": {
+        "candidates": [
+          {
+            "dates": [
+              "2026-10-10"
+            ],
+            "found_via": "検索『ZEROTOKYO 2026年10月』",
+            "name": "SOUNDGATE @ ZEROTOKYO",
+            "note": "石野卓球、砂原良徳、SEKITOVA、Seimei、Carpainterらによるハードテクノ・テクノ大規模パーティー",
+            "region": "東京都",
+            "source_url": "https://x.com/ZEROTOKYO_JAPAN",
+            "venue": "ZEROTOKYO（新宿歌舞伎町）",
+            "wish": "音楽"
+          },
+          {
+            "dates": [
+              "2026-10-11"
+            ],
+            "found_via": "RA ページ『ZEROTOKYO』",
+            "name": "agefarre 2026 - ageHa×velfarre 15th Anniversary CLUB EDITION",
+            "note": "Remo-con, Ferry Corsten, Yamariki, BEPPU, Ko Kimura, YOSHIMASA ら。四つ打ちダンスミュージック中心",
+            "region": "東京都",
+            "source_url": "https://ja.ra.co/clubs/210778",
+            "venue": "ZEROTOKYO（新宿歌舞伎町）",
+            "wish": "音楽"
+          },
+          {
+            "dates": [
+              "2026-10-02"
+            ],
+            "found_via": "検索『WOMB 2026年10月』",
+            "name": "-ALL NIGHT LONG- (TECHNO) @ WOMB",
+            "region": "東京都",
+            "source_url": "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+            "venue": "WOMB（渋谷）",
+            "wish": "音楽"
+          },
+          {
+            "dates": [
+              "2026-10-03"
+            ],
+            "found_via": "検索『WOMB 2026年10月』",
+            "name": "J × BEYOND @ WOMB",
+            "region": "東京都",
+            "source_url": "https://nightlifetokyo.com/ja/tokyo/venues/womb",
+            "venue": "WOMB（渋谷）",
+            "wish": "音楽"
+          },
+          {
+            "date_note": "体験日は高頻度に複数日で実施。個別日程はサイトで確認",
+            "found_via": "検索『DTM・作曲 ワークショップ 東京』",
+            "name": "JBG音楽院 2026年10月期 無料体験レッスン＆学校説明会",
+            "region": "東京都",
+            "source_url": "https://jbg-ongakuin.com/",
+            "venue": "JBG音楽院（東京）",
+            "wish": "DTM・作曲"
+          }
+        ]
+      },
+      "chars": 1469
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "DTM 作曲 初心者 セミナー 東京 2026年秋"
+      },
+      "chars": 2063
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ポケモン カフェ ラボ イベント 東京 2026年10月 11月"
+      },
+      "chars": 1724
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ハッカソン 2026年11月 東京 開催 学生 社会人"
+      },
+      "chars": 1909
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ウッド新宿御苑 DTM 短期講座 2026年10月 11月"
+      },
+      "chars": 1775
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ポケモンGO 東京 イベント 2026年10月 11月"
+      },
+      "chars": 2638
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "Pokémon UNITE 大会 東京 2026 秋"
+      },
+      "chars": 2070
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "島村楽器 DTMビギナーズセミナー 2026年10月 東京"
+      },
+      "chars": 2038
+    },
+    {
+      "phase": "discover",
+      "tool": "ledger_status",
+      "args": {},
+      "chars": 1217
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ポケモン ラボ ワールドチャンピオンシップス 東京 2026年10月 11月"
+      },
+      "chars": 1743
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "contact tokyo クラブ 2026年10月 techno"
+      },
+      "chars": 1642
+    },
+    {
+      "phase": "discover",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.shimamura.co.jp/update/shops/ohmiya/dtm-recording/86537/"
+      },
+      "chars": 5270
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "島村楽器 DTMビギナーズ 東京 2026年10月 11月"
+      },
+      "chars": 1897
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ポケモンカードジム 東京 2026年10月 開催"
+      },
+      "chars": 1830
+    },
+    {
+      "phase": "discover",
+      "tool": "search_web",
+      "args": {
+        "query": "ピカチュウ大量発生チュウ 2026 東京"
+      },
+      "chars": 2265
+    },
+    {
+      "phase": "verify",
+      "entry": "ed2c3e927c",
+      "tool": "read_page",
+      "args": {
+        "url": "https://mitsui-shopping-park.com/urban/legend-research/"
+      },
+      "chars": 5257
+    },
+    {
+      "phase": "verify",
+      "entry": "ed2c3e927c",
+      "tool": "read_page",
+      "args": {
+        "cursor": 5000,
+        "url": "https://mitsui-shopping-park.com/urban/legend-research/"
+      },
+      "chars": 5259
+    },
+    {
+      "phase": "verify",
+      "entry": "ed2c3e927c",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://mitsui-shopping-park.com/urban/legend-research/",
+        "confident": "確認できた",
+        "eligibility": "不明（年齢制限の記載なし。謎解きにはインターネット接続可能なスマホ等の持参が必要）",
+        "evidence_quote": "Event period 2026. 9.9 (Wed)  11.29 (Sun) Location Nihonbashi /Yaesu",
+        "evidence_url": "https://mitsui-shopping-park.com/urban/legend-research/",
+        "held_on": [
+          "2026-09-09〜2026-11-29"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "謎解きキット引換券 3,300円（税込）。街の像・装飾は無料で観覧可",
+        "region": "東京都中央区",
+        "registration": "Mitsui Shopping Park Ticket / チケットぴあで販売中（当日まで購入可、ただし前日までに売切れる場合あり、当日現地支払い不可）",
+        "venue": "日本橋・八重洲エリア（受付：日本橋三井タワー1F／グッズ：東京ミッドタウン八重洲5F）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813"
+      },
+      "chars": 5268
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "cursor": 5000,
+        "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813"
+      },
+      "chars": 5270
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "cursor": 20000,
+        "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813"
+      },
+      "chars": 5270
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "cursor": 35000,
+        "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813"
+      },
+      "chars": 5270
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "cursor": 40000,
+        "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813"
+      },
+      "chars": 5270
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "cursor": 45000,
+        "url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813"
+      },
+      "chars": 5231
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "read_page",
+      "args": {
+        "url": "https://odh-tokyo2026-final.peatix.com/"
+      },
+      "chars": 5241
+    },
+    {
+      "phase": "verify",
+      "entry": "1adb75b1ac",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://odh-tokyo2026-final.peatix.com/",
+        "confident": "確認できた",
+        "eligibility": "不明（視聴は誰でも可、出場は一次審査を通過した24件のチームに限定）",
+        "evidence_quote": "都知事杯オープンデータ・ハッカソン2026「Final Stage」を10月17日（土曜日）に開催します。 ... 令和8年10月17日（土曜日）13時00分から18時00分まで（予定） ... 当日の様子はオンラインで配信し、最優秀賞である「都知事杯」など8つの賞を決定します。 ... 当日の様子はオンラインでご覧いただけます。 ... 視聴及び投票を行うためには、事前に申込みが必要です。 Peatix（外部サイトへリンク）からご登録をお願いします。",
+        "evidence_url": "https://www.metro.tokyo.lg.jp/information/press/2026/09/2026091813",
+        "held_on": [
+          "2026-10-17"
+        ],
+        "onsite_tokyo": "いいえ",
+        "price": "不明",
+        "region": "東京都（主催：東京都デジタルサービス局）",
+        "registration": "Peatixで事前申込受付中（視聴・投票用）",
+        "venue": "不明（オンライン配信。出場チームのプレゼン会場は本文に明記なし）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "b2195b9c6d",
+      "tool": "read_page",
+      "args": {
+        "url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026"
+      },
+      "chars": 5266
+    },
+    {
+      "phase": "verify",
+      "entry": "b2195b9c6d",
+      "tool": "read_page",
+      "args": {
+        "cursor": 5000,
+        "url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026"
+      },
+      "chars": 3211
+    },
+    {
+      "phase": "verify",
+      "entry": "b2195b9c6d",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+        "confident": "確認できた",
+        "eligibility": "日本の法人企業に勤務する18歳以上の方。所属組織から必要な承諾を得ていること。2〜3名のチーム制（1名からの申込可、JWUGを通じてチームメンバーを募集可）。",
+        "evidence_quote": "日時：2026年11月18日（水）16:30 〜 18:30　会場：東京マリオットホテル（品川）「World of Workato Tokyo 2026」会場内 ／ 2026年10月16日 参加申し込み締め切り（含む、作品構想シート提出）必須 ／ 参加いただける方 ✓日本の法人企業に勤務する18歳以上の方",
+        "evidence_url": "https://mktg.workato.com/JPN-LE-Workato-Agentic-AI-Hackathon-2026",
+        "held_on": [
+          "2026-11-18",
+          "2026-11-19"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "参加費無料",
+        "region": "東京都（品川）",
+        "registration": "参加申し込み締め切り：2026年10月16日（作品構想シート提出含む）。ファイナリスト発表は2026年10月28日。",
+        "venue": "東京マリオットホテル（品川）「World of Workato Tokyo 2026」会場内"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "9c279810fe",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.craftstadium.com/hackathon/spajam-2026-5"
+      },
+      "chars": 1983
+    },
+    {
+      "phase": "verify",
+      "entry": "9c279810fe",
+      "tool": "search_web",
+      "args": {
+        "query": "SPAJAM 2026 第5回 Google Play 東京予選 会場"
+      },
+      "chars": 2474
+    },
+    {
+      "phase": "verify",
+      "entry": "9c279810fe",
+      "tool": "search_web",
+      "args": {
+        "query": "SPAJAM 2026 東京予選 10月24日 25日"
+      },
+      "chars": 2425
+    },
+    {
+      "phase": "verify",
+      "entry": "9c279810fe",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+        "confident": "確認できた",
+        "eligibility": "最大5名のチーム参加。社会人・フリーランス・中学生・高校生・高専生・大学生・大学院生・専門学校生・その他。同一チームで本選参加経験者は3名まで",
+        "evidence_quote": "第5回 Google Play 東京予選 開催日程：2026年10月24日(土)〜25日(日) 会場：Google日本本社（渋谷ストリーム） 応募締切：2026年10月5日(月)",
+        "evidence_url": "https://www.craftstadium.com/hackathon/spajam-2026-5",
+        "held_on": [
+          "2026-10-24",
+          "2026-10-25"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "不明",
+        "region": "東京都渋谷区",
+        "registration": "応募受付中（締切 2026年10月5日）／定員超過時は抽選",
+        "venue": "Google日本本社（渋谷ストリーム）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "7eb53e765e",
+      "tool": "read_page",
+      "args": {
+        "url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11"
+      },
+      "chars": 5258
+    },
+    {
+      "phase": "verify",
+      "entry": "7eb53e765e",
+      "tool": "read_page",
+      "args": {
+        "cursor": 5000,
+        "url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11"
+      },
+      "chars": 5260
+    },
+    {
+      "phase": "verify",
+      "entry": "7eb53e765e",
+      "tool": "read_page",
+      "args": {
+        "url": "https://tokyo.mutek.org/jp/tickets-2026"
+      },
+      "chars": 3119
+    },
+    {
+      "phase": "verify",
+      "entry": "7eb53e765e",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://mutekjp.zaiko.io/",
+        "confident": "確認できた",
+        "eligibility": "入場は18歳以上に限る（U25チケットを含む）。入場時に写真付き身分証明書による本人確認あり",
+        "evidence_quote": "名 称：MUTEK.JP 2026 11th Edition 日 程：2026年11月20日（金）〜23日（月・祝）［4日間］ 会 場：MoN Takanawa: The Museum of Narratives（TAKANAWA GATEWAY CITY 内）",
+        "evidence_url": "https://tokyo.mutek.org/jp/news/mutek-jp-2026-edition-11",
+        "held_on": [
+          "2026-11-20",
+          "2026-11-21",
+          "2026-11-22",
+          "2026-11-23"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "Passport Phase 1 ¥25,000／Phase 2 ¥30,000／Premium Seat ¥40,000／1Day Phase 1 8,000円／Phase 2 10,000円／U25 5,000円／当日券 13,000円 ほか",
+        "region": "東京都港区",
+        "registration": "申込受付中（Passport Phase 1：9月9日〜10月20日 ¥25,000／1Day Ticket Phase 1：9月9日〜10月20日 8,000円 など販売中）",
+        "venue": "MoN Takanawa: The Museum of Narratives（TAKANAWA GATEWAY CITY 内）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "5a6be9047f",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.30th.pokemon-card.com/event/30thevent/"
+      },
+      "chars": 5252
+    },
+    {
+      "phase": "verify",
+      "entry": "5a6be9047f",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://www.30th.pokemon-card.com/event/30thevent/entry",
+        "confident": "確認できた",
+        "eligibility": "不明",
+        "evidence_quote": "千葉会場 開催日時 2026 年 10 月 25 日(日) 9:00~19:30 開催場所 幕張メッセ 国際展示場 展示ホール4〜7 / 大阪会場 開催日時 2026 年 10 月 31 日(土)・11 月 1 日(日) 9:00~19:30 開催場所 インテックス大阪 6号館Bゾーン",
+        "evidence_url": "https://www.30th.pokemon-card.com/event/30thevent/",
+        "held_on": [
+          "2026-10-25",
+          "2026-10-31",
+          "2026-11-01"
+        ],
+        "onsite_tokyo": "いいえ",
+        "price": "不明",
+        "region": "千葉県・大阪府（東京都内会場なし）",
+        "registration": "不明（応募受付の記載あり／詳細未確認）",
+        "venue": "幕張メッセ 国際展示場 展示ホール4〜7（千葉県）／インテックス大阪 6号館Bゾーン（大阪府）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "b633e22805",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.best-shingaku.net/smt/campus874.html?code=4373690"
+      },
+      "chars": 514
+    },
+    {
+      "phase": "verify",
+      "entry": "b633e22805",
+      "tool": "search_web",
+      "args": {
+        "query": "東京スクールオブミュージック専門学校渋谷 はじめてのDTM 作曲体験 2026年10月4日"
+      },
+      "chars": 2246
+    },
+    {
+      "phase": "verify",
+      "entry": "b633e22805",
+      "tool": "search_web",
+      "args": {
+        "query": "\"東京スクールオブミュージック専門学校渋谷\" DTM 作曲体験 オープンキャンパス"
+      },
+      "chars": 1776
+    },
+    {
+      "phase": "verify",
+      "entry": "b633e22805",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.shibuya.ac.jp/opencampus/2146/"
+      },
+      "chars": 5244
+    },
+    {
+      "phase": "verify",
+      "entry": "b633e22805",
+      "tool": "read_page",
+      "args": {
+        "cursor": 5000,
+        "url": "https://www.shibuya.ac.jp/opencampus/2146/"
+      },
+      "chars": 5246
+    },
+    {
+      "phase": "verify",
+      "entry": "b633e22805",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://form.shibuya.ac.jp/event/form.html?event_code=50678&form_code=185&_event_date=2026/10/04",
+        "confident": "確認できた",
+        "eligibility": "不明（オープンキャンパスとして案内、学校説明会と体験レッスンを含む。年齢等の明記なし）",
+        "evidence_quote": "はじめてのDTM！作曲体験 パソコンで曲を作ってみたいけど、どうやってやるんだろう...そんなあなたに、曲づくりのノウハウをゼロから丁寧に教えます！ 開催日程 09/22(火) 12:00~ 10/04(日) 12:00~ 会場：姉妹校「東京ダンス俳優＆舞台芸術専門学校」",
+        "evidence_url": "https://www.shibuya.ac.jp/opencampus/2146/",
+        "held_on": [
+          "2026-09-22",
+          "2026-10-04"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "不明",
+        "region": "東京都渋谷区",
+        "registration": "申込受付中（Webフォームおよび LINE で受付）",
+        "venue": "姉妹校「東京ダンス俳優＆舞台芸術専門学校」（DA TOKYO、東京都渋谷区渋谷2-19-21 のTSM渋谷姉妹校）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "36f0cf4f55",
+      "tool": "search_web",
+      "args": {
+        "query": "SOUNDGATE ZEROTOKYO 2026"
+      },
+      "chars": 2125
+    },
+    {
+      "phase": "verify",
+      "entry": "36f0cf4f55",
+      "tool": "search_web",
+      "args": {
+        "query": "\"SOUNDGATE\" \"ZEROTOKYO\""
+      },
+      "chars": 2270
+    },
+    {
+      "phase": "verify",
+      "entry": "36f0cf4f55",
+      "tool": "read_page",
+      "args": {
+        "url": "https://zerotokyo.jp/event/soundgate-1010/"
+      },
+      "chars": 3126
+    },
+    {
+      "phase": "verify",
+      "entry": "36f0cf4f55",
+      "tool": "read_page",
+      "args": {
+        "url": "https://zerotokyo.jp/system"
+      },
+      "chars": 2355
+    },
+    {
+      "phase": "verify",
+      "entry": "36f0cf4f55",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://zerotokyo.zaiko.io/e/soundgate-1010",
+        "confident": "確認できた",
+        "eligibility": "20歳以上（特定遊興飲食店許可店のため全員IDチェック）",
+        "evidence_quote": "2026.10.10 SAT 日本が世界に誇るトップアーティストが集結！ 石野卓球、砂原良徳、SEKITOVA、Seimei、Carpainterらが一堂に会する『SOUNDGATE』開催！ OPEN 11PM PRICE DOOR：¥4,000- FASTPASS TICKET：¥3,500-（優先入場・入場料金含む）",
+        "evidence_url": "https://zerotokyo.jp/event/soundgate-1010/",
+        "held_on": [
+          "2026-10-10"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "DOOR ¥4,000／FASTPASS TICKET ¥3,500（優先入場・入場料金含む）",
+        "region": "東京都新宿区",
+        "registration": "前売りチケット販売中（Resident Advisor 等）／当日ドア入場可",
+        "venue": "ZEROTOKYO（東急歌舞伎町タワー B1-B4、東京都新宿区歌舞伎町1-29-1）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "93fb19761f",
+      "tool": "read_page",
+      "args": {
+        "url": "https://ja.ra.co/clubs/210778"
+      },
+      "chars": 30
+    },
+    {
+      "phase": "verify",
+      "entry": "93fb19761f",
+      "tool": "search_web",
+      "args": {
+        "query": "agefarre 2026 ageHa velfarre 15th Anniversary CLUB EDITION ZEROTOKYO"
+      },
+      "chars": 2341
+    },
+    {
+      "phase": "verify",
+      "entry": "93fb19761f",
+      "tool": "search_web",
+      "args": {
+        "query": "agefarre 2026 ZEROTOKYO 10月11日"
+      },
+      "chars": 3092
+    },
+    {
+      "phase": "verify",
+      "entry": "93fb19761f",
+      "tool": "read_page",
+      "args": {
+        "url": "https://zerotokyo.jp/event/agefarre-2026-1011/"
+      },
+      "chars": 4798
+    },
+    {
+      "phase": "verify",
+      "entry": "93fb19761f",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://zerotokyo.jp/event/agefarre-2026-1011/",
+        "confident": "確認できた",
+        "eligibility": "20歳未満入場不可（顔写真付きIDでのIDチェックあり）。U-25 TICKETは25歳以下限定。",
+        "evidence_quote": "2026.10.11 SUN　agefarre 15周年は原点であるクラブに回帰!! BACK TO CLUB PARTY!! ／ ■ZEROTOKYO(Zepp Shinjuku) ／ OPEN PART.1 3PM / PART 2. 11PM ／ 20歳未満の方のご入場は一切お断りさせて頂きます。 ／ U-25 TICKET / 25歳以下限定：¥5,500　GA / 一般前売り TIER 1：¥6,500　DELUXE TICKET TIER 1：¥11,500 ※SOLD OUT",
+        "evidence_url": "https://zerotokyo.jp/event/agefarre-2026-1011/",
+        "held_on": [
+          "2026-10-11"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "1 DAY通しチケット U-25 ¥5,500 / GA前売 TIER 1 ¥6,500 / DELUXE TIER 1 ¥11,500(SOLD OUT)。PART.2 CLUB TIME単券 U-25 ¥3,500 / GA前売 ¥4,500 / DELUXE ¥8,500。当日一般はTBA。",
+        "region": "東京都新宿区",
+        "registration": "前売りチケット販売中（DELUXE TICKET TIER 1はSOLD OUT、当日一般はTBA）",
+        "venue": "ZEROTOKYO (Zepp Shinjuku) ／ 東急歌舞伎町タワーフロントエリア（東京都新宿区歌舞伎町）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "read_page",
+      "args": {
+        "url": "https://nightlifetokyo.com/ja/tokyo/venues/womb"
+      },
+      "chars": 5249
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "search_web",
+      "args": {
+        "query": "WOMB 渋谷 2026年10月2日 ALL NIGHT LONG TECHNO"
+      },
+      "chars": 1798
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "search_web",
+      "args": {
+        "query": "\"WOMB\" \"2026\" \"10/2\" techno all night long"
+      },
+      "chars": 591
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "read_page",
+      "args": {
+        "url": "https://iflyer.tv/womb/"
+      },
+      "chars": 5225
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "search_web",
+      "args": {
+        "query": "WOMB \"10/2\" 2026 \"ALL NIGHT LONG\" TECHNO"
+      },
+      "chars": 2171
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "read_page",
+      "args": {
+        "url": "https://iflyer.tv/events/362594"
+      },
+      "chars": 929
+    },
+    {
+      "phase": "verify",
+      "entry": "ec4468a01b",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://iflyer.tv/events/362594",
+        "confident": "確認できた",
+        "eligibility": "20歳以上（会場の深夜イベント方針。23歳以下は当日入場料¥1500オフ）",
+        "evidence_quote": "2F OCCA B2B DJ MARIA. -ALL NIGHT LONG- 4F HI-C, MUSTACHE X, LEVOLANT 1F VAKT FLOOR -VAKT 1ST ANNIVERSARY- MIDNIGHT TRAFFIC - 4H SET -, TRY3YE ... 2026年10月2日金曜日 ... ⚫前売券販売はイベント当日の8PMまで ⚫23歳以下当日入場料¥1500オフ",
+        "evidence_url": "https://iflyer.tv/events/362594",
+        "held_on": [
+          "2026-10-02"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "23歳以下当日入場料¥1500オフ（前売・当日料金の総額は本文に明記なし）",
+        "region": "東京都渋谷区",
+        "registration": "前売券販売中（当日20時まで）",
+        "venue": "WOMB（東京都渋谷区円山町2-16）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "45b9a21cca",
+      "tool": "read_page",
+      "args": {
+        "url": "https://nightlifetokyo.com/ja/tokyo/venues/womb"
+      },
+      "chars": 5249
+    },
+    {
+      "phase": "verify",
+      "entry": "45b9a21cca",
+      "tool": "search_web",
+      "args": {
+        "query": "\"J × BEYOND\" WOMB 2026 10月3日"
+      },
+      "chars": 651
+    },
+    {
+      "phase": "verify",
+      "entry": "45b9a21cca",
+      "tool": "search_web",
+      "args": {
+        "query": "\"J BEYOND\" WOMB Tokyo October 2026"
+      },
+      "chars": 3326
+    },
+    {
+      "phase": "verify",
+      "entry": "45b9a21cca",
+      "tool": "read_page",
+      "args": {
+        "url": "https://housemusiclovers.net/events/j-beyond-womb-2026-10-03-67599/"
+      },
+      "chars": 1169
+    },
+    {
+      "phase": "verify",
+      "entry": "45b9a21cca",
+      "tool": "read_page",
+      "args": {
+        "url": "https://www.womb.co.jp/ja/events/100326"
+      },
+      "chars": 5240
+    },
+    {
+      "phase": "verify",
+      "entry": "45b9a21cca",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://womb.zaiko.io/e/womb100326",
+        "confident": "確認できた",
+        "eligibility": "深夜クラブイベントのため 20歳以上・写真付き身分証明書必要（WOMB 会場基準）。23歳以下は割引適用",
+        "evidence_quote": "10/03 SAT 23:00-4:30 J × BEYOND TECHNO / HOUSE DOOR: ¥3500 *BEFORE 0:00 & UNDER 23: ¥2000 ADVANCE TICKETS: ¥3000",
+        "evidence_url": "https://www.womb.co.jp/ja/events/100326",
+        "held_on": [
+          "2026-10-03"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "前売 ¥3000 / 当日 ¥3500（0時前・23歳以下は ¥2000）",
+        "region": "東京都渋谷区",
+        "registration": "前売券販売中（イベント当日の8PMまで）",
+        "venue": "WOMB（東京都渋谷区円山町2-16）"
+      },
+      "chars": 6
+    },
+    {
+      "phase": "verify",
+      "entry": "9bcb281d3b",
+      "tool": "read_page",
+      "args": {
+        "url": "https://jbg-ongakuin.com/"
+      },
+      "chars": 5226
+    },
+    {
+      "phase": "verify",
+      "entry": "9bcb281d3b",
+      "tool": "read_page",
+      "args": {
+        "url": "https://jbg-ongakuin.com/news/orientation2610/"
+      },
+      "chars": 5248
+    },
+    {
+      "phase": "verify",
+      "entry": "9bcb281d3b",
+      "tool": "read_page",
+      "args": {
+        "cursor": 5000,
+        "url": "https://jbg-ongakuin.com/news/orientation2610/"
+      },
+      "chars": 5250
+    },
+    {
+      "phase": "verify",
+      "entry": "9bcb281d3b",
+      "tool": "record_check",
+      "args": {
+        "apply_url": "https://jbg-ongakuin.com/news/orientation2610/",
+        "confident": "一部確認",
+        "eligibility": "JBG音楽院・作曲・DTMに興味のある方、入学を検討中の方（社会人向け・年齢制限の記載なし）",
+        "evidence_quote": "募集校 東京校（池尻大橋）／大阪校（梅田）／オンライン校　参加費 無料　形式 校舎での対面 または オンライン　対象 JBG音楽院・作曲・DTMにご興味のある方、入学を検討中の方",
+        "evidence_url": "https://jbg-ongakuin.com/news/orientation2610/",
+        "held_on": [
+          "随時開催（申込フォームで第一〜第三希望日を選択）"
+        ],
+        "onsite_tokyo": "はい",
+        "price": "無料",
+        "region": "東京都世田谷区",
+        "registration": "申込受付中（無料の学校説明会＆体験レッスン、定員制・随時開催）",
+        "venue": "JBG音楽院 東京校（東京都世田谷区池尻3丁目19−1 I.Oビル6階、池尻大橋）"
+      },
+      "chars": 6
+    }
+  ]
+}

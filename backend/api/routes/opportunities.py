@@ -9,7 +9,7 @@ from schemas.calendar import CalendarEventCreated
 from schemas.common import ApiSuccess, ok
 from schemas.feedback import FeedbackCreate, FeedbackResult
 from schemas.opportunity import InterestResult, OpportunityDetail, OpportunitySummary
-from services import auto_explore, calendar_service, opportunity_service
+from services import auto_explore, calendar_service, detail_service, opportunity_service
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -29,6 +29,32 @@ def get_opportunity(
     db: Session = Depends(get_db),
     user_id: str = Depends(current_user_id),
 ) -> dict:
+    detail = opportunity_service.get_detail(db, opportunity_id, user_id)
+    if detail is None:
+        raise NotFound("指定された Opportunity が見つかりません")
+    return ok(detail)
+
+
+@router.post(
+    "/{opportunity_id}/detail-check",
+    response_model=ApiSuccess[OpportunityDetail],
+    dependencies=[Depends(require_page_request)],
+)
+def check_detail(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    """ユーザーが選んだ 1 件だけ、出典を取得して確かめる（#47）。
+
+    **一覧の全件には行わない。** 直近に確認済みなら取り直さずそのまま返す
+    （同じボタンの連打で二重に走らせないため）。
+
+    **取得できなかったことは誤りではない。** 未確認のまま返す。
+    """
+    row = detail_service.check_detail(db, opportunity_id, user_id)
+    if row is None:
+        raise NotFound("指定された Opportunity が見つかりません")
     detail = opportunity_service.get_detail(db, opportunity_id, user_id)
     if detail is None:
         raise NotFound("指定された Opportunity が見つかりません")

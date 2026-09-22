@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import verification as prompt
+from ai.routing import Step
 from ai.schemas.extraction import MAX_PAGE_CONTENT_CHARS
 from ai.schemas.verification import VerificationOutput
 from logging_config import get_logger
@@ -29,7 +30,7 @@ def verify(
     page_content: str,
     source_url: str,
     today: date | None = None,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> VerificationOutput:
     """1 件を公式ページと突き合わせる。"""
     result = generate_structured(
@@ -40,6 +41,7 @@ def verify(
             page_content=page_content[:MAX_PAGE_CONTENT_CHARS],
             today=(today or date.today()).isoformat(),
         ),
+        step=Step.VERIFICATION,
         tier=tier,
         max_tokens=VERIFICATION_MAX_TOKENS,
     )

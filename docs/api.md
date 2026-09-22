@@ -52,6 +52,7 @@ GET  /api/opportunities                       -> TOP3
       ↓
 GET  /api/opportunities/{id}
       ↓
+POST /api/opportunities/{id}/detail-check   -> 選んだ 1 件だけ出典で確認
 POST /api/opportunities/{id}/interest
       ↓
 GET  /api/calendar/availability?opportunity_id={id}
@@ -78,6 +79,7 @@ POST /api/opportunities/{id}/feedback
 | 4 | `GET /api/opportunities` | 実装済み |
 | 5 | `GET /api/opportunities/{opportunity_id}` | 実装済み |
 | 6 | `POST /api/opportunities/{opportunity_id}/interest` | 実装済み（Verification 未接続） |
+| 6-b | `POST /api/opportunities/{opportunity_id}/detail-check` | 実装済み（#47）|
 | 7 | `GET /api/calendar/availability` | 実装済み（Google Calendar） |
 | 8 | `POST /api/opportunities/{opportunity_id}/calendar` | 実装済み（Google Calendar） |
 | 9 | `POST /api/opportunities/{opportunity_id}/feedback` | 実装済み（次の run の冒頭で Reflection に反映。👎が重なると Agent が探し直すことがある。「自動探索」） |
@@ -255,3 +257,64 @@ Backend がユーザーの Google Calendar を読み書きする。連携の手�
 | AI 各処理 I/O | `backend/ai/schemas/` | — |
 
 **フィールド名・型がズレないよう、変更するときは必ず両方を同時に直して共有する。**
+
+
+## 検索専用モデル経路（#47）
+
+**既定の探索経路。** `SEARCH_ROUTE=legacy` を明示すると旧経路へ戻せる。
+
+### 必要なキー
+
+**その経路が実際に使うサービスの鍵だけ**を確認する（`config.missing_keys`）。
+足りなければ**黙って別経路へ切り替えず、理由を名前で出して止める。**
+
+| 経路 | 必要 | 不要 |
+| --- | --- | --- |
+| `discovery`（既定） | `ORCAROUTER_API_KEY` | Serper / TypeSafe（検索はモデルの内側） |
+| `legacy` | `ORCAROUTER_API_KEY` ＋ その設定の検索 provider ＋ 評価器 | — |
+
+**任意機能の鍵は通常の探索を止めない。** 詳細確認（Jina は鍵なしで動く）や
+Calendar が未設定でも探索は始められる。**その機能を使う時点で確かめる。**
+
+### 反応の反映（#50）は未対応
+
+`learned` / `feedback_summary` は**旧経路の検索計画と評価にだけ**渡している。
+新経路の検索も評価も、**今回の希望だけ**を入力にする。
+反応の保存は続いており、探索中の Log にも
+「この探索では反映していません」と出す。
+
+### 一覧までにやること / やらないこと
+
+| | |
+| --- | --- |
+| やる | 希望の分割 -> 希望ごとに並列で検索専用モデル -> 不足方向へ追加 -> 行形式の回答をコードで構造化 -> 重複統合・日付形式・既知の日付での期間判定・明示された地域違い |
+| **やらない** | 検索語の組み立て、本文の取得と抽出、全件の LLM 評価、TOP3 への絞り込み |
+
+**一覧の候補は「検索で見つかった候補」であって未確認。**
+引用 URL があることは「公式で確認した」という意味ではない。
+`verified=false` / `confirmed_fields=[]` がその状態を表す。
+
+**設計上の限界:** 本文を再取得しないため、検索回答の誤りを一覧段階では防げない。
+
+### `Opportunity` に増えた項目
+
+| 項目 | 意味 |
+| --- | --- |
+| `wish` | どの希望から出た候補か（分割後の短いラベル） |
+| `wish_source` | **元の入力そのまま。** 分割で原文を失わないために持つ |
+| `confirmed_fields` | **詳細確認で実際に確認できた項目名。** `verified=true` だけでは何が確認できたか分からない |
+| `corrections` | 訂正の履歴（`field` / `before` / `after` / `source` / `checked_at`）。**上書きせず積む** |
+| `detail_checked_at` | 詳細確認を実行した時刻。**連打で二重に走らせないため** |
+| `evaluated` | LLM 評価を行ったか。**false の候補の `score` を表示に使わない**（架空の点数を出さない） |
+| `participation_span` | 会期の途中 1 日で参加できるか／全日必須か。**根拠が無ければ null** |
+
+検索時の元データは `searched_values`（サーバ側に保持）に残す。訂正しても消さない。
+
+### `POST /api/opportunities/{id}/detail-check`
+
+ユーザーが選んだ **1 件だけ**、出典を取得して確かめる。一覧の全件には行わない。
+
+- 直近に確認済みならそのまま返す（**同じボタンの連打で二重に走らせない**）
+- 出典を取得できなかった場合は**誤りにせず未確認のまま**返す
+- 参加資格は「出典に記載があるか」（`eligibility_stated`）であって、
+  **本人が満たすかの照合ではない**

@@ -11,8 +11,8 @@ from agent import loop
 from agent.state import AgentState
 from ai import search_plan
 from ai.llm import LLMResult
-from ai.orcarouter import ModelTier
 from ai.prompts import search_plan as prompt
+from ai.routing import Step
 from ai.schemas.goal_analysis import GoalAnalysisOutput
 from ai.schemas.search_plan import SearchDirection, SearchPlanOutput
 from config import Settings
@@ -46,7 +46,8 @@ def test_system_prompt_carries_untrusted_rule():
 
 
 def test_system_prompt_requires_serendipity():
-    assert "serendipity が true の方向を最低 1 つ含める" in prompt.SYSTEM
+    # **枠が余ったときだけ作る**に変えた（#47）。希望を交差点で潰さないため。
+    assert "serendipity が true の方向は、枠が余ったときだけ作る" in prompt.SYSTEM
 
 
 def test_system_prompt_shows_query_examples():
@@ -77,7 +78,8 @@ def test_location_is_passed():
 # --- plan_search ----------------------------------------------------------
 
 
-def test_uses_standard_tier_and_raised_max_tokens(monkeypatch):
+def test_declares_its_step_and_raised_max_tokens(monkeypatch):
+    """tier は `ai/routing.py` が決める（#26-b）。ここでは工程名だけ見る。"""
     seen = {}
 
     def fake(**kwargs):
@@ -87,8 +89,26 @@ def test_uses_standard_tier_and_raised_max_tokens(monkeypatch):
     monkeypatch.setattr(search_plan, "generate_structured", fake)
     _plan()
 
-    assert seen["tier"] is ModelTier.STANDARD
+    assert seen["step"] is Step.SEARCH_PLAN
     assert seen["max_tokens"] >= 8192
+
+
+def test_system_prompt_requires_covering_every_goal_direction():
+    """軸が 2 つあるのに片方しか扱わない計画を作らせない（#26-b の実測）。
+
+    **実測では、この規則を足しても cheap は従わなかった**（6 件中 2 件で
+    「起業」の軸が落ちた）。規則を消してよい理由にはならないので残す。
+    """
+    assert "「探索の軸」は、どれも最低 1 つの方向で覆う" in prompt.SYSTEM
+
+
+def test_system_prompt_forbids_inventing_a_date():
+    """入力に無い年を入れると、その年のページばかり引っかかる（#26-b の実測）。
+
+    実測で `open source hackathon Berlin 2024` が出た。**今は 2026 年。**
+    この規則を足したあとは 6/6 で出なくなった。
+    """
+    assert "年・月・日付を query に入れない" in prompt.SYSTEM
 
 
 def test_directions_are_capped(monkeypatch):
@@ -177,3 +197,103 @@ def test_real_mode_requires_goal_analysis_first(monkeypatch):
     state = AgentState(run_id="r", user_id="u")  # goal_analysis が None
     with pytest.raises(RuntimeError, match="goal analysis の前に"):
         loop._plan_search(state, UserProfile(user_id="u", name="N"))
+
+
+# --- 希望を落とさず後段へ渡す（#47）----------------------------------------
+
+
+def test_the_wishes_reach_the_prompt():
+    """**実測で、7 行の希望が要約 1〜2 文へ潰れて後段へ渡っていた。**
+
+    音楽・曲作り・ポケモンが消え、起業とプロダクト開発だけが残った。
+    要約ではなく、希望そのものを渡す。
+    """
+    user = prompt.build_user(
+        goal_summary="エンジニアとしてプロダクトを作りたい",
+        goal_directions=["Product development"],
+        interests=[],
+        wanted_now=["ハウス/テクノの音楽イベント", "曲作りのワークショップ", "ポケモンのイベント"],
+        background_goals=["将来の起業"],
+    )
+
+    for wish in ("ハウス/テクノの音楽イベント", "曲作りのワークショップ", "ポケモンのイベント"):
+        assert wish in user, f"希望が prompt に届いていない: {wish}"
+    assert "将来の起業" in user
+
+
+def test_the_background_goal_is_marked_as_not_required():
+    """**背景目標を今回の必須条件にしない。** 全部の候補に起業を絡めさせない。"""
+    user = prompt.build_user(
+        goal_summary="g",
+        goal_directions=[],
+        interests=[],
+        wanted_now=["ポケモンのイベント"],
+        background_goals=["将来の起業"],
+    )
+    assert "今回の必須条件ではない" in user
+
+
+def test_the_prompt_asks_for_one_direction_per_wish():
+    assert "「今回探したい機会」が与えられていたら、そのそれぞれに" in prompt.SYSTEM
+
+
+def test_the_prompt_forbids_adding_other_interests_as_a_condition():
+    """単独の趣味のイベントを、他の興味との掛け合わせに変えさせない。"""
+    assert "他の興味を条件として足さない" in prompt.SYSTEM
+
+
+def test_plan_search_passes_the_wishes_through(monkeypatch):
+    """`plan_search` -> prompt の経路で落ちないこと。"""
+    seen = {}
+
+    def fake(**kwargs):
+        seen.update(kwargs)
+        return _Result(_dir(serendipity=True))
+
+    monkeypatch.setattr(search_plan, "generate_structured", fake)
+    search_plan.plan_search(
+        goal_summary="g",
+        goal_directions=[],
+        interest_connections=[],
+        wanted_now=["ポケモンのイベント"],
+        background_goals=["将来の起業"],
+    )
+
+    assert "ポケモンのイベント" in seen["user"]
+
+
+def test_a_wish_is_not_replaced_by_a_crossing():
+    """**実測で「ポケモンのイベント」が「ポケモン ゲーム開発 コンテスト」になった。**
+
+    交差点（Engineering × Gaming）を希望の方向へ混ぜた結果、ゲーム開発の
+    求人・コンテストばかりが返った。希望はそのまま探す。
+    """
+    assert "希望を交差点で置き換えない" in prompt.SYSTEM
+    assert "枠を使い切るなら" in prompt.SYSTEM
+
+
+def test_the_window_is_not_written_into_the_query():
+    """**実測で、クエリに年月を書くと当たらなくなった。**
+
+        「ハウス テクノ イベント 東京」        -> 一覧サイトが並ぶ
+        「ハウス テクノ イベント 東京 2026年」  -> 過去の記事とトップページ
+
+    対象期間は結果を絞るのに使い、検索語には入れない。
+    """
+    assert "期間は query に入れない" in prompt.SYSTEM
+    assert "かえって当たらなくなる" in prompt.SYSTEM
+
+
+def test_ticketed_events_do_not_get_an_application_word():
+    """**実測で、クラブイベントの検索に「募集」が付いて外れた。**
+
+    応募するものではないので、募集を示す語を付けると検索が外れる。
+    """
+    assert "チケットを買って行く催し" in prompt.SYSTEM
+    assert "応募するものではないので検索が外れる" in prompt.SYSTEM
+
+
+def test_listings_may_be_targeted_by_words_not_by_site_name():
+    """一覧・カレンダーを狙う語は使ってよい。**サイト名は書かせない。**"""
+    assert "イベントカレンダー" in prompt.SYSTEM
+    assert "特定のサイト名を書かない" in prompt.SYSTEM

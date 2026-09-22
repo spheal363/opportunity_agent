@@ -26,6 +26,8 @@ const jst = (month: number, date: number, hour: number) =>
 export const MOCK_PROFILE: UserProfile = {
   user_id: 'user_001',
   name: 'Naoya',
+  wants_now: 'ハウスやテクノの音楽イベントに行きたい\n初めての曲作りができるワークショップに出たい',
+  future_goals: '将来は自分のプロダクトで起業したい',
   location: 'Tokyo, Japan',
   languages: ['Japanese', 'English'],
   occupation: 'Backend Engineer',
@@ -57,10 +59,23 @@ export const MOCK_OPPORTUNITIES: OpportunityDetail[] = [
       'AI Agent開発への関心とDJ・音楽という2つの興味が交差するOpportunityです。普段の検索では見つけにくい領域ですが、プロダクト開発経験と新しいコミュニティの両方につながる可能性があります。',
     match_reasons: ['AI Agent', 'Product Development', 'Music', 'DJ', 'Community'],
     verified: true,
+    unknowns: [],
+    // #47 で増えた項目。mock は「詳細確認済み」の状態にしておく。
+    wish: null,
+    wish_source: null,
+    confirmed_fields: [],
+    corrections: [],
+    detail_checked_at: null,
+    evaluated: true,
+    participation_span: null,
     availability: 'unknown',
     availability_reason: null,
     availability_checked_at: null,
     start_at_is_date_only: false,
+    window_status: 'in_window',
+    region_match: 'match',
+    region_note: '希望した地域（東京 / オンライン）に合致',
+    window_note: '2026/09/22〜2026/11/21 に開催',
     url_is_source_only: false,
     application_url: null,
     recommended_action: '参加登録する',
@@ -93,10 +108,23 @@ export const MOCK_OPPORTUNITIES: OpportunityDetail[] = [
       '将来的に起業したいという目標に対して、実際に起業しているエンジニアとの接点を作れる場です。AI Agent開発の経験がそのまま話題になります。',
     match_reasons: ['Entrepreneurship', 'AI', 'Community'],
     verified: true,
+    unknowns: [],
+    // #47 で増えた項目。mock は「詳細確認済み」の状態にしておく。
+    wish: null,
+    wish_source: null,
+    confirmed_fields: [],
+    corrections: [],
+    detail_checked_at: null,
+    evaluated: true,
+    participation_span: null,
     availability: 'unknown',
     availability_reason: null,
     availability_checked_at: null,
     start_at_is_date_only: false,
+    window_status: 'in_window',
+    region_match: 'match',
+    region_note: '希望した地域（東京 / オンライン）に合致',
+    window_note: '2026/09/22〜2026/11/21 に開催',
     url_is_source_only: false,
     application_url: null,
     recommended_action: '参加登録する',
@@ -129,10 +157,23 @@ export const MOCK_OPPORTUNITIES: OpportunityDetail[] = [
       '海外で活動したいという目標に直結し、かつリモート枠があるため現在の生活を変えずに挑戦できます。英語環境での実績づくりにもつながります。',
     match_reasons: ['International', 'Entrepreneurship', 'AI Product'],
     verified: true,
+    unknowns: [],
+    // #47 で増えた項目。mock は「詳細確認済み」の状態にしておく。
+    wish: null,
+    wish_source: null,
+    confirmed_fields: [],
+    corrections: [],
+    detail_checked_at: null,
+    evaluated: true,
+    participation_span: null,
     availability: 'unknown',
     availability_reason: null,
     availability_checked_at: null,
     start_at_is_date_only: false,
+    window_status: 'in_window',
+    region_match: 'match',
+    region_note: '希望した地域（東京 / オンライン）に合致',
+    window_note: '2026/09/22〜2026/11/21 に開催',
     url_is_source_only: false,
     application_url: null,
     recommended_action: '参加登録する',
@@ -199,7 +240,16 @@ export function recordMockFeedback(opportunityId: string, reaction: Reaction): v
 }
 
 export function mockAgentRun(runId: string): AgentRun {
-  const base = { run_id: runId, error: null, cost_jpy: 0, expensive_model_calls: 0 };
+  const base = {
+    run_id: runId,
+    error: null,
+    cost_jpy: 0,
+    expensive_model_calls: 0,
+    // #47: run に固定した入力原文。mock には無い。
+    wishes_source: null,
+    region_source: null,
+    goal_directions: [],
+  };
   if (runId === MOCK_FEEDBACK_RUN_ID && mockFeedbackRun) {
     const running = Date.now() - mockFeedbackRun.startedAt < MOCK_FEEDBACK_RUNNING_MS;
     return {

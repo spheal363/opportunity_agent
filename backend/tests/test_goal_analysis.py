@@ -8,10 +8,11 @@ import re
 import pytest
 
 from agent import loop
-from ai import goal_analysis
+from ai import goal_analysis, routing
 from ai.llm import LLMResult
 from ai.orcarouter import ModelTier
 from ai.prompts import goal_analysis as prompt
+from ai.routing import Step
 from ai.schemas.goal_analysis import GoalAnalysisInput, GoalAnalysisOutput
 from config import Settings
 from models import UserProfile
@@ -77,16 +78,27 @@ def test_profile_is_wrapped_as_untrusted():
 
 
 def test_empty_profile_fields_are_labelled():
-    """未記入を空文字で渡すと LLM が読み飛ばす。明示する。"""
+    """未記入を空文字で渡すと LLM が読み飛ばす。明示する。
+
+    **項目数は固定しない**（初回フォームを 4 項目にした、#47）。
+    どの欄も空なら、すべて「未記入」と書かれていること。
+    """
     user = prompt.build_user(occupation=None, skills=[], interests=[], goals=[], about=None)
-    assert user.count("未記入") == 5
+    assert "いま、やってみたいこと" in user
+    assert ": 未記入" in user
+    assert ": \n" not in user, "空欄をそのまま渡している"
 
 
 # --- analyze_goal ---------------------------------------------------------
 
 
-def test_uses_standard_tier(monkeypatch):
-    """プロフィール本文を読ませるため CHEAP は使わない。"""
+def test_declares_its_step_and_is_not_cheap(monkeypatch):
+    """プロフィール本文を読ませるため CHEAP は使わない。
+
+    tier は `ai/routing.py` が決める（#26-b）。ここでは**工程を名乗っているか**と、
+    **その工程が CHEAP でないか**を見る。tier の値を直接見ると、振り分けを
+    変えるたびにこのテストが「安くした」だけで落ちる。
+    """
     seen = {}
 
     def fake(**kwargs):
@@ -96,7 +108,8 @@ def test_uses_standard_tier(monkeypatch):
     monkeypatch.setattr(goal_analysis, "generate_structured", fake)
     goal_analysis.analyze_goal(_input())
 
-    assert seen["tier"] is ModelTier.STANDARD
+    assert seen["step"] is Step.GOAL_ANALYSIS
+    assert routing.route_for(Step.GOAL_ANALYSIS).tier is not ModelTier.CHEAP
     assert seen["schema"] is GoalAnalysisOutput
 
 
@@ -182,3 +195,83 @@ def test_real_mode_handles_missing_list_fields(monkeypatch, empty):
 
     row = UserProfile(user_id="user_001", name="N", skills=empty, interests=empty, goals=empty)
     assert loop._analyze_goal(row).goal_summary
+
+
+# --- 今回の希望と背景目標を分ける（#47）------------------------------------
+
+
+def test_the_prompt_asks_to_split_now_from_background():
+    """**実測で、7 行の希望が要約へ潰れ起業だけが残った。**
+
+    「今回参加したい機会」と「将来の目標」を分けて出させる。
+    """
+    assert "wanted_now" in prompt.SYSTEM
+    assert "background_goals" in prompt.SYSTEM
+    assert "書かれた希望を 1 つも落とさない" in prompt.SYSTEM
+
+
+def test_the_prompt_accepts_hobbies_as_wishes():
+    """趣味・遊びの希望を「成長につながらない」と落とさせない。"""
+    assert "趣味・遊び・娯楽も対象" in prompt.SYSTEM
+
+
+def test_the_prompt_forbids_turning_a_single_interest_into_a_crossing():
+    """「ポケモンのイベント」を「ポケモン × エンジニアリング」にしない。"""
+    assert "他の興味との関連を条件として足さない" in prompt.SYSTEM
+
+
+def test_crossings_are_optional():
+    """交差点が無い希望もそのまま扱う。**必須にすると単独の趣味が消える。**"""
+    assert "交差点は必須ではない" in prompt.SYSTEM
+    assert GoalAnalysisOutput(goal_summary="g").interest_connections == []
+
+
+def test_the_output_keeps_the_wishes_separately():
+    out = GoalAnalysisOutput(
+        goal_summary="g",
+        wanted_now=["ポケモンのイベント", "ハウス/テクノの音楽イベント"],
+        background_goals=["将来の起業"],
+    )
+    assert out.wanted_now == ["ポケモンのイベント", "ハウス/テクノの音楽イベント"]
+    assert out.background_goals == ["将来の起業"]
+
+
+def test_the_current_wish_outranks_the_old_tags():
+    """**非表示にした興味タグに、いまの希望を上書きさせない（#47）。**
+
+    以前 AI / Startup を選んでいても、いま「ポケモンのイベント」と書いたなら
+    そちらが探索の中心。
+    """
+    user = prompt.build_user(
+        wants_now="ポケモンのイベントに行きたい",
+        occupation="エンジニア",
+        skills=["Python"],
+        interests=["AI", "Startup"],
+        goals=["将来は起業したい"],
+        about=None,
+    )
+
+    assert user.index("ポケモンのイベント") < user.index("AI")
+    assert "最優先。今回の探索の中心" in user
+    assert "上と食い違う場合は上を優先する" in user
+
+
+def test_the_future_goal_is_marked_as_optional():
+    user = prompt.build_user(
+        wants_now="音楽イベントに行きたい",
+        future_goals="将来の起業",
+        occupation=None,
+        skills=[],
+        interests=[],
+        goals=[],
+        about=None,
+    )
+    assert "今回の必須条件ではない" in user
+
+
+def test_the_old_fields_are_still_used_when_the_new_one_is_empty():
+    """新しい欄がまだ無いプロフィールでも探索できる。"""
+    user = prompt.build_user(
+        occupation="エンジニア", skills=["Python"], interests=["AI"], goals=["起業"], about=None
+    )
+    assert "AI" in user and "起業" in user

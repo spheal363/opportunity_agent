@@ -22,6 +22,7 @@ from ai.llm import LLMError, generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import evaluation as eval_prompt
 from ai.prompts import recommendation as rec_prompt
+from ai.routing import Step
 from ai.schemas.evaluation import EvaluationOutput
 from ai.schemas.recommendation import RecommendationOutput
 from config import get_settings
@@ -50,7 +51,7 @@ def evaluate(
     goal_summary: str,
     interest_connections: list[str],
     opportunity: dict,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> EvaluationOutput:
     """1 件を評価する。
 
@@ -101,7 +102,7 @@ def _evaluate_with_llm(
     goal_summary: str,
     interest_connections: list[str],
     opportunity: dict,
-    tier: ModelTier,
+    tier: ModelTier | None,
 ) -> EvaluationOutput:
     result = generate_structured(
         schema=EvaluationOutput,
@@ -111,6 +112,7 @@ def _evaluate_with_llm(
             interests=interest_connections,
             opportunity=opportunity,
         ),
+        step=Step.EVALUATION,
         tier=tier,
         max_tokens=EVALUATION_MAX_TOKENS,
     )
@@ -122,7 +124,7 @@ def evaluate_many(
     goal_summary: str,
     interest_connections: list[str],
     opportunities: list[dict],
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> tuple[list[tuple[str, EvaluationOutput]], list[str]]:
     """複数件を評価する。戻り値は ([(opportunity_id, 評価)], 失敗した id)。
 
@@ -198,7 +200,7 @@ def recommend(
     goals: list[str],
     opportunity: dict,
     evaluation: EvaluationOutput,
-    tier: ModelTier = ModelTier.STANDARD,
+    tier: ModelTier | None = None,
 ) -> RecommendationOutput:
     """「なぜあなたにこれを薦めるのか」を書く。TOP3 にだけ呼ぶ。"""
     result = generate_structured(
@@ -209,6 +211,7 @@ def recommend(
             opportunity=opportunity,
             evaluation=evaluation.model_dump(),
         ),
+        step=Step.RECOMMENDATION,
         tier=tier,
         max_tokens=EVALUATION_MAX_TOKENS,
     )

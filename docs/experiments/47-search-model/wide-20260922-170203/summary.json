@@ -1,0 +1,18 @@
+{
+ "mode": "wide",
+ "model": "openai/gpt-5-search-api",
+ "window": {
+  "start": "2026-09-22",
+  "end": "2026-11-21"
+ },
+ "seconds": 17.2,
+ "requests": 1,
+ "verdicts": [
+  "正常完了"
+ ],
+ "settled_total": 0.060784,
+ "cost_unknown": 0,
+ "request_ids": [
+  "202609220802039933386488268d9d6haoWt8ns"
+ ]
+}

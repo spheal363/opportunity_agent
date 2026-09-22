@@ -10,6 +10,8 @@ def test_registered_tools():
     assert registry.names() == [
         "add_calendar_event",
         "check_calendar",
+        # 検索専用モデルで候補を探す（#47）。検索はモデルの内側で行われる
+        "discover_events",
         "read_page",
         "search_web",
     ]

@@ -195,8 +195,30 @@ def test_plan_summary_holds_no_free_text(db):
 def test_system_prompt_keeps_serendipity_when_learning():
     assert "反応が悪かった category の方向を減らし" in prompt.SYSTEM
     assert "serendipity が true の方向は必ず残す" in prompt.SYSTEM
-    # 既存の規則は残っている
-    assert "serendipity が true の方向を最低 1 つ含める" in prompt.SYSTEM
+
+
+def test_serendipity_survives_even_though_the_wishes_come_first():
+    """**Serendipity の保証はコード側にある。**
+
+    #47 で、prompt の規則を「最低 1 つ含める」から
+    「枠が余ったときだけ作る」へ変えた。実測で、希望が交差点に
+    置き換えられていたため（「ポケモンのイベント」が
+    "ポケモン ゲーム開発 コンテスト" になっていた）。
+
+    **その代わり、方向が 1 つも serendipity でないときは
+    `_ensure_serendipity` が必ず足す。** 学習で反応の良い種類に
+    寄せても、この保証は prompt の書き方に依存しない。
+    """
+    from ai.schemas.search_plan import SearchDirection
+
+    plain = [
+        SearchDirection(category="hackathon", query="q1", reason="r", serendipity=False),
+        SearchDirection(category="event", query="q2", reason="r", serendipity=False),
+    ]
+    out = search_plan._ensure_serendipity(plain, ["音楽"])
+    assert any(d.serendipity for d in out)
+
+    assert "serendipity が true の方向は、枠が余ったときだけ作る" in prompt.SYSTEM
 
 
 def test_build_user_wraps_feedback_summary():
@@ -434,7 +456,7 @@ def _run(client) -> str:
     return run_id
 
 
-def test_stub_rerun_changes_order_after_feedback(client, profile_payload, db):
+def test_stub_rerun_changes_order_after_feedback(client, profile_payload, db, legacy_route):
     """run → 👎（ハッカソン）👍（コミュニティ）→ 再 run で順位が変わり、Log に出る。"""
     assert client.put("/api/profile", json=profile_payload, headers=PAGE).status_code == 200
     first = _run(client)

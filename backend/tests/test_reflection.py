@@ -246,7 +246,7 @@ def _messages(client, run_id) -> list[str]:
     return [log["message"] for log in client.get(f"/api/agent/runs/{run_id}/logs").json()["data"]]
 
 
-def test_stub_run_reflects_on_previous_feedback(client, profile_payload, db):
+def test_stub_run_reflects_on_previous_feedback(client, profile_payload, db, legacy_route):
     """run → 👎2件 → 再 run で、振り返りが Log に出る（API キー無しのデモ用）。"""
     assert client.put("/api/profile", json=profile_payload, headers=PAGE).status_code == 200
     first = _run(client)
@@ -287,8 +287,8 @@ def test_reflection_failure_does_not_fail_the_run(client, profile_payload, monke
     assert not any("SELECT secret" in m for m in _messages(client, run_id))
 
 
-def test_reflection_logs_are_not_duplicated_without_feedback(db):
+def test_reflection_logs_are_not_duplicated_without_feedback(db, legacy_route):
     """反応が無いユーザーの run に振り返りの Log を足さない。"""
     state = loop.AgentState(run_id="run_r", user_id=USER)
-    assert loop._reflect(db, state) == reflection.NOTHING
+    assert loop._reflect(db, state, applies=True) == reflection.NOTHING
     assert db.query(AgentLog).count() == 0

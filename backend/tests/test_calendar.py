@@ -261,7 +261,11 @@ def test_availability_is_free_when_nothing_overlaps(client, service):
 
     res = client.get(f"/api/calendar/availability?opportunity_id={oid}")
 
-    assert res.json()["data"] == {"available": True, "conflicts": []}
+    data = res.json()["data"]
+    assert data["available"] is True
+    assert data["conflicts"] == []
+    # **確認に出す内容は、実際に送る内容そのもの**（#47）。
+    assert data["event"]["title"] and data["event"]["timezone"]
     assert service.calls[0][1]["timeMax"] == "2026-10-10T18:00:00+00:00"
 
 

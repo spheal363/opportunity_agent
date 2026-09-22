@@ -34,7 +34,8 @@ export function useRunResult(runId: string | null): State {
         if (!cancelled) setResult(r);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : '探索結果を取得できませんでした');
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : '探索結果を取得できませんでした');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

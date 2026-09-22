@@ -47,3 +47,20 @@ def profile_payload() -> dict:
         "goals": ["Build AI products", "Start a company", "Work internationally"],
         "about": "AI Agentや起業、音楽に興味があります。",
     }
+
+
+@pytest.fixture
+def legacy_route(monkeypatch):
+    """旧経路を明示して走らせる（#47）。
+
+    既定は `discovery` になった。**旧経路の手順を検証するテストは、
+    どちらの経路を見ているかを自分で宣言する。**
+    設定は `lru_cache` されているので、変えたらキャッシュを捨てる。
+    """
+    from config import get_settings
+
+    monkeypatch.setenv("SEARCH_ROUTE", "legacy")
+    get_settings.cache_clear()
+    yield
+    monkeypatch.undo()
+    get_settings.cache_clear()

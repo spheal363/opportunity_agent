@@ -53,10 +53,36 @@ export async function fetchAgentRunResult(runId: string): Promise<AgentRunResult
       run_id: runId,
       status: 'completed',
       recorded: true,
+    wishes_source: null,
+    region_source: null,
+    goal_directions: [],
+    discovery_route: false,
+    recommended_count: 0,
+    profile_changed_since: false,
       selected: MOCK_OPPORTUNITY_SUMMARIES,
       shortfall_reason: null,
+      // Mock でも期間を返す。**画面側に「期間が無いとき」の分岐を増やさない。**
+      search_window: { start: '2026-09-22', end: '2026-11-21', tz: 'Asia/Tokyo', days: 60 },
+      others: [],
+      search_candidates: [],
       error: null,
     };
   }
   return api.get<AgentRunResult>(`/agent/runs/${runId}/result`);
+}
+
+/**
+ * **そのユーザーの最新の完了 run** の結果（#47）。ホームが使う。
+ *
+ * `GET /api/opportunities` は**複数 run の候補が混ざる**ので、
+ * ホームの「おすすめ」には使わない（実測で過去 run の候補まで並んでいた）。
+ * 完了した探索がまだ無ければ null。
+ */
+export async function fetchLatestRunResult(): Promise<AgentRunResult | null> {
+  if (USE_MOCK) return fetchAgentRunResult('run_mock');
+  try {
+    return await api.get<AgentRunResult>('/agent/runs/latest/result');
+  } catch {
+    return null;
+  }
 }

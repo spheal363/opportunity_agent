@@ -25,6 +25,15 @@ class UserProfile(Base):
     goals: Mapped[list] = mapped_column(JSON, default=list)
     about: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- 初回フォームの 4 項目（#47）------------------------------------
+    # **「いま」と「将来」を列で分ける。** 同じ欄に混ぜると、分析が
+    # 長期目標へ寄って今回の希望が落ちる（実測）。
+    #
+    # 上の occupation / skills / interests / goals / about はフォームから
+    # 外したが、**既存データは消さない。** 新しい欄が空のときだけ参考にする。
+    wants_now: Mapped[str | None] = mapped_column(Text, nullable=True)
+    future_goals: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()

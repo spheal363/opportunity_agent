@@ -36,6 +36,9 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp .env.example .env
 .venv/bin/uvicorn main:app --reload --port 8000
+
+# 旧経路（検索->精読->抽出->評価->推薦）へ戻すとき
+SEARCH_ROUTE=legacy .venv/bin/uvicorn main:app --reload --port 8000
 ```
 
 必要な環境変数は [`backend/.env.example`](backend/.env.example) を参照（`backend/config.py` と対応）。

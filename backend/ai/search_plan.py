@@ -11,6 +11,7 @@ interest_connections から補う。この製品の独自性に直結するた�
 from ai.llm import generate_structured
 from ai.orcarouter import ModelTier
 from ai.prompts import search_plan as prompt
+from ai.routing import Step
 from ai.schemas.search_plan import SearchDirection, SearchPlanOutput
 from logging_config import get_logger
 from schemas.opportunity import OpportunityType
@@ -27,8 +28,12 @@ def plan_search(
     goal_directions: list[str],
     interest_connections: list[str],
     location: str | None = None,
+    window: str | None = None,
+    wanted_now: list[str] | None = None,
+    background_goals: list[str] | None = None,
     feedback_summary: str | None = None,
-    tier: ModelTier = ModelTier.STANDARD,
+    # **工程ごとの振り分け（#26-b）に任せる。** None なら routing 表が決める。
+    tier: ModelTier | None = None,
 ) -> list[SearchDirection]:
     """検索方向を組み立てる。
 
@@ -43,8 +48,12 @@ def plan_search(
             goal_directions=goal_directions,
             interests=interest_connections,
             location=location,
+            window=window,
+            wanted_now=wanted_now,
+            background_goals=background_goals,
             feedback_summary=feedback_summary,
         ),
+        step=Step.SEARCH_PLAN,
         tier=tier,
         max_tokens=SEARCH_PLAN_MAX_TOKENS,
     )

@@ -1,5 +1,6 @@
 import type {
   CalendarAvailability,
+  CalendarEventPreview,
   CalendarEventCreated,
   FeedbackInput,
   InterestResult,
@@ -21,6 +22,18 @@ export async function fetchOpportunity(id: string): Promise<OpportunityDetail> {
     return found;
   }
   return api.get<OpportunityDetail>(`/opportunities/${id}`);
+}
+
+/**
+ * ユーザーが選んだ **1 件だけ** 出典を取得して確かめる（#47）。
+ *
+ * 一覧の全件には行わない。直近に確認済みなら Backend 側で取り直さないので、
+ * 連打しても二重に走らない。
+ * **取得できなかったことは誤りではない。** 未確認のまま返る。
+ */
+export async function checkDetail(id: string): Promise<OpportunityDetail> {
+  if (USE_MOCK) return fetchOpportunity(id);
+  return api.post<OpportunityDetail>(`/opportunities/${id}/detail-check`);
 }
 
 /** 「参加したい」。Backend 側で status 更新と公式情報の再確認を行う。 */
@@ -55,9 +68,33 @@ export async function sendFeedback(id: string, input: FeedbackInput) {
 
 // --- Calendar（docs/api.md の 7 / 8） ---
 
+/**
+ * 登録する内容だけを取る。**Google へは触らない。**
+ *
+ * 空き確認は Google を呼ぶので未連携だと落ちる。そのとき「何が登録されるのか」
+ * まで見られなくなるのを避けるため、確認の表示はこちらで取る。
+ */
+export async function fetchCalendarPreview(id: string): Promise<CalendarEventPreview> {
+  if (USE_MOCK) {
+    return {
+      title: 'AI × Music Hackathon',
+      start_at: '2026-10-11T10:00:00Z',
+      end_at: '2026-10-11T18:00:00Z',
+      all_day: false,
+      timezone: 'Asia/Tokyo',
+      end_is_placeholder: false,
+      location: 'Tokyo',
+      source_url: 'https://example.com/ai-music-hackathon',
+    };
+  }
+  return api.get<CalendarEventPreview>(
+    `/calendar/preview?opportunity_id=${encodeURIComponent(id)}`,
+  );
+}
+
 /** その機会の時間帯に重なる予定。読み取りだけなので、画面を開いたときに自動で呼んでよい。 */
 export async function checkCalendarAvailability(id: string): Promise<CalendarAvailability> {
-  if (USE_MOCK) return { available: true, conflicts: [] };
+  if (USE_MOCK) return { available: true, conflicts: [], event: null };
   return api.get<CalendarAvailability>(
     `/calendar/availability?opportunity_id=${encodeURIComponent(id)}`,
   );
