@@ -67,7 +67,9 @@ LLM の出力
   同じサイトの正当な催しの行にフラグが付き、その催しまで推薦から外れてしまう
 - 既存の行の事実（日時・場所など）を書き換えるのは、その行のページか配下（`/event/1` に対する
   `/event/1/join`）を読んだときだけ。connpass のように誰でもページを作れるサイトで、別ページに
-  「申込: connpass.com/event/1」と書くだけで、ユーザーが「興味あり」にした催しを書き換えられないようにする
+  「申込: connpass.com/event/1」と書くだけで、ユーザーが「興味あり」にした催しを書き換えられないようにする。
+  同じページかは `?` 以降まで比べ（`event.php?id=1` と `?id=999` は別）、トップページは配下を持たない扱いにする
+  （持たせるとサイトの全ページが配下になる）
 - 自由文（説明・参加条件・推薦理由など）から URL・メール・電話番号を取り除く。大文字（`EVIL.COM`）、
   全角（`ｅｖｉｌ．ｃｏｍ`）、伏せ字（`evil[.]com`、`hxxps://`）、見えない文字を挟んだものも、
   画面で行き先と読める形にそろえてから探す
@@ -169,7 +171,7 @@ LLM も外部 API も呼ばない。`backend/` で `.venv/bin/pytest -q`。
 | --- | --- | --- |
 | SSRF（内部アドレスを取りに行かせる） | `http(s)` 以外、`localhost`、private / loopback / link-local IP、難読化した IP 表記を拒否 | `tools/page_reader._is_fetchable` |
 | 検証先の乗っ取り | ⑦ Verification が読みに行く URL は、LLM が抽出した値ではなく検索結果の URL | `agent/loop._trusted_url` |
-| 既存の催しの書き換え | 既存の行の事実を書き換えるのは、その行のページか配下を読んだときだけ | `agent/loop._owns` |
+| 既存の催しの書き換え | 既存の行の事実を書き換えるのは、その行のページか配下を読んだときだけ（トップページは配下を持たない） | `agent/loop._owns` |
 | 壊れた URL による run の失敗 | 申込先の URL が解析できなくても例外にせず、取得元の URL を使う | `agent/loop._host` |
 | CSRF | POST / PUT はすべて `X-Requested-With` ヘッダー必須。別サイトの form は付けられない | `api/deps.require_page_request`（#80） |
 | IDOR | Opportunity と run は所有者を確かめてから返す。他人のものは 404 | `services/opportunity_service.get_owned`（#69） |

@@ -462,13 +462,23 @@ def _owns(page: str, url: str) -> bool:
 
     同じページか、その配下（`/event/1` に対する `/event/1/join`）のときだけ。
     同じサイトの別ページ（`/event/999`）は、書き手が別人でありうるので含めない。
+
+    - **同じページかは `?` 以降まで比べる。** `event.php?id=1` と `event.php?id=999` は
+      パスが同じでも別の催し
+    - **トップページ（`/`）は配下を持たない。** 持たせると、そのサイトの全ページが
+      配下になり、一覧に並んだ別の催しの情報で既存の行を書き換えられてしまう
     """
     host = _host(page)
     if not host or host != _host(url):
         return False
-    base = _path(page).rstrip("/")
-    path = _path(url)
-    return path.rstrip("/") == base or path.startswith(f"{base}/")
+    try:
+        p, u = urlparse(page), urlparse(url)
+    except ValueError:
+        return False
+    base = p.path.rstrip("/")
+    if u.path.rstrip("/") == base and u.query == p.query:
+        return True
+    return bool(base) and u.path.startswith(f"{base}/")
 
 
 def _host(url: str) -> str | None:
@@ -483,13 +493,6 @@ def _host(url: str) -> str | None:
     except ValueError:
         return None
     return host.lower().rstrip(".") if host else None
-
-
-def _path(url: str) -> str:
-    try:
-        return urlparse(url).path
-    except ValueError:
-        return ""
 
 
 def _labels(host: str) -> int:

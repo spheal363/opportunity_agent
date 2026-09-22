@@ -363,6 +363,40 @@ def test_other_page_on_same_site_cannot_rewrite_existing_facts(db, state, real_m
     assert (row.title, row.location, row.status) == ("本物", "渋谷", OpportunityStatus.INTERESTED)
 
 
+def test_top_page_cannot_rewrite_existing_facts(db, state, real_mode, monkeypatch):
+    """トップページには別の催しが並ぶ。そこから読んだ情報で既存の行を書き換えない。"""
+    db.add(
+        Opportunity(
+            opportunity_id="opp_mine",
+            user_id="user_001",
+            url="https://connpass.com/event/1",
+            type="hackathon",
+            title="本物",
+            location="渋谷",
+        )
+    )
+    db.commit()
+
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/")], external=True),
+        extract=lambda src, **k: (
+            [
+                (
+                    "https://connpass.com/",
+                    _item(title="別の催し", url="https://connpass.com/event/1", location="大阪"),
+                )
+            ],
+            [],
+        ),
+    )
+    loop._search_and_extract(db, state)
+
+    row = db.get(Opportunity, "opp_mine")
+    assert (row.title, row.location) == ("本物", "渋谷")
+
+
 def test_own_page_still_refreshes_the_row(db, state, real_mode, monkeypatch):
     """告知ページから申込ページ（配下）を読み取った行は、次の run でも更新される。"""
     db.add(
@@ -488,8 +522,17 @@ def test_same_site_boundaries(extracted, source, expected):
         ("https://connpass.com/event/1", "https://connpass.com/event/1", True),
         ("https://connpass.com/event/1/", "https://connpass.com/event/1", True),
         ("https://connpass.com/event/1", "https://connpass.com/event/1/join", True),
-        ("https://CONNPASS.com/event/1", "http://connpass.com/event/1?x=1", True),
+        ("https://CONNPASS.com/event/1", "http://connpass.com/event/1", True),
         ("https://connpass.com/event/999", "https://connpass.com/event/1", False),
+        # ? 以降で催しを分けるサイト
+        ("https://a.com/event.php?id=1", "https://a.com/event.php?id=1", True),
+        ("https://a.com/event.php?id=999", "https://a.com/event.php?id=1", False),
+        ("https://connpass.com/event/1", "https://connpass.com/event/1?x=1", False),
+        # トップページは配下を持たない（全ページが配下になってしまう）
+        ("https://connpass.com/", "https://connpass.com/", True),
+        ("https://connpass.com", "https://connpass.com/", True),
+        ("https://connpass.com/", "https://connpass.com/event/1", False),
+        ("https://connpass.com", "https://connpass.com/event/1", False),
         ("https://connpass.com/event/1", "https://connpass.com/event/10", False),
         ("https://connpass.com/event/1", "https://events.connpass.com/event/1", False),
         ("https://connpass.com/event/1", "http://[::1./x", False),
