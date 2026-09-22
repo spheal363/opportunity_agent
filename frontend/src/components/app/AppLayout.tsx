@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { usePageChrome } from '../../hooks/usePageChrome';
+import { useLatestRunWatch } from '../../hooks/useLatestRunWatch';
 import { useAppState } from '../../state/context';
 import { clearProfileDraft } from '../../state/persistence';
 import type { UserProfileInput } from '../../types';
+import { AutoRunNotice } from './AutoRunNotice';
 import { AppFooter, AppHeader, Sidebar, Toast } from './Chrome';
 import { DetailDialog } from './DetailDialog';
 import { GoalDialog } from './GoalDialog';
@@ -14,7 +16,23 @@ export default function AppLayout() {
 
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const { profile, goalOpen, openGoal, closeGoal, saveProfileAndStart, openDetail } = useAppState();
+  const {
+    profile,
+    goalOpen,
+    openGoal,
+    closeGoal,
+    saveProfileAndStart,
+    openDetail,
+    refreshLatestRun,
+    latestRun,
+  } = useAppState();
+
+  // 結果・詳細を見ている間も自動探索の完了を検知する。通知を閉じても監視は続ける。
+  useLatestRunWatch(
+    refreshLatestRun,
+    latestRun?.trigger !== 'manual' &&
+      (latestRun?.status === 'queued' || latestRun?.status === 'running'),
+  );
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -60,6 +78,8 @@ export default function AppLayout() {
       <div className="grid grid-cols-[228px_1fr] max-w-[1600px] mx-auto lte1150:grid-cols-[190px_1fr] lte850:block">
         <Sidebar />
         <main className="pt-[39px] px-[46px] pb-[22px] min-w-0 max-w-[1400px] gte1450:px-[60px] lte1150:py-[30px] lte1150:px-[26px] lte850:py-[27px] lte850:px-[22px]">
+          {/* Agent が自分で始めた探索の知らせ。どの画面にいても出す（開くかは本人が選ぶ）。 */}
+          <AutoRunNotice />
           <Outlet />
           <AppFooter />
         </main>

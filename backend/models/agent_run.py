@@ -23,6 +23,18 @@ class AgentRun(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- 何がきっかけで始まったか（#84）---
+    # manual はボタン・目標の保存。それ以外は Agent が自分で始めた探索
+    # （services/auto_explore.py）。値は schemas.agent.AgentRunTrigger。
+    #
+    # **理由は決まった文面と数値だけ。** 候補のタイトルなど Web 由来の文は入れない。
+    # 探索中画面とホームの通知にそのまま出るため。
+    #
+    # 既存 DB には db/migrate.py が `DEFAULT 'manual'` 付きで足す。列を足す前の
+    # run はすべて手動だったので、既定値がそのまま正しい。
+    trigger: Mapped[str] = mapped_column(String, default="manual")
+    trigger_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # --- この run の最終選定 ---
     # **順位順の opportunity_id。** Opportunity 側の run_id は同じ URL を再発見すると
     # 上書きされるため、過去 run の選定結果は保てない。ここに記録する。

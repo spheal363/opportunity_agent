@@ -9,11 +9,12 @@
  * 無い場合は最後に実行した run（保存済み）へ委ねる。
  */
 import { useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { BottomNote, PageIntro } from '../components/app/Chrome';
 import { CardGrid, ResultsHead } from '../components/app/CardGrid';
 import { ResultWelcome } from '../components/app/ResultWelcome';
+import { TEXT_BUTTON } from '../components/app/styles';
 import ErrorMessage from '../components/ErrorMessage';
 import { CandidateSections } from '../components/app/CandidateSections';
 import { CompactCandidateList } from '../components/app/CompactCandidateList';
@@ -89,6 +90,12 @@ export default function ResultsPage() {
             : 'まずは、どんな機会に出会えるか見てみましょう。'
         }
       />
+
+      <p className="mb-[22px]">
+        <Link to="/app/history" className={TEXT_BUTTON}>
+          探索履歴を見る ↗
+        </Link>
+      </p>
 
       <ResultWelcome
         interests={profile?.interests ?? []}

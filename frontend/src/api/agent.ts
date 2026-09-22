@@ -1,33 +1,48 @@
-import type { AgentRunResult, AgentLogEntry, AgentRun, AgentRunCreated } from '../types';
+import type {
+  AgentRunResult,
+  AgentLogEntry,
+  AgentRun,
+  AgentRunCreated,
+  AgentRunHistory,
+} from '../types';
 import { api, USE_MOCK } from './client';
-import { MOCK_AGENT_LOGS, MOCK_OPPORTUNITY_SUMMARIES } from './mock';
+import {
+  MOCK_OPPORTUNITY_SUMMARIES,
+  MOCK_RUN_ID,
+  mockAgentLogs,
+  mockAgentRun,
+  mockLatestAgentRun,
+  mockAgentRunHistory,
+} from './mock';
 
 export async function startAgentRun(): Promise<AgentRunCreated> {
-  if (USE_MOCK) return { run_id: 'run_mock', status: 'running' };
+  if (USE_MOCK) return { run_id: MOCK_RUN_ID, status: 'running' };
   return api.post<AgentRunCreated>('/agent/runs');
 }
 
 export async function fetchAgentRun(runId: string): Promise<AgentRun> {
-  if (USE_MOCK) {
-    return {
-      run_id: runId,
-      status: 'completed',
-      wishes_source: null,
-    region_source: null,
-    goal_directions: [],
-    current_step: 'completed',
-      message: '探索が完了しました',
-      progress: 100,
-      error: null,
-      cost_jpy: 0,
-      expensive_model_calls: 0,
-    };
-  }
+  if (USE_MOCK) return mockAgentRun(runId);
   return api.get<AgentRun>(`/agent/runs/${runId}`);
 }
 
+/**
+ * いちばん新しい run（状態は問わない）。まだ探索していなければ null。
+ * Agent が自分で始めた探索（trigger が manual 以外）に気づくために使う。
+ */
+export async function fetchLatestAgentRun(): Promise<AgentRun | null> {
+  if (USE_MOCK) return mockLatestAgentRun();
+  return api.get<AgentRun | null>('/agent/runs/latest');
+}
+
+export async function fetchAgentRunHistory(before?: string): Promise<AgentRunHistory> {
+  if (USE_MOCK) return mockAgentRunHistory(before);
+  const query = new URLSearchParams({ limit: '20' });
+  if (before) query.set('before', before);
+  return api.get<AgentRunHistory>(`/agent/runs?${query}`);
+}
+
 export async function fetchAgentLogs(runId: string): Promise<AgentLogEntry[]> {
-  if (USE_MOCK) return MOCK_AGENT_LOGS;
+  if (USE_MOCK) return mockAgentLogs(runId);
   return api.get<AgentLogEntry[]>(`/agent/runs/${runId}/logs`);
 }
 

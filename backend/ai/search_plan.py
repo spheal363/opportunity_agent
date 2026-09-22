@@ -31,9 +31,15 @@ def plan_search(
     window: str | None = None,
     wanted_now: list[str] | None = None,
     background_goals: list[str] | None = None,
+    feedback_summary: str | None = None,
+    # **工程ごとの振り分け（#26-b）に任せる。** None なら routing 表が決める。
     tier: ModelTier | None = None,
 ) -> list[SearchDirection]:
-    """検索方向を組み立てる。"""
+    """検索方向を組み立てる。
+
+    `feedback_summary` があれば、前回までの反応を計画に反映させる（#50）。
+    反応の良い種類に寄せても **Serendipity の方向は `_ensure_serendipity` が必ず残す。**
+    """
     result = generate_structured(
         schema=SearchPlanOutput,
         system=prompt.SYSTEM,
@@ -45,6 +51,7 @@ def plan_search(
             window=window,
             wanted_now=wanted_now,
             background_goals=background_goals,
+            feedback_summary=feedback_summary,
         ),
         step=Step.SEARCH_PLAN,
         tier=tier,

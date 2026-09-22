@@ -83,7 +83,13 @@ SYSTEM = (
     "9. reason は**ユーザーに見せる日本語**で書く。"
     "探索中画面にそのまま表示される。\n"
     "10. category は必ず上の一覧から選ぶ。迷ったら other。\n"
-    "11. 出力は JSON のみ。説明文を付けない。"
+    "11. feedback_summary（これまでの反応）が渡されたときは、"
+    "反応が悪かった category の方向を減らし、反応が良かった category の方向を増やす。"
+    "開催形式の傾向は query の語（オンライン / 現地 など）に反映してよい。"
+    "**ただし serendipity が true の方向は必ず残す。**"
+    "反応の良い種類だけに寄せると、本人が自分では探さない機会に出会えなくなるため。"
+    "反応が書かれていない種類は減らさない。\n"
+    "12. 出力は JSON のみ。説明文を付けない。"
 ) + UNTRUSTED_DATA_RULE
 
 
@@ -96,11 +102,16 @@ def build_user(
     window: str | None = None,
     wanted_now: list[str] | None = None,
     background_goals: list[str] | None = None,
+    feedback_summary: str | None = None,
 ) -> str:
     """Goal 分析の結果を user メッセージに組み立てる。
 
     goal_summary はプロフィール由来の内容を言い換えたものなので、
     プロフィールと同じく囲んで渡す。
+
+    `feedback_summary` は前回までの反応の要約（`agent/reflection.plan_summary`）。
+    **コードが enum の鍵と件数だけから組み立てた文**で、Web 由来の文は入らない。
+    それでも指示としては渡さず、データの囲みに入れる（従い方は system の規則 9 が決める）。
     """
     wanted_now = wanted_now or []
     background_goals = background_goals or []
@@ -114,4 +125,7 @@ def build_user(
         # **期間も囲みの内側に置く。** 外に置くと system 直後に並ぶ。
         f"対象期間: {window or '指定なし'}",
     ]
-    return untrusted_block("user_goal", "\n".join(lines))
+    user = untrusted_block("user_goal", "\n".join(lines))
+    if feedback_summary:
+        user += "\n\n" + untrusted_block("feedback_summary", feedback_summary)
+    return user

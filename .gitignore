@@ -254,6 +254,8 @@ token.json
 # 個人設定とローカル起動設定だけ除外する。
 .claude/settings.local.json
 .claude/launch.json
+# ローカル作業用 worktree（成果はブランチから取り込む）
+.claude/worktrees/
 .idea/
 .vscode/
 

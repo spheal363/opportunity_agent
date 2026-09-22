@@ -26,10 +26,15 @@ export function SiteHeader({ onStart }: { onStart: () => void }) {
         'lte640:h-[76px] lte640:px-[20px]'
       }
     >
-      <Brand
-        size="text-[29px] lte640:text-[24px]"
-        markSize="text-[42px] mr-[10px] lte640:text-[34px] lte640:mr-[7px]"
-      />
+      <Link to="/" className="shrink-0" aria-label="Opportunity トップへ">
+        <img
+          src="/assets/logo.png"
+          alt="Opportunity"
+          width={2048}
+          height={768}
+          className="block w-[200px] h-auto lte640:w-[160px]"
+        />
+      </Link>
       <nav
         aria-label="ページ内ナビゲーション"
         className="flex gap-[30px] items-center text-[14px] lte900:gap-[18px] lte640:gap-[12px]"

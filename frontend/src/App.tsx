@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useParams, useSearchParams } from 'react-route
 import AppLayout from './components/app/AppLayout';
 import ExplorePage from './pages/ExplorePage';
 import HomePage from './pages/HomePage';
+import HistoryPage from './pages/HistoryPage';
 import ResultsPage from './pages/ResultsPage';
 import SavedPage from './pages/SavedPage';
 import StepsPage from './pages/StepsPage';
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/app" element={<HomePage />} />
         <Route path="/app/explore" element={<ExplorePage />} />
         <Route path="/app/results" element={<ResultsPage />} />
+        <Route path="/app/history" element={<HistoryPage />} />
         <Route path="/app/saved" element={<SavedPage />} />
         <Route path="/app/steps" element={<StepsPage />} />
       </Route>

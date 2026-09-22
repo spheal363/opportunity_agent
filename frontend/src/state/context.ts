@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 
 import type {
+  AgentRun,
   Opportunity,
   OpportunityStatus,
   Reaction,
@@ -35,6 +36,20 @@ export interface AppState {
   saveProfileAndStart: (input: UserProfileInput) => Promise<string>;
   /** 今のプロフィールのまま探索を開始する。run_id を返す。 */
   startRun: () => Promise<string>;
+
+  /** いちばん新しい run（GET /agent/runs/latest）。アプリ内の各画面と👎の後に取り直す。 */
+  latestRun: AgentRun | null;
+  /** 最新の run を取り直す。取れなければ null（知らせのための取得なので、失敗しても止めない）。 */
+  refreshLatestRun: () => Promise<AgentRun | null>;
+  /**
+   * Agent が自分で始めた探索（trigger が manual 以外）のうち、まだ見ていないもの。
+   * 最後に自分で始めた run（lastRunId）や、見た・閉じたものは含めない。
+   */
+  autoRun: AgentRun | null;
+  /** 自動で始めた run を見る。結果画面の既定をその run にする。画面の移動はリンクが行う。 */
+  openAutoRun: (runId: string) => void;
+  /** 自動で始めた run の知らせを閉じる。 */
+  dismissAutoRun: (runId: string) => void;
 
   toggleInterest: (opportunity: Opportunity) => Promise<void>;
   markAsStep: (opportunityId: string) => void;

@@ -21,6 +21,7 @@ import {
 } from '../components/app/styles';
 import ErrorMessage from '../components/ErrorMessage';
 import { useAgentRun } from '../hooks/useAgentRun';
+import { useRunResult } from '../hooks/useRunResult';
 import { categoryLabel } from '../utils/display';
 import { POSE_SLOTS } from '../utils/poses';
 import { useAppState } from '../state/context';
@@ -47,11 +48,22 @@ export default function ExplorePage() {
   const runId = params.get('run_id');
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  const { opportunities, refreshOpportunities, startRun, showToast } = useAppState();
+  // **`profile` は探索の軸の表示には使わない（#47）。** run に固定した原文を出す。
+  const { refreshOpportunities, startRun, showToast, openAutoRun } = useAppState();
   const { run, logs, error, watch, setWatch } = useAgentRun(runId);
   const [starting, setStarting] = useState(false);
 
+  /** Agent が自分で始めた探索なら、その理由（決まった文面と数値だけ）。 */
+  const autoReason = run && run.trigger !== 'manual' ? run.trigger_reason : null;
+  const autoRunId = run && run.trigger !== 'manual' ? run.run_id : null;
+
+  // 自動で始めた探索をここで見ているなら、見たものとして知らせを閉じる。
+  useEffect(() => {
+    if (autoRunId) openAutoRun(autoRunId);
+  }, [autoRunId, openAutoRun]);
+
   const done = run?.status === 'completed';
+  const { result, error: resultError } = useRunResult(done ? runId : null);
   const failed = run?.status === 'failed';
   const running = watch === 'watching' && !done && !failed && Boolean(runId);
   const paused = watch === 'paused';
@@ -108,8 +120,8 @@ export default function ExplorePage() {
           : '探索の準備';
 
   const percent = run?.progress ?? 0;
-  const items = opportunities ?? [];
-  const candidates = done ? items : [];
+  // 履歴から開いた場合も、この回で選ばれた候補だけを表示する。
+  const candidates = done ? (result?.selected ?? []) : [];
 
   return (
     <>
@@ -131,6 +143,11 @@ export default function ExplorePage() {
               <span className="text-[12px] text-[#526748] bg-[#ffffff80] px-[10px] py-[5px] rounded-[4px]">
                 {badge}
               </span>
+              {autoReason ? (
+                <p className="text-[13px] leading-[1.8] text-[#726957] bg-[#f4eee5] rounded-[6px] px-[10px] py-[6px] mt-[12px] mb-0">
+                  Agent が自分で始めた探索です。{autoReason}
+                </p>
+              ) : null}
               <h2 className="text-[22px] font-medium leading-[1.65] mt-[15px] mb-[10px]">
                 {headline}
               </h2>
@@ -228,7 +245,7 @@ export default function ExplorePage() {
             />
           </div>
 
-          <ErrorMessage error={error} />
+          <ErrorMessage error={error ?? resultError} />
 
           <div className={PROCESS_HEADING}>
             <h3 className={PROCESS_HEADING_H3}>探索の道のり</h3>

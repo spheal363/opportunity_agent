@@ -23,6 +23,11 @@ export const STORAGE_KEY = {
   notes: 'notes',
   /** 目標・興味ダイアログの入力途中。 */
   profileDraft: 'profile-draft',
+  /**
+   * Agent が自分で始めた探索のうち、最後に見た（または閉じた）もの。
+   * 再読み込みのたびに同じ知らせを出さないため。run_id だけで、中身は残さない。
+   */
+  seenAutoRun: 'seen-auto-run',
 } as const;
 
 const OPPORTUNITY_STATUSES = [
@@ -39,6 +44,7 @@ const REACTIONS = ['like', 'dislike'] as const satisfies readonly Reaction[];
 export const reviveStatusOverrides = recordOf(oneOf(OPPORTUNITY_STATUSES));
 export const reviveReactions = recordOf(oneOf(REACTIONS));
 export const reviveNotes = recordOf(storedString);
+export const reviveSeenAutoRun = storedString;
 
 /**
  * 登録先は Agent が Web から取り出した Untrusted Data で、保存後に書き換えられ得る。

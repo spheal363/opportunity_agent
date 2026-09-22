@@ -21,7 +21,7 @@ from urllib.parse import unquote_plus, urlparse
 
 from sqlalchemy.orm import Session
 
-from agent import demo_attack, discovery_run, stub_data
+from agent import demo_attack, discovery_run, reflection, stub_data
 from agent.state import AgentState
 from ai import availability, cost, explore, guard, listing, region
 from ai import window as search_window
@@ -142,6 +142,10 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         )
 
         _step(db, state, AgentStep.ANALYZING_PROFILE, "プロフィールを分析しています")
+        # ⑧ Reflection は run の冒頭で行う（フィードバックを受けた時点ではない）。
+        # 毎回すべての反応から作り直すので、押した順番や途中で落ちた run に左右されない。
+        # **AgentStep は増やさない**（API Schema の変更になる）。プロフィール分析の一部として出す。
+        learned = _reflect(db, state)
         with cost.step("goal_analysis"):
             state.goal_analysis = _analyze_goal(profile)
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
@@ -164,7 +168,7 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         else:
             _step(db, state, AgentStep.PLANNING, "何を探すべきか計画しています")
             with cost.step("search_plan"):
-                state.search_directions = _plan_search(state, profile)
+                state.search_directions = _plan_search(state, profile, learned, db=db)
             for d in state.search_directions:
                 _log(db, state, AgentStep.PLANNING, f"探索対象に設定: {d.query}（{d.reason}）")
 
@@ -173,7 +177,7 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
             _log(db, state, AgentStep.SEARCHING, f"{len(found)}件のOpportunityを発見")
 
             _step(db, state, AgentStep.EVALUATING, "Opportunityを評価しています")
-            ranked = _evaluate_and_select(db, state, found)
+            ranked = _evaluate_and_select(db, state, found, learned)
             _log(db, state, AgentStep.EVALUATING, f"{len(found)}件から{len(ranked)}件を順位付け")
 
             _step(db, state, AgentStep.VERIFYING, "上位候補の公式情報を確認しています")
@@ -211,6 +215,29 @@ def _public_error(exc: Exception) -> str:
 # --------------------------------------------------------------------------
 
 
+def _reflect(db: Session, state: AgentState) -> reflection.Learned:
+    """⑧ Reflection。前回までの反応を振り返る（#48）。
+
+    **LLM を使わない**ので stub でも同じコードが走る（API キー無しのデモでも見える）。
+    振り返りに失敗しても探索は止めない。学習を反映しない、いつもの探索に戻るだけ。
+    """
+    try:
+        learned = reflection.reflect(db, state.user_id, run_id=state.run_id)
+    except Exception as exc:  # 学習は補助。失敗で run 全体を落とさない
+        logger.warning("reflection.failed run_id=%s %s", state.run_id, describe_exception(exc))
+        db.rollback()
+        _log(
+            db,
+            state,
+            AgentStep.ANALYZING_PROFILE,
+            "前回までの反応を読み込めなかったため、今回は反映せずに探します",
+        )
+        return reflection.NOTHING
+    if message := reflection.describe(learned):
+        _log(db, state, AgentStep.ANALYZING_PROFILE, message)
+    return learned
+
+
 def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
     """① Goal Analysis"""
     if get_settings().agent_stub_mode:
@@ -231,8 +258,19 @@ def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
     )
 
 
-def _plan_search(state: AgentState, profile: UserProfile) -> list[SearchDirection]:
-    """② Search Planning"""
+def _plan_search(
+    state: AgentState,
+    profile: UserProfile,
+    learned: reflection.Learned | None = None,
+    *,
+    db: Session | None = None,
+) -> list[SearchDirection]:
+    """② Search Planning
+
+    前回までの反応（`learned`）を計画に反映する（#50）。渡すのはコードが enum の鍵と
+    件数から作った要約だけ。**stub は LLM を呼ばないので計画は固定のまま**（反映したとは書かない）。
+    `db` は反映したことを Log に残すために受け取る。
+    """
     if get_settings().agent_stub_mode:
         return [SearchDirection(**d) for d in stub_data.STUB_SEARCH_DIRECTIONS]
 
@@ -241,7 +279,8 @@ def _plan_search(state: AgentState, profile: UserProfile) -> list[SearchDirectio
         raise RuntimeError("goal analysis の前に search planning を呼んでいます")
 
     win = search_window.SearchWindow.from_dict(state.search_window)
-    return plan_search(
+    learned = learned or reflection.NOTHING
+    directions = plan_search(
         goal_summary=goal.goal_summary,
         goal_directions=goal.goal_directions,
         interest_connections=goal.interest_connections,
@@ -252,7 +291,11 @@ def _plan_search(state: AgentState, profile: UserProfile) -> list[SearchDirectio
         location=profile.location,
         # **run 開始時に確定した期間**を明示して渡す（#47）。
         window=(f"{win.start:%Y年%m月%d日}〜{win.end:%Y年%m月%d日}" if win else None),
+        feedback_summary=reflection.plan_summary(learned),
     )
+    if db is not None and (note := reflection.plan_note(learned)):
+        _log(db, state, AgentStep.PLANNING, note)
+    return directions
 
 
 def _search_and_extract(db: Session, state: AgentState) -> list[str]:
@@ -952,7 +995,12 @@ MAX_VERIFY = 5
 MAX_PROMOTIONS = 2
 
 
-def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list[str]:
+def _evaluate_and_select(
+    db: Session,
+    state: AgentState,
+    ids: list[str],
+    learned: reflection.Learned | None = None,
+) -> list[str]:
     """④ Evaluation + ⑤ 順位付け。**検証と推薦理由はここでは行わない。**
 
     処理順を変えた（#68）。
@@ -964,18 +1012,38 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
     推薦理由を検証の後に移したのは、**終了した候補の理由を書かずに済ませる**
     ためと、警告を理由へ織り込めるようにするため。
     **これで費用が必ず減るとは限らない**（繰り上げの追加検証が増える）。
+
+    順位付けには前回までの反応から学んだ補正（`learned`）を足す（#50）。
+    **score 列は書き換えない。** 補正は並べ替えにだけ使う。
     """
+    learned = learned or reflection.NOTHING
     if get_settings().agent_stub_mode:
         rows = (
             db.query(Opportunity)
             .filter(Opportunity.opportunity_id.in_(ids))
             .order_by(Opportunity.score.desc())
-            .limit(3)
             .all()
         )
         db.commit()
+        # stub は score 順（LLM を使わない）。学習の補正だけは実経路と同じものを効かせ、
+        # API キー無しのデモでも「反応で順位が変わる」ことが見えるようにする。
+        adjust = reflection.adjustments(
+            ((r.opportunity_id, r.type, r.format) for r in rows), learned
+        )
+        ranked = sorted(
+            rows, key=lambda r: r.score + adjust.get(r.opportunity_id, 0.0), reverse=True
+        )
+        _log_learning_effect(
+            db,
+            state,
+            baseline=[r.opportunity_id for r in rows],
+            ranked=[r.opportunity_id for r in ranked],
+            rows={r.opportunity_id: r for r in rows},
+            adjust=adjust,
+            learned=learned,
+        )
         # **状態の更新は _verify_and_finalize に任せる**（実経路と同じ形にする）。
-        state.ranked_ids = [r.opportunity_id for r in rows]
+        state.ranked_ids = [r.opportunity_id for r in ranked[:TOP_N]]
         return state.ranked_ids
 
     goal = state.goal_analysis
@@ -1032,8 +1100,81 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
         _log(db, state, AgentStep.EVALUATING, f"{len(failed)}件は評価できませんでした")
 
     # --- ⑤ 順位付け（LLM を使わない）----------------------------------------
-    state.ranked_ids = select_top(evaluated, limit=len(evaluated))
+    # 学習の補正は評価の出力の後に足す。評価器が Jev でも LLM でも同じに効く。
+    adjust = reflection.adjustments(
+        ((i, rows[i].type, rows[i].format) for i, _ in evaluated), learned
+    )
+    state.ranked_ids = select_top(
+        evaluated,
+        limit=len(evaluated),
+        adjustments=adjust,
+        serendipity_weight=learned.serendipity_weight,
+    )
+    if adjust or learned.serendipity_weight is not None:
+        if note := reflection.serendipity_note(learned):
+            _log(db, state, AgentStep.EVALUATING, note)
+        _log_learning_effect(
+            db,
+            state,
+            baseline=select_top(evaluated, limit=len(evaluated)),
+            ranked=state.ranked_ids,
+            rows=rows,
+            adjust=adjust,
+            learned=learned,
+        )
     return state.ranked_ids
+
+
+def _log_learning_effect(
+    db: Session,
+    state: AgentState,
+    *,
+    baseline: list[str],
+    ranked: list[str],
+    rows: dict[str, Opportunity],
+    adjust: dict[str, float],
+    learned: reflection.Learned,
+) -> None:
+    """学習で順位が動いた候補を Log に出す（#50）。
+
+    見るのは推薦に届く上位（TOP_N）だけ。**Log を増やしすぎない。**
+
+      - 学習の補正が正で、上位の中で順位が上がった候補  -> 繰り上げ
+      - 学習の補正が負で、上位から外れた候補            -> 繰り下げ
+
+    **自分の補正で動いた候補だけ**を出す。他の候補が下がった結果として上がっただけの
+    候補は、理由を書けないので出さない。
+
+    タイトルを出してよいのは、ここに来る候補が指示らしき文の検査を通っているため
+    （引っかかったページの候補は評価の前に外している。`_drop_flagged`）。
+    理由の文は enum の名前と件数だけで、Web 由来の文は入らない。
+    """
+    before = {opportunity_id: i for i, opportunity_id in enumerate(baseline)}
+    top = ranked[:TOP_N]
+    for i, opportunity_id in enumerate(top):
+        row = rows.get(opportunity_id)
+        if row is None or adjust.get(opportunity_id, 0.0) <= 0:
+            continue
+        if before.get(opportunity_id, len(baseline)) <= i:
+            continue
+        why = reflection.reasons(opportunity_id, row.type, row.format, learned, raised=True)
+        _log(
+            db,
+            state,
+            AgentStep.EVALUATING,
+            f"学習結果を反映し、「{row.title}」を繰り上げました（{why}）",
+        )
+    for opportunity_id in baseline[:TOP_N]:
+        row = rows.get(opportunity_id)
+        if row is None or opportunity_id in top or adjust.get(opportunity_id, 0.0) >= 0:
+            continue
+        why = reflection.reasons(opportunity_id, row.type, row.format, learned, raised=False)
+        _log(
+            db,
+            state,
+            AgentStep.EVALUATING,
+            f"学習結果を反映し、「{row.title}」を繰り下げました（{why}）",
+        )
 
 
 def _drop_before_evaluation(

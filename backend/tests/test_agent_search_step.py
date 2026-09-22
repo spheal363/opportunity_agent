@@ -619,7 +619,8 @@ def test_the_saved_candidates_reach_the_result_api(db, state, real_mode, monkeyp
     run.selected_ids = ids
     db.commit()
 
-    out = agent_service.get_result(db, state.run_id)
+    # #86 で user_id が要るようになった。**他人の run は見えない。**
+    out = agent_service.get_result(db, state.run_id, state.user_id)
     by_url = {c.url: c for c in out.search_candidates}
 
     assert len(by_url) == 2

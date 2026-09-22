@@ -7,6 +7,17 @@ export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type AgentStep =
   'analyzing_profile' | 'planning' | 'searching' | 'evaluating' | 'verifying' | 'completed';
 
+/**
+ * 探索を始めたきっかけ。**manual 以外は Agent が自分で始めた探索。**
+ * 自動にするのは発見だけで、Calendar への追加などは人の操作のまま。
+ *
+ * manual     ボタン・目標の保存
+ * feedback   最新の推薦の過半数に👎が付いた
+ * stale      推薦中・保存中の機会が締切切れで減った
+ * scheduled  前回の探索から一定時間たった
+ */
+export type AgentRunTrigger = 'manual' | 'feedback' | 'stale' | 'scheduled';
+
 export type AgentRunCreated = {
   run_id: string;
   status: AgentRunStatus;
@@ -30,12 +41,31 @@ export type AgentRun = {
   cost_jpy: number;
   /** 高性能モデルを使った回数。全件を高性能モデルへ投げていないことを示す。 */
   expensive_model_calls: number;
+
+  /** 何がきっかけで始まったか。 */
+  trigger: AgentRunTrigger;
+  /**
+   * Agent が自分で始めた理由。**決まった文面と数値だけ**で、Web 由来の文は入らない。
+   * manual では null。
+   */
+  trigger_reason: string | null;
 };
 
 export type AgentLogEntry = {
   step: AgentStep;
   message: string;
   created_at: string | null;
+};
+
+/** GET /api/agent/runs。日時は UTC、選定記録が無い古い探索の件数は null。 */
+export type AgentRunHistoryEntry = AgentRun & {
+  created_at: string | null;
+  selected_count: number | null;
+};
+
+export type AgentRunHistory = {
+  items: AgentRunHistoryEntry[];
+  next_cursor: string | null;
 };
 
 /** 探索中画面でステップ名を日本語表示するためのラベル。 */
