@@ -36,9 +36,24 @@ REMOVED_MARK = "[除去: 指示らしき文]"
 #   U+202A-202E / U+2066-2069  双方向制御文字（表示順を入れ替えて文を隠す）
 _HIDDEN = re.compile(r"[\U000e0000-\U000e007f\u202a-\u202e\u2066-\u2069]")
 
-# ゼロ幅文字。日本語のページでは改行位置の調整に正当に使われるため、
-# 取り除くだけで検知には数えない（数えると普通のページを推薦から外してしまう）。
-_ZERO_WIDTH = re.compile(r"[\u200b-\u200f\u2060\ufeff]")
+# その他の見えない文字。取り除くだけで検知には数えない。ゼロ幅スペースは日本語の
+# ページの改行位置の調整、ソフトハイフンは長い英単語の折り返しに正当に使われる
+# （数えると普通のページを推薦から外してしまう）。
+#
+# **取り除かないと正規表現をすり抜ける。** ignore の途中にソフトハイフンを
+# 挟むと `ignore` に一致しなくなるが、LLM は ignore と読む。
+#   書式制御文字（Unicode の Cf 全体。ゼロ幅文字・ソフトハイフン・不可視の演算子など）
+#   U+034F  結合書記素接合子      U+180B-180F  モンゴル文字の異体字セレクタ
+#   U+FE00-FE0F / U+E0100-E01EF  異体字セレクタ
+#   U+115F / U+1160 / U+3164 / U+FFA0  ハングルのフィラー（幅のある空白に見える）
+_INVISIBLE = re.compile(
+    r"[\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u180e"
+    r"\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff\ufff9-\ufffb"
+    r"\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3"
+    r"\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f"
+    r"\u034f\u180b-\u180f\ufe00-\ufe0f\U000e0100-\U000e01ef"
+    r"\u115f\u1160\u3164\uffa0]"
+)
 
 
 def _re(pattern: str, flags: int = 0) -> re.Pattern[str]:
@@ -128,7 +143,7 @@ class GuardResult:
 def inspect(text: str | None) -> GuardResult:
     """本文を検査し、指示らしき文を取り除いた本文を返す。
 
-    何も見つからなければ本文は変えない（ゼロ幅文字の除去を除く）。
+    何も見つからなければ本文は変えない（見えない文字の除去を除く）。
     見つけたときは、判定に使った正規化済みの本文から、該当する文の頭から
     段落の終わりまでを `REMOVED_MARK` に置き換えて返す。
     """
@@ -136,10 +151,10 @@ def inspect(text: str | None) -> GuardResult:
         return GuardResult(text or "")
 
     findings: list[str] = []
-    cleaned = _ZERO_WIDTH.sub("", text)
-    if _HIDDEN.search(cleaned):
+    # _HIDDEN は _INVISIBLE に含まれる。数える方を先に調べる。
+    if _HIDDEN.search(text):
         findings.append("hidden")
-        cleaned = _HIDDEN.sub("", cleaned)
+    cleaned = _INVISIBLE.sub("", text)
 
     # 全角英字（ｉｇｎｏｒｅ）や互換文字での言い換えを同じ形にそろえてから探す。
     normalized = unicodedata.normalize("NFKC", cleaned)

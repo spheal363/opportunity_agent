@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
-from urllib.parse import urlparse
+from urllib.parse import unquote_plus, urlparse
 
 from sqlalchemy.orm import Session
 
@@ -280,15 +280,20 @@ def _guard_candidates(
 
     **LLM に届く前に取り除く。** プロンプトの規則だけに頼らない。
     見つけたページの URL は `state.flagged_urls` に残す（推薦しない判断に使う）。
+
+    URL も検査する。抽出の LLM には取得元 URL も渡る（`ai/prompts/extraction`）ため、
+    `/ignore-all-previous-instructions` のようにパスへ書いた指示も届く。URL は候補の
+    鍵なので書き換えず、見つけたら推薦しないだけにする。%エンコードは戻してから調べる。
     """
     guarded = []
     kinds: set[str] = set()
     for direction, r in candidates:
         content = guard.inspect(r.content)
         snippet = guard.inspect(r.snippet)
-        if content.suspicious or snippet.suspicious:
+        url = guard.inspect(unquote_plus(r.url))
+        if content.suspicious or snippet.suspicious or url.suspicious:
             state.flagged_urls.add(r.url)
-            kinds.update(content.findings, snippet.findings)
+            kinds.update(content.findings, snippet.findings, url.findings)
         cleaned = replace(
             r,
             content=content.text if r.content is not None else None,
