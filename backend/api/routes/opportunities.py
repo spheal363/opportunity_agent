@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from api.deps import current_user_id
+from api.deps import current_user_id, require_page_request
 from api.errors import NotFound
 from db.session import get_db
 from schemas.calendar import CalendarEventCreated
@@ -23,28 +23,55 @@ def list_opportunities(
 
 
 @router.get("/{opportunity_id}", response_model=ApiSuccess[OpportunityDetail])
-def get_opportunity(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
-    detail = opportunity_service.get_detail(db, opportunity_id)
+def get_opportunity(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    detail = opportunity_service.get_detail(db, opportunity_id, user_id)
     if detail is None:
         raise NotFound("指定された Opportunity が見つかりません")
     return ok(detail)
 
 
-@router.post("/{opportunity_id}/interest", response_model=ApiSuccess[InterestResult])
-def mark_interested(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
-    result = opportunity_service.mark_interested(db, opportunity_id)
+@router.post(
+    "/{opportunity_id}/interest",
+    response_model=ApiSuccess[InterestResult],
+    dependencies=[Depends(require_page_request)],
+)
+def mark_interested(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    result = opportunity_service.mark_interested(db, opportunity_id, user_id)
     if result is None:
         raise NotFound("指定された Opportunity が見つかりません")
     return ok(result)
 
 
-@router.post("/{opportunity_id}/calendar", response_model=ApiSuccess[CalendarEventCreated])
-def add_to_calendar(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
+@router.post(
+    "/{opportunity_id}/calendar",
+    response_model=ApiSuccess[CalendarEventCreated],
+    dependencies=[Depends(require_page_request)],
+)
+def add_to_calendar(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
     """ユーザーの確認後に Calendar へ予定を追加する。"""
-    return ok(calendar_service.add_event(db, opportunity_id))
+    result = calendar_service.add_event(db, opportunity_id, user_id)
+    if result is None:
+        raise NotFound("指定された Opportunity が見つかりません")
+    return ok(result)
 
 
-@router.post("/{opportunity_id}/feedback", response_model=ApiSuccess[FeedbackResult])
+@router.post(
+    "/{opportunity_id}/feedback",
+    response_model=ApiSuccess[FeedbackResult],
+    dependencies=[Depends(require_page_request)],
+)
 def post_feedback(
     opportunity_id: str,
     payload: FeedbackCreate,

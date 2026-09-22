@@ -36,6 +36,11 @@ class AgentState(BaseModel):
     # 行動の対象を特定できずに外した件数。**不足理由の説明に使う。**
     no_action_count: int = 0
 
+    # 指示らしき文が見つかったページの URL（ai/guard.py, #27）と、
+    # そこから取った Opportunity の id。推薦しない（#77）。
+    flagged_urls: set[str] = Field(default_factory=set)
+    flagged_ids: set[str] = Field(default_factory=set)
+
     # 探索の繰り返し回数。上限を超えたら打ち切る。
     iteration: int = 0
     max_iterations: int = 3

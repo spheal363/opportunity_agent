@@ -34,6 +34,7 @@ Schema と受付状況判定へ通し、**誤りが「受付中」「無料」�
   kind=unknown が期待される解釈。
 """
 
+import re
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -871,7 +872,9 @@ def test_the_source_title_is_given_to_the_model():
     )
     assert "GenAI/SUM 2026" in user
     # **これも外部から取得したデータ。** 境界の中に入れる。
-    assert user.index("<page_content>") < user.index("GenAI/SUM 2026")
+    # タグ名の末尾には毎回ランダムな値が付く（#76）。
+    opening = re.search(r"<page_content_[0-9a-f]{8}>", user)
+    assert opening and opening.start() < user.index("GenAI/SUM 2026")
 
 
 def test_the_title_line_is_omitted_when_there_is_none():

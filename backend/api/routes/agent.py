@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from agent.loop import run_agent
-from api.deps import current_user_id
+from api.deps import current_user_id, require_page_request
 from api.errors import NotFound
 from db.session import get_db
 from schemas.agent import (
@@ -18,7 +18,12 @@ from services import agent_service, profile_service
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
-@router.post("/runs", response_model=ApiSuccess[AgentRunCreated])
+@router.post(
+    "/runs",
+    response_model=ApiSuccess[AgentRunCreated],
+    # LLM の費用が発生する。別サイトから勝手に走らせない（#80）
+    dependencies=[Depends(require_page_request)],
+)
 def start_run(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -37,16 +42,24 @@ def start_run(
 
 
 @router.get("/runs/{run_id}", response_model=ApiSuccess[AgentRunState])
-def get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
-    run = agent_service.get_run(db, run_id)
+def get_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    run = agent_service.get_run(db, run_id, user_id)
     if run is None:
         raise NotFound("指定された run_id が見つかりません")
     return ok(run)
 
 
 @router.get("/runs/{run_id}/logs", response_model=ApiSuccess[list[AgentLogEntry]])
-def get_run_logs(run_id: str, db: Session = Depends(get_db)) -> dict:
-    if agent_service.get_run(db, run_id) is None:
+def get_run_logs(
+    run_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    if agent_service.get_run(db, run_id, user_id) is None:
         raise NotFound("指定された run_id が見つかりません")
     return ok(agent_service.list_logs(db, run_id))
 

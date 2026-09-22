@@ -15,14 +15,15 @@ import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
-from urllib.parse import urlparse
+from urllib.parse import unquote_plus, urlparse
 
 from sqlalchemy.orm import Session
 
-from agent import stub_data
+from agent import demo_attack, stub_data
 from agent.state import AgentState
-from ai import availability, cost
+from ai import availability, cost, guard
 from ai.concurrency import map_parallel
 from ai.evaluation import TOP_N, evaluate_many, recommend, select_top
 from ai.extraction import extract_many
@@ -38,7 +39,7 @@ from ai.verification import verify_with_page
 from config import FALLBACK_TO_A, get_settings
 from config import missing_keys as config_missing_keys
 from db.session import SessionLocal
-from logging_config import get_logger
+from logging_config import describe_exception, get_logger
 from models import AgentLog, AgentRun, Opportunity, UserProfile
 from schemas.agent import AgentRunStatus, AgentStep
 from schemas.opportunity import OpportunityStatus
@@ -146,9 +147,24 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
         state.status = AgentRunStatus.COMPLETED
         _step(db, state, AgentStep.COMPLETED, "探索が完了しました")
     except Exception as exc:  # Agent 全体を落とさず run を failed にする
-        logger.exception("agent run failed run_id=%s", run_id)
+        # 例外の文字列はログにも出さない。型と場所だけ残す（describe_exception）。
+        logger.error("agent run failed run_id=%s %s", run_id, describe_exception(exc))
         db.rollback()
-        _fail(db, AgentState(run_id=run_id, user_id=user_id), str(exc))
+        _fail(db, AgentState(run_id=run_id, user_id=user_id), _public_error(exc))
+
+
+def _public_error(exc: Exception) -> str:
+    """画面に出す失敗理由（#81）。**例外の文字列は載せない。**
+
+    run の `error` は GET /api/agent/runs/{id} でそのまま返る。例外の文字列には
+    SQL とパラメータ（プロフィール本文）や外部 API の応答が入りうるため、
+    種類ごとの決まった文言にする。原因を追うための例外の型と場所は、サーバーのログにだけ残す。
+    """
+    if isinstance(exc, LLMError):
+        return "AI の呼び出しに失敗しました。時間をおいて再度お試しください"
+    if isinstance(exc, SearchError):
+        return "Web 検索に失敗しました。時間をおいて再度お試しください"
+    return "予期しないエラーが発生しました"
 
 
 # --------------------------------------------------------------------------
@@ -197,6 +213,8 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
             row = _upsert_opportunity(db, state, raw)
             ids.append(row.opportunity_id)
             time.sleep(0.4)  # 探索中画面が見えるように少しずつ進める
+        if get_settings().demo_injection:
+            _demo_attack_without_llm(db, state)
         state.discovered_ids = ids
         return ids
 
@@ -223,9 +241,18 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
             continue
         candidates.extend((direction, r) for r in fresh)
 
+    if get_settings().demo_injection and state.search_directions:
+        # 攻撃デモ（#52）。以降の検知・除去・推薦から外す判断は本番と同じ経路を通る。
+        candidates.append((state.search_directions[0], demo_attack.search_result()))
+        _log(db, state, AgentStep.SEARCHING, demo_attack.LOG_MESSAGE)
+
     if not candidates:
         state.discovered_ids = []
         return []
+
+    # 本文の指示らしき文は、LLM に渡す前にコードで取り除く（#27）。
+    # **読む候補を決める前に通す。** 構成 C の事前評価（Jev）もタイトルと抜粋を読む。
+    candidates = _guard_candidates(db, state, candidates)
 
     # --- ② 読む候補を決める --------------------------------------------------
     # 構成 A（既定）は全件読む。構成 C は読む前に優先順位を付ける。
@@ -234,7 +261,8 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # --- ③ 本文が無い候補は取りに行く ---------------------------------------
     # **Serper は snippet しか返さない。** 検索 provider を替えただけでは
     # 抽出の入力が痩せるため、本文取得を別に走らせる。
-    sources = _with_bodies([r for _, r in candidates])
+    # 取りに行った本文は上の検査を通っていない。**抽出へ渡す前に同じ検査をかける。**
+    sources = _guard_pages(db, state, _with_bodies([r for _, r in candidates]))
 
     # --- ④ 全候補をまとめて抽出する -----------------------------------------
     # **方向ごとに抽出すると方向の数だけ待ち時間が積み上がる。**
@@ -248,7 +276,9 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
         extra = deferred[: get_settings().prefilter_extra_reads]
         _log(db, state, AgentStep.SEARCHING, f"候補が足りないため{len(extra)}件を追加で読みます")
         with cost.step("extraction"):
-            more, more_failed = extract_many(_with_bodies([r for _, r in extra]))
+            more, more_failed = extract_many(
+                _guard_pages(db, state, _with_bodies([r for _, r in extra]))
+            )
         extracted = [*extracted, *more]
         failed = [*failed, *more_failed]
         candidates = [*candidates, *extra]
@@ -264,6 +294,8 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     for source_url, item in extracted:
         row = _save_extracted(db, state, item, source_url)
         ids.append(row.opportunity_id)
+        if source_url in state.flagged_urls:
+            state.flagged_ids.add(row.opportunity_id)
         # 本文取得で URL が変わることは無いが、追加読み込み分が by_url に
         # 無い可能性はある。**KeyError で run を落とさない。**
         index = by_url.get(source_url)
@@ -360,6 +392,113 @@ def _with_bodies(results: list[SearchResult]) -> list[SearchResult | PageContent
     return merged
 
 
+def _guard_candidates(
+    db: Session,
+    state: AgentState,
+    candidates: list[tuple[SearchDirection | None, SearchResult]],
+) -> list[tuple[SearchDirection | None, SearchResult]]:
+    """検索結果の本文を検査し、指示らしき文を取り除いた候補を返す（#27）。
+
+    **LLM に届く前に取り除く。** プロンプトの規則だけに頼らない。
+    見つけたページの URL は `state.flagged_urls` に残す（推薦しない判断に使う）。
+    何を検査するかは `_inspect_source`。
+    """
+    guarded = []
+    kinds: set[str] = set()
+    for direction, r in candidates:
+        cleaned, findings = _inspect_source(r)
+        if findings:
+            state.flagged_urls.add(r.url)
+            kinds.update(findings)
+        guarded.append((direction, cleaned))
+
+    _log_flagged(db, state, {r.url for _, r in candidates} & state.flagged_urls, kinds)
+    return guarded
+
+
+def _guard_pages(
+    db: Session, state: AgentState, sources: list[SearchResult | PageContent]
+) -> list[SearchResult | PageContent]:
+    """`_with_bodies` で取りに行った本文を検査する（#27）。
+
+    **検索結果の検査（`_guard_candidates`）だけでは足りない。** Serper は snippet しか
+    返さないため、抽出の LLM が読む本文はここで初めて手に入る。検索結果の側は
+    検査済みなので、取得したページ（`PageContent`）だけを見る。
+    """
+    guarded: list[SearchResult | PageContent] = []
+    newly: set[str] = set()
+    kinds: set[str] = set()
+    for src in sources:
+        if not isinstance(src, PageContent):
+            guarded.append(src)
+            continue
+        cleaned, findings = _inspect_source(src)
+        # 検索結果の時点で見つけたページを二重に数えない。
+        if findings and src.url not in state.flagged_urls:
+            state.flagged_urls.add(src.url)
+            newly.add(src.url)
+            kinds.update(findings)
+        guarded.append(cleaned)
+
+    _log_flagged(db, state, newly, kinds)
+    return guarded
+
+
+def _inspect_source(
+    r: SearchResult | PageContent,
+) -> tuple[SearchResult | PageContent, set[str]]:
+    """1 件を検査し、LLM に渡してよい形と、見つけた種類を返す。
+
+    本文・抜粋に加えて**タイトルと URL も見る。** どちらも抽出の LLM に渡る
+    （タイトルは取得元のページタイトルとして、URL は取得元として）。
+    構成 C の事前評価（Jev）もタイトルを読む。
+
+    URL にはパスへ書いた指示（`/ignore-all-previous-instructions`）もありうる。
+    URL は候補の鍵なので書き換えず、見つけたら推薦しないだけにする。
+    %エンコードは戻してから調べる。
+    """
+    title = guard.inspect(r.title)
+    url = guard.inspect(unquote_plus(r.url))
+    content = guard.inspect(r.content)
+    findings = {*title.findings, *url.findings, *content.findings}
+    changes: dict[str, str | None] = {
+        "title": title.text,
+        "content": content.text if r.content is not None else None,
+    }
+    if isinstance(r, SearchResult):
+        snippet = guard.inspect(r.snippet)
+        findings.update(snippet.findings)
+        changes["snippet"] = snippet.text
+    return replace(r, **changes), findings
+
+
+def _log_flagged(db: Session, state: AgentState, urls: set[str], kinds: set[str]) -> None:
+    if not urls:
+        return
+    _log(
+        db,
+        state,
+        AgentStep.SEARCHING,
+        f"{len(urls)}件のページで指示らしき文を見つけ、取り除いてから読みました",
+    )
+    # 本文は出さない。種類と件数だけ残す。
+    logger.warning("guard.flagged count=%d kinds=%s", len(urls), sorted(kinds))
+
+
+def _demo_attack_without_llm(db: Session, state: AgentState) -> None:
+    """固定データの経路（AGENT_STUB_MODE）で攻撃デモを見せる（#52）。
+
+    LLM を呼ばない経路なので抽出と評価は無いが、**検知と「推薦しない」判断は
+    本番と同じコード**（`_guard_candidates`）で行う。API が使えない場でも
+    防御の流れを見せられるようにするため。
+    """
+    _log(db, state, AgentStep.SEARCHING, demo_attack.LOG_MESSAGE)
+    page = demo_attack.search_result()
+    _guard_candidates(db, state, [(None, page)])
+    if page.url in state.flagged_urls:
+        _log(db, state, AgentStep.SEARCHING, _DROPPED_MESSAGE)
+
+
 def _save_extracted(
     db: Session,
     state: AgentState,
@@ -370,8 +509,19 @@ def _save_extracted(
 
     同じ URL を過去の run でも拾っている場合は、その行を使い回す。
     run のたびに同じ催しが増えないようにするため。
+
+    **既存の行の事実を書き換えてよいのは、その行のページ（か配下）を読んだときだけ。**
+    connpass のような誰でも書けるサイトでは、別のページに「申込: connpass.com/event/1」
+    と書くだけで、ユーザーが「興味あり」にした催しの日時や場所を差し替えられるため。
     """
-    url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
+    item = _without_links(item)
+    flagged = source_url in state.flagged_urls
+    if flagged:
+        # 指示らしき文があったページの申込先は採らない。採ると、そのページの
+        # フラグ（行の id に付く）が別の正当な催しの行に付き、推薦から外れてしまう。
+        url = source_url
+    else:
+        url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
     # **抽出の時点では申込先を確認できていない。**
     #
     # 以前は「同じサイトなら申込先」としていたが、**同一サイトであることは
@@ -390,6 +540,10 @@ def _save_extracted(
     if row is None:
         row = Opportunity(opportunity_id=f"opp_{uuid.uuid4().hex[:12]}")
         db.add(row)
+    elif flagged or not _owns(source_url, url):
+        # 行は使い回すが、事実は前のまま。指示らしき文があったページの抽出結果でも
+        # 上書きしない（画面に出ている「興味あり」の行を書き換えさせない）。
+        return row
 
     # ① Web から取得した事実。取れなかった項目は null のまま入れる。
     row.user_id = state.user_id
@@ -422,6 +576,15 @@ def _save_extracted(
 
     db.commit()
     return row
+
+
+def _without_links(item: ExtractedOpportunity) -> ExtractedOpportunity:
+    """画面に出る自由文から URL・メール・電話番号を取り除く（#77）。
+
+    行き先として見せるのは、検索結果と照合した `url` だけにする。
+    """
+    fields = ("title", "description", "location", "eligibility")
+    return item.model_copy(update={f: guard.strip_links(getattr(item, f)) for f in fields})
 
 
 def _trusted_url(
@@ -469,18 +632,54 @@ def _same_site(a: str, b: str) -> bool:
     ラベル数 2 として通る。`example.co.jp` が `co.jp` の子として扱われる
     ケースは残る。厳密にやるなら PSL が要るが、依存を増やさない判断。
     """
-    host_a = urlparse(a).hostname
-    host_b = urlparse(b).hostname
+    host_a = _host(a)
+    host_b = _host(b)
     if not host_a or not host_b:
         return False
-    host_a = host_a.lower().rstrip(".")
-    host_b = host_b.lower().rstrip(".")
     if host_a == host_b:
         return True
     # 親側になれるのはラベルを 2 つ以上持つホストだけ
     if _labels(host_b) >= 2 and host_a.endswith(f".{host_b}"):
         return True
     return _labels(host_a) >= 2 and host_b.endswith(f".{host_a}")
+
+
+def _owns(page: str, url: str) -> bool:
+    """`page` を読んだ結果で、`url` の行の事実を書き換えてよいか。
+
+    同じページか、その配下（`/event/1` に対する `/event/1/join`）のときだけ。
+    同じサイトの別ページ（`/event/999`）は、書き手が別人でありうるので含めない。
+
+    - **同じページかは `?` 以降まで比べる。** `event.php?id=1` と `event.php?id=999` は
+      パスが同じでも別の催し
+    - **トップページ（`/`）は配下を持たない。** 持たせると、そのサイトの全ページが
+      配下になり、一覧に並んだ別の催しの情報で既存の行を書き換えられてしまう
+    """
+    host = _host(page)
+    if not host or host != _host(url):
+        return False
+    try:
+        p, u = urlparse(page), urlparse(url)
+    except ValueError:
+        return False
+    base = p.path.rstrip("/")
+    if u.path.rstrip("/") == base and u.query == p.query:
+        return True
+    return bool(base) and u.path.startswith(f"{base}/")
+
+
+def _host(url: str) -> str | None:
+    """ホスト名（小文字・末尾の . なし）。**壊れた URL では例外を投げず None。**
+
+    申込先の URL は LLM がページ本文から読み取った値で、書き手が自由に決められる。
+    `http://[::1./x` のような値で `urlparse` は ValueError を投げるため、
+    ここで受けないと 1 ページの細工で run 全体が失敗する。
+    """
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return None
+    return host.lower().rstrip(".") if host else None
 
 
 def _labels(host: str) -> int:
@@ -491,7 +690,10 @@ def _domain_of(url: str | None) -> str | None:
     """発見元の表示用。例: connpass.com"""
     if not url:
         return None
-    return urlparse(url).netloc or None
+    try:
+        return urlparse(url).netloc or None
+    except ValueError:
+        return None
 
 
 # 検証にかける件数の上限。**時間そのものは保証できない**（実行中の通信を
@@ -537,6 +739,11 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
         for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
     }
 
+    # 指示らしき文があったページの候補は、評価にも推薦にも回さない（#77）。
+    # 取り除いた後の本文でも、書き手が推薦を操作しようとした事実は残る。
+    for opportunity_id in sorted(state.flagged_ids & rows.keys()):
+        _drop_flagged(db, state, rows.pop(opportunity_id), AgentStep.EVALUATING)
+
     # --- 評価の前に落とす ---------------------------------------------------
     candidates = _drop_before_evaluation(db, state, rows)
     if not candidates:
@@ -561,7 +768,8 @@ def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list
             row.match_reasons = []
             cost.record_dropped("reasons_not_generated")
         else:
-            row.match_reasons = out.match_reasons
+            # 画面に出る。連絡先を載せない（#77）。
+            row.match_reasons = [guard.strip_links(m) for m in out.match_reasons]
     db.commit()
 
     # 比較（#65）で結果の出どころを追えるようにする。
@@ -729,6 +937,18 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
     checked = 0
     promotions = 0
 
+    # 公式ページも Web 由来。LLM に渡す前に指示らしき文を取り除く（#27）。
+    flagged: set[str] = set()
+
+    def fetch(url: str) -> str | None:
+        content = _fetch_page(url)
+        if content is None:
+            return None
+        result = guard.inspect(content)
+        if result.suspicious:
+            flagged.add(url)
+        return result.text
+
     no_action = 0
 
     while ranked and len(final) < TOP_N and checked < MAX_VERIFY:
@@ -749,8 +969,26 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
             continue
 
         with cost.step("verification"):
-            out = verify_with_page(opportunity=_as_dict(row), url=row.url, fetch_page=_fetch_page)
+            out = verify_with_page(opportunity=_as_dict(row), url=row.url, fetch_page=fetch)
         checked += 1
+
+        if row.url in flagged:
+            # 順位付けの後で見つかっても、推薦しない（#77）。次の候補へ進む。
+            # **タイトルも確認結果も警告も Log に出さない。** 警告はそのページを LLM が
+            # 読んで書いた文で、書き手の文が混ざりうる。同じ理由で「確認済み」にも、
+            # 受付状況の根拠にもしない（古い open を今回の結果として残さない）。
+            state.flagged_urls.add(row.url)
+            row.verified = False
+            _set_availability(row, availability.Availability.UNKNOWN, None, source=None)
+            _log(
+                db,
+                state,
+                AgentStep.VERIFYING,
+                "上位候補の1件の公式ページで指示らしき文を見つけました",
+            )
+            _drop_flagged(db, state, row, AgentStep.VERIFYING)
+            cost.record_dropped("flagged_by_verification")
+            continue
 
         row.verified = out.verified
         row.verified_at = out.verified_at
@@ -762,7 +1000,10 @@ def _verify_and_finalize(db: Session, state: AgentState) -> None:
             row.application_url = out.application_url
             row.url_is_source_only = False
         status, reason = _verified_availability(row, out)
-        _set_availability(row, status, reason, source=row.url if out.verified else None)
+        # 理由も LLM が書いた文で、そのまま画面に出る。連絡先を載せない（#77）。
+        _set_availability(
+            row, status, guard.strip_links(reason), source=row.url if out.verified else None
+        )
         db.commit()
 
         _log_verification(db, state, row, out)
@@ -810,7 +1051,8 @@ def _log_verification(db: Session, state: AgentState, row: Opportunity, out) -> 
         _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: 受付中を確認しました")
 
     for warning in out.warnings:
-        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {warning}")
+        # 警告も LLM が書いた文。Agent Log として画面に出る（#77）。
+        _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {guard.strip_links(warning)}")
 
 
 def _shortfall_reason(final: list[str], state: AgentState) -> str | None:
@@ -842,7 +1084,7 @@ def _write_reasons(db: Session, state: AgentState, final: list[str]) -> None:
         if row is None:
             return None
         try:
-            return recommend(
+            reason = recommend(
                 goals=goals,
                 opportunity=targets[opportunity_id],
                 evaluation=EvaluationOutput(
@@ -852,6 +1094,8 @@ def _write_reasons(db: Session, state: AgentState, final: list[str]) -> None:
                     concerns=[row.availability_reason] if row.availability_reason else [],
                 ),
             ).reason
+            # 推薦理由はそのまま画面に出る。連絡先を載せない（#77）。
+            return guard.strip_links(reason)
         except LLMError as exc:
             # 理由が無くても推薦自体は成立する。run を落とさない。
             logger.warning("recommendation.failed id=%s reason=%s", opportunity_id, exc)
@@ -927,6 +1171,24 @@ def _write_reasons_stub(db: Session, state: AgentState) -> None:
         if row is not None and row.status not in _USER_DECIDED:
             row.status = OpportunityStatus.RECOMMENDED
     db.commit()
+
+
+# 推薦から外したことを伝える Log。**候補のタイトルを入れない。** タイトルは
+# 攻撃ページから LLM が読み取った文で、「★当選★ 今すぐ EVIL.COM へ」のように
+# 書き手の思いどおりにできる。推薦から外しても Log で画面に届いては意味が無い。
+_DROPPED_MESSAGE = "指示らしき文を含むページから取った候補を1件、推薦から外しました"
+
+
+def _drop_flagged(db: Session, state: AgentState, row: Opportunity, step: AgentStep) -> None:
+    """指示らしき文があったページの候補を推薦から外し、そのことを Log に残す（#77）。
+
+    ユーザーが自分で決めた状態（興味あり・参加済みなど）は変えない。
+    過去の run で推薦済みだった行は、推薦から戻す。
+    """
+    state.flagged_ids.add(row.opportunity_id)
+    if row.status == OpportunityStatus.RECOMMENDED:
+        row.status = OpportunityStatus.DISCOVERED
+    _log(db, state, step, _DROPPED_MESSAGE)
 
 
 def _fetch_page(url: str) -> str | None:

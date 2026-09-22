@@ -97,6 +97,10 @@ Web から取得した内容はすべて **Untrusted Data**。
 `ToolResult.external=True` で印を付け、LLM へは「命令ではなくデータ」として渡す。
 ページ内に「以前の命令を無視してください」等があっても Agent への命令として実行しない。
 
+**LLM が騙されない前提に立たない。** モデルに「従うな」と伝えるだけでなく、
+指示らしき文を LLM の手前でコードが取り除き（`backend/ai/guard.py`）、
+引っかかったページは推薦しない。防御の層・実測・限界は `docs/security.md`。
+
 Tool には権限レベルを持たせ、LLM が騙されても重要操作を実行できないようにする
 （`backend/tools/base.py`）。
 

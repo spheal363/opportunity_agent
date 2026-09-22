@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from api.deps import current_user_id
+from api.errors import NotFound
 from db.session import get_db
 from schemas.calendar import CalendarAvailability
 from schemas.common import ApiSuccess, ok
@@ -10,5 +12,12 @@ router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 
 @router.get("/availability", response_model=ApiSuccess[CalendarAvailability])
-def check_availability(opportunity_id: str, db: Session = Depends(get_db)) -> dict:
-    return ok(calendar_service.check_availability(db, opportunity_id))
+def check_availability(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    result = calendar_service.check_availability(db, opportunity_id, user_id)
+    if result is None:
+        raise NotFound("指定された Opportunity が見つかりません")
+    return ok(result)
