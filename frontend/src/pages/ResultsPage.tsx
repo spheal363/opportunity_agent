@@ -9,11 +9,12 @@
  * 無い場合は最後に実行した run（保存済み）へ委ねる。
  */
 import { useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { BottomNote, PageIntro } from '../components/app/Chrome';
 import { CardGrid, ResultsHead } from '../components/app/CardGrid';
 import { ResultWelcome } from '../components/app/ResultWelcome';
+import { TEXT_BUTTON } from '../components/app/styles';
 import ErrorMessage from '../components/ErrorMessage';
 import { useRunResult } from '../hooks/useRunResult';
 import { useAppState } from '../state/context';
@@ -50,6 +51,12 @@ export default function ResultsPage() {
         }
       />
 
+      <p className="mb-[22px]">
+        <Link to="/app/history" className={TEXT_BUTTON}>
+          探索履歴を見る ↗
+        </Link>
+      </p>
+
       <ResultWelcome
         interests={profile?.interests ?? []}
         items={items}
@@ -71,9 +78,7 @@ export default function ResultsPage() {
           探索に失敗しました：{result.error}
         </p>
       ) : null}
-      {result?.shortfall_reason ? (
-        <p role="status">{result.shortfall_reason}</p>
-      ) : null}
+      {result?.shortfall_reason ? <p role="status">{result.shortfall_reason}</p> : null}
 
       {notRecorded && !loading ? (
         <p role="status">

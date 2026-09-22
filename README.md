@@ -85,7 +85,8 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | | 状態 |
 | --- | --- |
 | Profile API | 実装済み |
-| Agent Run / Log API | 実装済み |
+| Agent Run / Log API | 実装済み（手動・自動の重複開始を防止） |
+| 探索履歴 | 実装済み（メニューの「探索履歴」から、手動・自動の過去の結果と作業記録を確認） |
 | Opportunity API | 実装済み |
 | Feedback API | 実装済み（次の run の冒頭で Reflection の入力になる） |
 | 自動探索 | 実装済み・**既定オフ**（👎が重なったら探し直す／締切切れ・経過時間で定期的に探す。上限はコードが強制。[docs/api.md](docs/api.md) の「自動探索」） |

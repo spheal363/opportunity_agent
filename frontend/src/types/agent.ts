@@ -5,12 +5,7 @@ import type { Opportunity } from './opportunity';
 export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
 export type AgentStep =
-  | 'analyzing_profile'
-  | 'planning'
-  | 'searching'
-  | 'evaluating'
-  | 'verifying'
-  | 'completed';
+  'analyzing_profile' | 'planning' | 'searching' | 'evaluating' | 'verifying' | 'completed';
 
 /**
  * 探索を始めたきっかけ。**manual 以外は Agent が自分で始めた探索。**
@@ -55,6 +50,17 @@ export type AgentLogEntry = {
   step: AgentStep;
   message: string;
   created_at: string | null;
+};
+
+/** GET /api/agent/runs。日時は UTC、選定記録が無い古い探索の件数は null。 */
+export type AgentRunHistoryEntry = AgentRun & {
+  created_at: string | null;
+  selected_count: number | null;
+};
+
+export type AgentRunHistory = {
+  items: AgentRunHistoryEntry[];
+  next_cursor: string | null;
 };
 
 /** 探索中画面でステップ名を日本語表示するためのラベル。 */

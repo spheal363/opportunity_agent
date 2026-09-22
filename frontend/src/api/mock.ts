@@ -5,6 +5,7 @@
 import type {
   AgentLogEntry,
   AgentRun,
+  AgentRunHistory,
   Opportunity,
   OpportunityDetail,
   Reaction,
@@ -225,6 +226,34 @@ export function mockAgentRun(runId: string): AgentRun {
 /** GET /agent/runs/latest の Mock。探し直しを始めていればそれ、無ければ手動の run。 */
 export function mockLatestAgentRun(): AgentRun {
   return mockAgentRun(mockFeedbackRun ? MOCK_FEEDBACK_RUN_ID : MOCK_RUN_ID);
+}
+
+const mockManualCreatedAt = new Date().toISOString();
+
+export function mockAgentRunHistory(before?: string): AgentRunHistory {
+  if (before) return { items: [], next_cursor: null };
+  const items = [
+    {
+      ...mockAgentRun(MOCK_RUN_ID),
+      created_at: mockManualCreatedAt,
+      selected_count: MOCK_OPPORTUNITIES.length,
+    },
+  ];
+  if (mockFeedbackRun) {
+    const run = mockAgentRun(MOCK_FEEDBACK_RUN_ID);
+    return {
+      items: [
+        {
+          ...run,
+          created_at: new Date(mockFeedbackRun.startedAt).toISOString(),
+          selected_count: run.status === 'completed' ? MOCK_OPPORTUNITIES.length : null,
+        },
+        ...items,
+      ],
+      next_cursor: null,
+    };
+  }
+  return { items, next_cursor: null };
 }
 
 /** 自動で始めた run は、最初の Log に「なぜ始めたか」が入る（Backend と同じ）。 */

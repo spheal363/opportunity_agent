@@ -70,6 +70,7 @@ POST /api/opportunities/{id}/feedback
 | 1 | `PUT /api/profile` | 実装済み |
 | | `GET /api/profile` | 実装済み |
 | 2 | `POST /api/agent/runs` | 実装済み |
+| | `GET /api/agent/runs` | 実装済み（現在のユーザーの探索履歴） |
 | 3 | `GET /api/agent/runs/{run_id}` | 実装済み |
 | | `GET /api/agent/runs/latest` | 実装済み（現在のユーザーの最新 run。無ければ `data: null`） |
 | | `GET /api/agent/runs/{run_id}/logs` | 実装済み |
@@ -83,6 +84,11 @@ POST /api/opportunities/{id}/feedback
 | | `GET /api/health` | 実装済み |
 
 ### Agent 実行状態
+
+`POST /api/agent/runs` は、同じユーザーの探索が既に実行中なら、その
+`run_id` と現在の `status` を返す。新しい探索や実行タスクは追加しない。
+手動・自動の開始判定は共通の排他処理を通す（1 worker 前提）。
+進捗が止まった探索の扱いは自動探索と同じ。
 
 `GET /api/agent/runs/{run_id}` は Frontend の探索中画面がポーリングする。
 
@@ -150,6 +156,24 @@ Calendar への追加など外部への操作は人の操作のまま。**既定
 完了なら結果）を出す。**画面は勝手に移らない。**
 
 ### 今回の選定結果と保存一覧は別経路
+
+#### 探索履歴（`GET /api/agent/runs`）
+
+現在のユーザーの手動・自動の全探索を、新しい順に返す。完了・失敗・実行中を含む。
+DB の既存記録も対象で、新しい列は追加しない。
+
+- `limit`: 1〜100、既定 20。
+- `before`: 前ページの `next_cursor`（run_id）。省略すると最新から。
+  他人の run や存在しない run を指定した場合は 404。
+- `data`: `{items: AgentRunHistoryEntry[], next_cursor: string | null}`。
+- `AgentRunHistoryEntry`: `AgentRunState` に `created_at`（UTC・tz 付き）と
+  `selected_count`（記録された選定件数。記録が無い場合は null）を追加した形。
+- 日時が同じ場合は run_id の降順で並べ、ページを読む途中で新しい探索が増えても
+  古い履歴のページ送りがずれないようにする。
+
+画面の「探索履歴」から、各回の結果と作業記録を開ける。
+完了した古い探索に選定記録が無い場合は「結果の記録なし」と表示する。
+結果 API も所有者を確認し、他人の探索は 404 にする。
 
 **混同しない。**
 

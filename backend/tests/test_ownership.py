@@ -52,6 +52,7 @@ def _status(oid: str) -> str:
         ("get", "/api/calendar/availability?opportunity_id=opp_other"),
         ("get", "/api/agent/runs/run_other"),
         ("get", "/api/agent/runs/run_other/logs"),
+        ("get", "/api/agent/runs/run_other/result"),
     ],
 )
 def test_other_users_resource_is_not_found(client, seeded, method, path):

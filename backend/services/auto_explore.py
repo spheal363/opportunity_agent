@@ -32,7 +32,6 @@ HTTP の概念は持ち込まない。実行（BackgroundTasks / asyncio.to_thre
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -46,28 +45,27 @@ from schemas.agent import AgentRunStatus, AgentRunTrigger
 from schemas.feedback import Reaction
 from schemas.opportunity import OpportunityStatus
 from services import agent_service
+from services.run_lifecycle import (
+    ABANDONED_ERROR as ABANDONED_ERROR,
+)
+from services.run_lifecycle import (
+    active_runs,
+    expire_abandoned_runs,
+)
+from services.run_lifecycle import (
+    start_lock as _start_lock,
+)
 
 logger = get_logger(__name__)
 
-# 判定から run の作成までを 1 つずつ通す。feedback の route と定期チェックが
-# 同時に判定すると、どちらも「実行中の run は無い」と見て 2 本走らせてしまう。
-# **1 プロセス（uvicorn 1 worker）が前提。** worker を増やすなら DB 側で排他する。
-_start_lock = threading.Lock()
-
 # 回数・費用の上限を数える幅。暦日ではなく直近 24 時間。
 WINDOW = timedelta(hours=24)
-
-_ACTIVE = (AgentRunStatus.QUEUED, AgentRunStatus.RUNNING)
 
 # 推薦中・保存中。これが「行動できる候補」の母集合。参加済みなどは数えない。
 _HELD = (OpportunityStatus.RECOMMENDED, OpportunityStatus.INTERESTED)
 
 # 行動できる候補がこれを切ったら補充を考える（推薦は TOP3）。
 ENOUGH_ACTIONABLE = 3
-
-# 止まったまま残った run を failed にするときの文言。**例外の文字列は載せない。**
-# run の error は GET /api/agent/runs/{id} でそのまま画面に出る。
-ABANDONED_ERROR = "探索が途中で止まりました（サーバーの再起動などで中断されたとみられます）"
 
 
 @dataclass(frozen=True)
@@ -248,15 +246,6 @@ def blocked_reason(db: Session, user_id: str, now: datetime, settings: Settings)
     return None
 
 
-def active_runs(db: Session, user_id: str, now: datetime, settings: Settings) -> list[AgentRun]:
-    """実行中とみなす run。**進捗が止まったまま残った run は数えない。**
-
-    プロセスが落ちると run は running のまま残る。それを実行中と数えると、
-    自動探索が二度と始まらない。
-    """
-    return [r for r in _queued_or_running(db, user_id) if not _abandoned(r, now, settings)]
-
-
 def _unless_blocked(
     db: Session, user_id: str, now: datetime, settings: Settings, decision: Decision
 ) -> Decision | None:
@@ -339,24 +328,6 @@ def start_on_tick(db: Session, user_id: str, now: datetime | None = None) -> str
         return _start(db, user_id, decision) if decision else None
 
 
-def expire_abandoned_runs(db: Session, user_id: str, now: datetime, settings: Settings) -> int:
-    """進捗が止まったまま残った run を failed にする。直した件数を返す。
-
-    **決まった文言だけを残す。** 例外の文字列は載せない（ABANDONED_ERROR）。
-    万一まだ動いていた run なら、次に進捗を書いたときに Agent Loop が状態を
-    上書きするので、取り返しのつかない変更にはならない。
-    """
-    stale = [r for r in _queued_or_running(db, user_id) if _abandoned(r, now, settings)]
-    for run in stale:
-        run.status = AgentRunStatus.FAILED
-        run.message = "探索に失敗しました"
-        run.error = ABANDONED_ERROR
-        logger.warning("auto_explore.abandoned run_id=%s", run.run_id)
-    if stale:
-        db.commit()
-    return len(stale)
-
-
 def _start(db: Session, user_id: str, decision: Decision) -> str:
     run_id = agent_service.create_run(db, user_id, trigger=decision.trigger, reason=decision.reason)
     logger.info("auto_explore.started run_id=%s trigger=%s", run_id, decision.trigger)
@@ -366,25 +337,6 @@ def _start(db: Session, user_id: str, decision: Decision) -> str:
 # --------------------------------------------------------------------------
 # run の状態と日時
 # --------------------------------------------------------------------------
-
-
-def _queued_or_running(db: Session, user_id: str) -> list[AgentRun]:
-    return (
-        db.query(AgentRun)
-        .filter(AgentRun.user_id == user_id, AgentRun.status.in_([s.value for s in _ACTIVE]))
-        .all()
-    )
-
-
-def _abandoned(run: AgentRun, now: datetime, settings: Settings) -> bool:
-    """最後に進捗を書いてから一定時間たった queued / running の run か。
-
-    updated_at は Agent Loop が進捗を書くたびに進む。作成直後は created_at を見る。
-    """
-    seen = [as_utc(t) for t in (run.created_at, run.updated_at) if t is not None]
-    if not seen:
-        return False
-    return max(seen) + timedelta(minutes=settings.auto_explore_abandoned_after_minutes) < now
 
 
 def _naive(value: datetime) -> datetime:

@@ -5,7 +5,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from schemas.opportunity import OpportunitySummary
+from schemas.opportunity import OpportunitySummary, Timestamp
 
 
 class AgentRunStatus(StrEnum):
@@ -63,6 +63,16 @@ class AgentRunState(BaseModel):
     # Web 由来の文は入らない。manual では null。
     trigger: AgentRunTrigger = AgentRunTrigger.MANUAL
     trigger_reason: str | None = None
+
+
+class AgentRunHistoryEntry(AgentRunState):
+    created_at: Timestamp = None
+    selected_count: int | None = Field(default=None, ge=0)
+
+
+class AgentRunHistory(BaseModel):
+    items: list[AgentRunHistoryEntry] = Field(default_factory=list)
+    next_cursor: str | None = None
 
 
 class AgentRunResult(BaseModel):

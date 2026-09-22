@@ -1,4 +1,10 @@
-import type { AgentRunResult, AgentLogEntry, AgentRun, AgentRunCreated } from '../types';
+import type {
+  AgentRunResult,
+  AgentLogEntry,
+  AgentRun,
+  AgentRunCreated,
+  AgentRunHistory,
+} from '../types';
 import { api, USE_MOCK } from './client';
 import {
   MOCK_OPPORTUNITY_SUMMARIES,
@@ -6,6 +12,7 @@ import {
   mockAgentLogs,
   mockAgentRun,
   mockLatestAgentRun,
+  mockAgentRunHistory,
 } from './mock';
 
 export async function startAgentRun(): Promise<AgentRunCreated> {
@@ -25,6 +32,13 @@ export async function fetchAgentRun(runId: string): Promise<AgentRun> {
 export async function fetchLatestAgentRun(): Promise<AgentRun | null> {
   if (USE_MOCK) return mockLatestAgentRun();
   return api.get<AgentRun | null>('/agent/runs/latest');
+}
+
+export async function fetchAgentRunHistory(before?: string): Promise<AgentRunHistory> {
+  if (USE_MOCK) return mockAgentRunHistory(before);
+  const query = new URLSearchParams({ limit: '20' });
+  if (before) query.set('before', before);
+  return api.get<AgentRunHistory>(`/agent/runs?${query}`);
 }
 
 export async function fetchAgentLogs(runId: string): Promise<AgentLogEntry[]> {

@@ -3,11 +3,16 @@
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from config import get_settings
 from models import DEFAULT_USER_ID, AgentLog, AgentRun, Opportunity
 from schemas.agent import (
     AgentLogEntry,
+    AgentRunCreated,
+    AgentRunHistory,
+    AgentRunHistoryEntry,
     AgentRunResult,
     AgentRunState,
     AgentRunStatus,
@@ -15,6 +20,21 @@ from schemas.agent import (
     AgentStep,
 )
 from schemas.opportunity import OpportunitySummary
+from services.run_lifecycle import active_runs, expire_abandoned_runs, start_lock
+
+
+def start_manual_run(db: Session, user_id: str) -> tuple[AgentRunCreated, bool]:
+    """実行中ならその run を返す。bool が True のときだけ呼び出し側が実行する。"""
+    with start_lock:
+        now = datetime.now(UTC)
+        settings = get_settings()
+        expire_abandoned_runs(db, user_id, now, settings)
+        active = active_runs(db, user_id, now, settings)
+        if active:
+            run = max(active, key=lambda r: (r.created_at, r.run_id))
+            return AgentRunCreated(run_id=run.run_id, status=run.status), False
+        run_id = create_run(db, user_id)
+        return AgentRunCreated(run_id=run_id, status=AgentRunStatus.QUEUED), True
 
 
 def create_run(
@@ -58,9 +78,35 @@ def latest_row(db: Session, user_id: str) -> AgentRun | None:
     return (
         db.query(AgentRun)
         .filter(AgentRun.user_id == user_id)
-        .order_by(AgentRun.created_at.desc())
+        .order_by(AgentRun.created_at.desc(), AgentRun.run_id.desc())
         .first()
     )
+
+
+def list_runs(
+    db: Session, user_id: str, *, limit: int = 20, before: str | None = None
+) -> AgentRunHistory | None:
+    """本人の履歴を新しい順に返す。無効・他人のカーソルは None。"""
+    query = db.query(AgentRun).filter(AgentRun.user_id == user_id)
+    if before is not None:
+        cursor = db.get(AgentRun, before)
+        if cursor is None or cursor.user_id != user_id:
+            return None
+        query = query.filter(
+            or_(
+                AgentRun.created_at < cursor.created_at,
+                and_(AgentRun.created_at == cursor.created_at, AgentRun.run_id < cursor.run_id),
+            )
+        )
+    rows = query.order_by(AgentRun.created_at.desc(), AgentRun.run_id.desc()).limit(limit + 1).all()
+    page = rows[:limit]
+    items = [
+        AgentRunHistoryEntry.model_validate(row, from_attributes=True).model_copy(
+            update={"selected_count": None if row.selected_ids is None else len(row.selected_ids)}
+        )
+        for row in page
+    ]
+    return AgentRunHistory(items=items, next_cursor=page[-1].run_id if len(rows) > limit else None)
 
 
 def get_latest_run(db: Session, user_id: str) -> AgentRunState | None:
@@ -89,7 +135,7 @@ def list_logs(db: Session, run_id: str) -> list[AgentLogEntry]:
     return [AgentLogEntry.model_validate(r, from_attributes=True) for r in rows]
 
 
-def get_result(db: Session, run_id: str) -> AgentRunResult | None:
+def get_result(db: Session, run_id: str, user_id: str) -> AgentRunResult | None:
     """この run の最終選定を順位順で返す。
 
     **`GET /api/opportunities` とは別経路。** あちらは status で絞った最新の
@@ -102,7 +148,7 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
       完了したが 0 件    -> recorded=True, selected=[]
     """
     run = db.get(AgentRun, run_id)
-    if run is None:
+    if run is None or run.user_id != user_id:
         return None
 
     ids = run.selected_ids
@@ -113,7 +159,9 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
 
     rows = {
         r.opportunity_id: r
-        for r in db.query(Opportunity).filter(Opportunity.opportunity_id.in_(ids)).all()
+        for r in db.query(Opportunity)
+        .filter(Opportunity.opportunity_id.in_(ids), Opportunity.user_id == user_id)
+        .all()
     }
     # **順位を保つ。** DB の返す順ではなく selected_ids の順。
     selected = [

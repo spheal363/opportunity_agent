@@ -21,6 +21,7 @@ import {
 } from '../components/app/styles';
 import ErrorMessage from '../components/ErrorMessage';
 import { useAgentRun } from '../hooks/useAgentRun';
+import { useRunResult } from '../hooks/useRunResult';
 import { categoryLabel } from '../utils/display';
 import { POSE_SLOTS } from '../utils/poses';
 import { useAppState } from '../state/context';
@@ -47,8 +48,7 @@ export default function ExplorePage() {
   const runId = params.get('run_id');
   const titleRef = useRef<HTMLHeadingElement>(null);
 
-  const { profile, opportunities, refreshOpportunities, startRun, showToast, openAutoRun } =
-    useAppState();
+  const { profile, refreshOpportunities, startRun, showToast, openAutoRun } = useAppState();
   const { run, logs, error, watch, setWatch } = useAgentRun(runId);
   const [starting, setStarting] = useState(false);
 
@@ -62,6 +62,7 @@ export default function ExplorePage() {
   }, [autoRunId, openAutoRun]);
 
   const done = run?.status === 'completed';
+  const { result, error: resultError } = useRunResult(done ? runId : null);
   const failed = run?.status === 'failed';
   const running = watch === 'watching' && !done && !failed && Boolean(runId);
   const paused = watch === 'paused';
@@ -118,8 +119,8 @@ export default function ExplorePage() {
           : '探索の準備';
 
   const percent = run?.progress ?? 0;
-  const items = opportunities ?? [];
-  const candidates = done ? items : [];
+  // 履歴から開いた場合も、この回で選ばれた候補だけを表示する。
+  const candidates = done ? (result?.selected ?? []) : [];
 
   return (
     <>
@@ -170,7 +171,9 @@ export default function ExplorePage() {
                   <>
                     <button
                       type="button"
-                      onClick={() => navigate(runId ? `/app/results?run_id=${runId}` : '/app/results')}
+                      onClick={() =>
+                        navigate(runId ? `/app/results?run_id=${runId}` : '/app/results')
+                      }
                       className={`${PRIMARY} lte620:text-[13px] lte620:gap-[8px]`}
                     >
                       結果を見る ↗
@@ -241,7 +244,7 @@ export default function ExplorePage() {
             />
           </div>
 
-          <ErrorMessage error={error} />
+          <ErrorMessage error={error ?? resultError} />
 
           <div className={PROCESS_HEADING}>
             <h3 className={PROCESS_HEADING_H3}>探索の道のり</h3>

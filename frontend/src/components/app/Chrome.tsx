@@ -39,6 +39,7 @@ const NAV_ITEMS = [
   { to: '/app', icon: '⌂', label: 'ホーム', end: true },
   { to: '/app/explore', icon: '⌕', label: '探索のようす', end: false },
   { to: '/app/results', icon: '✧', label: '探索結果', end: false },
+  { to: '/app/history', icon: '◷', label: '探索履歴', end: false },
   { to: '/app/saved', icon: '♡', label: '気になる', end: false, count: 'saved' as const },
   { to: '/app/steps', icon: '↗', label: '次の一歩', end: false, count: 'steps' as const },
 ];

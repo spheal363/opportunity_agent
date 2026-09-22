@@ -198,4 +198,6 @@ scheduler（N 秒ごと）   ─→ auto_explore.start_on_tick ─────�
 - 定期チェックは `backend/agent/scheduler.py`。フラグがオンのときだけ lifespan で asyncio の
   タスクを 1 本起動し、run は `asyncio.to_thread` で走らせる。**1 プロセス前提**
   （uvicorn の worker を増やすとチェックも重複する）
+- 手動・自動の開始は `services/run_lifecycle.py` の共通ロックを通す。既に実行中なら手動開始はその run を返し、新しい実行タスクを増やさない
 - Frontend は `GET /api/agent/runs/latest` を見て知らせを出す。**画面は勝手に移らない**
+- 「探索履歴」は `GET /api/agent/runs` から本人の過去の探索を取り、各回の結果・ログへ案内する。DB の既存記録を使い、候補の内容は最新値で表示する
