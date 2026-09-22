@@ -43,6 +43,12 @@ _MARKERS = (
     "ddos protection by",
     "attention required",
     "security check",
+    # 実 run ですり抜けたもの。**語彙は実測で足す。**
+    "performing security verification",
+    "security service to protect against malicious bots",
+    "verifies you are not a bot",
+    "verify you are a human",
+    "please wait while we verify",
     "アクセスが制限されています",
     "アクセスできません",
     "ロボットではありません",

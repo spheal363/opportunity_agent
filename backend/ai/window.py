@@ -42,6 +42,8 @@ class WindowStatus(StrEnum):
 
     # 開催日時が期間の中にある
     IN_WINDOW = "in_window"
+    # 期間より前に始まっているが、期間中も続いている（通年の連続講座など）
+    ONGOING = "ongoing"
     # 開催日時が期間より先。締切が近いものはここに入る（別扱いにする）
     AFTER_WINDOW = "after_window"
     # 開催が終わっている
@@ -141,6 +143,10 @@ def classify(
         return WindowStatus.SCHEDULE_UNKNOWN
     if begin > window.end:
         return WindowStatus.AFTER_WINDOW
+    if begin < window.start:
+        # **「期間内に開催」とは言えない。** 始まったのは期間より前で、
+        # 終わりが期間より後なだけ。年度通しの連続講座がこれになる。
+        return WindowStatus.ONGOING
     return WindowStatus.IN_WINDOW
 
 
@@ -163,8 +169,11 @@ def label(status: WindowStatus, window: SearchWindow) -> str:
     """画面と Log に出す一行。**対象種別と期間条件の関係を言う。**"""
     return {
         WindowStatus.IN_WINDOW: f"{window.start:%Y/%m/%d}〜{window.end:%Y/%m/%d} に開催",
+        WindowStatus.ONGOING: f"{window.start:%Y/%m/%d} より前に開始し、期間中も継続",
         WindowStatus.AFTER_WINDOW: f"{window.end:%Y/%m/%d} より先の開催",
         WindowStatus.ENDED: "開催が終了",
         WindowStatus.SCHEDULE_UNKNOWN: "日程未確認",
-        WindowStatus.NOT_TIME_BOUND: "通年・随時（開催期間の条件を当てない）",
+        # **種別だけで「通年」と断定しない。** 分かるのは
+        # 「開催日が 1 点に決まらない種別なので期間で絞らない」ことだけ。
+        WindowStatus.NOT_TIME_BOUND: "開催期間の条件を当てない種別",
     }[status]

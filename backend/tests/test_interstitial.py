@@ -95,3 +95,15 @@ def _stub():
     from ai.schemas.extraction import ExtractedOpportunity
 
     return ExtractedOpportunity(title="t", type="hackathon")
+
+
+def test_the_page_that_slipped_through_the_second_run_is_caught():
+    """**実 run ですり抜けた 2 件目。** 語彙は実測で足す。
+
+    `Just a moment...` とは別の文面で、本文が 140 文字あった。
+    """
+    body = (
+        "This website uses a security service to protect against malicious bots. "
+        "This page is displayed while the website verifies you are not a bot."
+    )
+    assert _check("Performing security verification", body) is not None

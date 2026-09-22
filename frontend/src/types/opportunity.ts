@@ -76,7 +76,13 @@ export type Opportunity = {
    * 期間内でも申込が締め切られていることがある。null は期間が分からない run。
    */
   window_status:
-    'in_window' | 'after_window' | 'ended' | 'schedule_unknown' | 'not_time_bound' | null;
+    | 'in_window'
+    | 'ongoing'
+    | 'after_window'
+    | 'ended'
+    | 'schedule_unknown'
+    | 'not_time_bound'
+    | null;
   window_note: string | null;
   /**
    * この URL は**申込先ではなく情報源**か。

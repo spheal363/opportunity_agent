@@ -42,6 +42,13 @@ export function splitCandidates(selected: Opportunity[], others: Opportunity[]):
       items: live.filter((o) => o.window_status === 'in_window'),
     },
     {
+      key: 'ongoing',
+      eyebrow: 'ALREADY RUNNING',
+      title: '期間より前に始まり、いまも続いている候補',
+      note: '開始は対象期間より前ですが、期間中も続いています。途中から参加できるかは公式ページでご確認ください。',
+      items: live.filter((o) => o.window_status === 'ongoing'),
+    },
+    {
       key: 'schedule_unknown',
       eyebrow: 'DATE NOT CONFIRMED',
       title: '日程を確認できなかった候補',

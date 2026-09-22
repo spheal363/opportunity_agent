@@ -70,8 +70,13 @@ def test_an_event_that_already_ended():
 
 
 def test_a_multi_day_event_that_started_before_today_is_not_ended():
-    """開始済みでも、終わっていなければ参加できる。"""
-    assert _classify("event", _at(2026, 9, 20), _at(2026, 9, 25)) is w.WindowStatus.IN_WINDOW
+    """開始済みでも、終わっていなければ参加できる。**落とさない。**
+
+    ただし「期間内に開催」とも言わない（始まったのは期間より前）。
+    """
+    status = _classify("event", _at(2026, 9, 20), _at(2026, 9, 25))
+    assert status is not w.WindowStatus.ENDED
+    assert status is w.WindowStatus.ONGOING
 
 
 def test_an_event_without_a_date_is_not_guessed_into_the_window():
@@ -128,3 +133,22 @@ def test_every_status_has_a_label():
 
 def test_the_unknown_label_does_not_claim_a_date():
     assert "日程未確認" in w.label(w.WindowStatus.SCHEDULE_UNKNOWN, WINDOW)
+
+
+def test_a_series_that_started_before_the_window_is_not_called_in_window():
+    """**「期間内に開催」と言えない。**
+
+    実測で、2026 年度の連続講座（4/1 開始・翌 1/30 終了）が
+    「2026/09/22〜2026/11/21 に開催」と表示された。始まったのは期間より前。
+    """
+    status = _classify("event", _at(2026, 3, 31, 15), _at(2027, 1, 30, 15))
+    assert status is w.WindowStatus.ONGOING
+    assert "より前に開始" in w.label(status, WINDOW)
+
+
+def test_the_not_time_bound_label_does_not_claim_year_round():
+    """**種別だけで「通年」と断定しない。**
+
+    開催期間で絞らないことと、通年募集であることは別。
+    """
+    assert "通年" not in w.label(w.WindowStatus.NOT_TIME_BOUND, WINDOW)
