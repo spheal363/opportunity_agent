@@ -338,9 +338,19 @@ def _save_extracted(
 
     同じ URL を過去の run でも拾っている場合は、その行を使い回す。
     run のたびに同じ催しが増えないようにするため。
+
+    **既存の行の事実を書き換えてよいのは、その行のページ（か配下）を読んだときだけ。**
+    connpass のような誰でも書けるサイトでは、別のページに「申込: connpass.com/event/1」
+    と書くだけで、ユーザーが「興味あり」にした催しの日時や場所を差し替えられるため。
     """
     item = _without_links(item)
-    url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
+    flagged = source_url in state.flagged_urls
+    if flagged:
+        # 指示らしき文があったページの申込先は採らない。採ると、そのページの
+        # フラグ（行の id に付く）が別の正当な催しの行に付き、推薦から外れてしまう。
+        url = source_url
+    else:
+        url = _trusted_url(item.url, source_url, db=db, state=state, title=item.title)
     row = None
     if url:
         row = (
@@ -351,6 +361,10 @@ def _save_extracted(
     if row is None:
         row = Opportunity(opportunity_id=f"opp_{uuid.uuid4().hex[:12]}")
         db.add(row)
+    elif flagged or not _owns(source_url, url):
+        # 行は使い回すが、事実は前のまま。指示らしき文があったページの抽出結果でも
+        # 上書きしない（画面に出ている「興味あり」の行を書き換えさせない）。
+        return row
 
     # ① Web から取得した事実。取れなかった項目は null のまま入れる。
     row.user_id = state.user_id
@@ -430,18 +444,51 @@ def _same_site(a: str, b: str) -> bool:
     ラベル数 2 として通る。`example.co.jp` が `co.jp` の子として扱われる
     ケースは残る。厳密にやるなら PSL が要るが、依存を増やさない判断。
     """
-    host_a = urlparse(a).hostname
-    host_b = urlparse(b).hostname
+    host_a = _host(a)
+    host_b = _host(b)
     if not host_a or not host_b:
         return False
-    host_a = host_a.lower().rstrip(".")
-    host_b = host_b.lower().rstrip(".")
     if host_a == host_b:
         return True
     # 親側になれるのはラベルを 2 つ以上持つホストだけ
     if _labels(host_b) >= 2 and host_a.endswith(f".{host_b}"):
         return True
     return _labels(host_a) >= 2 and host_b.endswith(f".{host_a}")
+
+
+def _owns(page: str, url: str) -> bool:
+    """`page` を読んだ結果で、`url` の行の事実を書き換えてよいか。
+
+    同じページか、その配下（`/event/1` に対する `/event/1/join`）のときだけ。
+    同じサイトの別ページ（`/event/999`）は、書き手が別人でありうるので含めない。
+    """
+    host = _host(page)
+    if not host or host != _host(url):
+        return False
+    base = _path(page).rstrip("/")
+    path = _path(url)
+    return path.rstrip("/") == base or path.startswith(f"{base}/")
+
+
+def _host(url: str) -> str | None:
+    """ホスト名（小文字・末尾の . なし）。**壊れた URL では例外を投げず None。**
+
+    申込先の URL は LLM がページ本文から読み取った値で、書き手が自由に決められる。
+    `http://[::1./x` のような値で `urlparse` は ValueError を投げるため、
+    ここで受けないと 1 ページの細工で run 全体が失敗する。
+    """
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return None
+    return host.lower().rstrip(".") if host else None
+
+
+def _path(url: str) -> str:
+    try:
+        return urlparse(url).path
+    except ValueError:
+        return ""
 
 
 def _labels(host: str) -> int:
@@ -452,7 +499,10 @@ def _domain_of(url: str | None) -> str | None:
     """発見元の表示用。例: connpass.com"""
     if not url:
         return None
-    return urlparse(url).netloc or None
+    try:
+        return urlparse(url).netloc or None
+    except ValueError:
+        return None
 
 
 def _evaluate_and_select(db: Session, state: AgentState, ids: list[str]) -> list[str]:

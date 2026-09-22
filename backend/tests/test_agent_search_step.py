@@ -311,6 +311,91 @@ def test_cross_domain_url_falls_back_to_source(db, state, real_mode, monkeypatch
     assert any("別ドメイン" in m for m in _logs(db))
 
 
+def test_malformed_extracted_url_does_not_fail_the_step(db, state, real_mode, monkeypatch):
+    """申込先はページの書き手が決められる。壊れた URL 1 つで run 全体を落とさない。"""
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/e")], external=True),
+        extract=lambda src, **k: ([("https://connpass.com/e", _item(url="http://[::1./x"))], []),
+    )
+    ids = loop._search_and_extract(db, state)
+    assert db.get(Opportunity, ids[0]).url == "https://connpass.com/e"
+
+
+def test_other_page_on_same_site_cannot_rewrite_existing_facts(db, state, real_mode, monkeypatch):
+    """同じサイトの別ページが申込先に既存の催しを書いても、その催しの事実は変えない。
+
+    connpass は誰でもイベントを作れる。書き換えを許すと、ユーザーが「興味あり」に
+    した催しの日時や場所を差し替えられ、そのまま Calendar に入ってしまう。
+    """
+    db.add(
+        Opportunity(
+            opportunity_id="opp_mine",
+            user_id="user_001",
+            url="https://connpass.com/event/1",
+            type="hackathon",
+            title="本物",
+            location="渋谷",
+            status=OpportunityStatus.INTERESTED,
+        )
+    )
+    db.commit()
+
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/event/999")], external=True),
+        extract=lambda src, **k: (
+            [
+                (
+                    "https://connpass.com/event/999",
+                    _item(title="偽物", url="https://connpass.com/event/1", location="大阪"),
+                )
+            ],
+            [],
+        ),
+    )
+    ids = loop._search_and_extract(db, state)
+
+    row = db.get(Opportunity, "opp_mine")
+    assert ids == ["opp_mine"]
+    assert (row.title, row.location, row.status) == ("本物", "渋谷", OpportunityStatus.INTERESTED)
+
+
+def test_own_page_still_refreshes_the_row(db, state, real_mode, monkeypatch):
+    """告知ページから申込ページ（配下）を読み取った行は、次の run でも更新される。"""
+    db.add(
+        Opportunity(
+            opportunity_id="opp_old",
+            user_id="user_001",
+            url="https://connpass.com/event/1/join",
+            type="hackathon",
+            title="古い方",
+        )
+    )
+    db.commit()
+
+    state.search_directions = [_direction("q")]
+    _patch(
+        monkeypatch,
+        search=lambda *a, **k: ToolResult([_hit("https://connpass.com/event/1")], external=True),
+        extract=lambda src, **k: (
+            [
+                (
+                    "https://connpass.com/event/1",
+                    _item(title="新しい方", url="https://connpass.com/event/1/join"),
+                )
+            ],
+            [],
+        ),
+    )
+    ids = loop._search_and_extract(db, state)
+
+    assert ids == ["opp_old"]
+    assert db.get(Opportunity, "opp_old").title == "新しい方"
+
+
 def test_metadata_ip_is_not_adopted(db, state, real_mode, monkeypatch):
     """内部アドレスを Agent に踏ませない。"""
     state.search_directions = [_direction("q")]
@@ -389,10 +474,30 @@ def test_stub_search_step_still_fills_other_fields(db, state):
         ("https://com/apply", "https://connpass.com/b", False),
         ("https://x@evil.example/a", "https://connpass.com/b", False),
         ("", "https://connpass.com/b", False),
+        # urlparse が ValueError を投げる形
+        ("http://[::1./x", "https://connpass.com/b", False),
     ],
 )
 def test_same_site_boundaries(extracted, source, expected):
     assert loop._same_site(extracted, source) is expected
+
+
+@pytest.mark.parametrize(
+    "page,url,expected",
+    [
+        ("https://connpass.com/event/1", "https://connpass.com/event/1", True),
+        ("https://connpass.com/event/1/", "https://connpass.com/event/1", True),
+        ("https://connpass.com/event/1", "https://connpass.com/event/1/join", True),
+        ("https://CONNPASS.com/event/1", "http://connpass.com/event/1?x=1", True),
+        ("https://connpass.com/event/999", "https://connpass.com/event/1", False),
+        ("https://connpass.com/event/1", "https://connpass.com/event/10", False),
+        ("https://connpass.com/event/1", "https://events.connpass.com/event/1", False),
+        ("https://connpass.com/event/1", "http://[::1./x", False),
+    ],
+)
+def test_owns_boundaries(page, url, expected):
+    """既存の行を書き換えてよいのは、同じページかその配下を読んだときだけ。"""
+    assert loop._owns(page, url) is expected
 
 
 def test_duplicate_queries_do_not_merge_their_counts(db, state, real_mode, monkeypatch):

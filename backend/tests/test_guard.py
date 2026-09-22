@@ -370,6 +370,78 @@ def test_flagged_page_is_tracked_to_its_opportunity(db, state, real_mode, monkey
     assert state.flagged_ids == set(ids)
 
 
+def test_flagged_page_cannot_flag_another_event(db, state, real_mode, monkeypatch):
+    """攻撃ページが申込先に正当な催しの URL を書いても、その催しまで推薦から外さない。
+
+    フラグは行の id に付く。攻撃ページの申込先を採ると、同じサイトに書ける人なら
+    誰でも、他人の催しを指すだけで推薦から消せてしまう。
+    """
+    state.search_directions = [SearchDirection(category="hackathon", query="q", reason="r")]
+    good, spam = "https://connpass.com/event/1", "https://connpass.com/event/2"
+    hits = [
+        SearchResult(title="G", url=good, snippet="s", content="普通の催し"),
+        SearchResult(title="S", url=spam, snippet="s", content=ATTACK),
+    ]
+    monkeypatch.setattr(loop.registry, "invoke", lambda *a, **k: ToolResult(hits, external=True))
+    monkeypatch.setattr(
+        loop,
+        "extract_many",
+        lambda sources, **_: (
+            [
+                (s.url, ExtractedOpportunity(title=s.title, type="hackathon", url=good))
+                for s in sources
+            ],
+            [],
+        ),
+    )
+
+    loop._search_and_extract(db, state)
+
+    good_row = db.query(Opportunity).filter(Opportunity.url == good).one()
+    spam_row = db.query(Opportunity).filter(Opportunity.url == spam).one()
+    assert state.flagged_ids == {spam_row.opportunity_id}
+    assert good_row.title == "G"
+
+
+def test_flagged_page_does_not_overwrite_existing_facts(db, state, real_mode, monkeypatch):
+    """指示らしき文があったページの抽出結果で、既存の行を書き換えない。"""
+    db.add(
+        Opportunity(
+            opportunity_id="opp_mine",
+            user_id="user_001",
+            type="hackathon",
+            title="元のタイトル",
+            location="渋谷",
+            url="https://evil.example/a",
+            status=OpportunityStatus.INTERESTED,
+        )
+    )
+    db.commit()
+    state.search_directions = [SearchDirection(category="hackathon", query="q", reason="r")]
+    hits = [SearchResult(title="A", url="https://evil.example/a", snippet="s", content=ATTACK)]
+    monkeypatch.setattr(loop.registry, "invoke", lambda *a, **k: ToolResult(hits, external=True))
+    monkeypatch.setattr(
+        loop,
+        "extract_many",
+        lambda sources, **_: (
+            [
+                (
+                    "https://evil.example/a",
+                    ExtractedOpportunity(title="★当選★", type="event", location="大阪"),
+                )
+            ],
+            [],
+        ),
+    )
+
+    ids = loop._search_and_extract(db, state)
+
+    row = db.get(Opportunity, "opp_mine")
+    assert ids == ["opp_mine"]
+    assert (row.title, row.location) == ("元のタイトル", "渋谷")
+    assert state.flagged_ids == {"opp_mine"}
+
+
 def test_page_flagged_at_verification_is_dropped(db, state, real_mode, monkeypatch):
     """推薦した後の公式ページ確認で見つかっても、推薦のままにしない。"""
     db.add(
