@@ -13,16 +13,6 @@ import { DIALOG, DIALOG_CLOSE, DIALOG_H2, EYEBROW, FORM_HINT, MUTED, PRIMARY } f
 const LABEL = 'block text-[14px] mt-[20px] mb-[7px]';
 const FIELD = 'w-full p-[12px] border border-[#d4dbd0] rounded-[7px] bg-white text-ink text-[14px]';
 
-/**
- * 入力例。**プレースホルダーとしてだけ出す。**
- * 未入力のまま保存される値にはしない。
- */
-const WANTS_PLACEHOLDER = `ハウスやテクノの音楽イベントに行きたい
-初めての曲作りができるワークショップに出たい
-ハッカソンに挑戦したい`;
-const FUTURE_PLACEHOLDER = '将来は自分のプロダクトで起業したい';
-const LOCATION_PLACEHOLDER = '東京 / オンライン';
-
 /** 保存済みプロフィールを、フォームの見たままの形に戻す。 */
 const fromProfile = (profile: UserProfile | null): ProfileDraft =>
   profile
@@ -135,7 +125,6 @@ export function GoalDialog({
           required
           rows={4}
           value={wantsNow}
-          placeholder={WANTS_PLACEHOLDER}
           onChange={(event) => {
             setWantsNow(event.target.value);
             goalRef.current?.setCustomValidity('');
@@ -150,7 +139,6 @@ export function GoalDialog({
           id="profile-future-goals"
           rows={2}
           value={futureGoals}
-          placeholder={FUTURE_PLACEHOLDER}
           onChange={(event) => setFutureGoals(event.target.value)}
           className={`${FIELD} resize-y min-h-[72px]`}
         />
@@ -162,7 +150,6 @@ export function GoalDialog({
         <input
           id="profile-location"
           value={location}
-          placeholder={LOCATION_PLACEHOLDER}
           onChange={(event) => setLocation(event.target.value)}
           className={FIELD}
         />
