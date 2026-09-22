@@ -164,17 +164,30 @@ def classify_page(content: str, *, base_url: str, links: list[Link] | None = Non
         return PageKind.UNKNOWN
 
     found = links if links is not None else extract_links(body, base_url=base_url)
-    if len(found) >= LISTING_MIN_LINKS:
-        # 同じ形のリンクがいくつ並んでいるか。並んでいれば一覧。
-        shapes: dict[str, int] = {}
-        for link in found:
-            shape = _path_shape(link.url)
-            shapes[shape] = shapes.get(shape, 0) + 1
-        if max(shapes.values()) >= LISTING_MIN_LINKS:
-            return PageKind.LISTING
+    if len(found) < LISTING_MIN_LINKS:
+        return PageKind.UNKNOWN
 
-    # ここから先は本文の中身を見ないと分からない。**推測しない。**
-    return PageKind.UNKNOWN
+    # 同じ形のリンクがいくつ並んでいるか。並んでいれば一覧らしい。
+    shapes: dict[str, int] = {}
+    for link in found:
+        shape = _path_shape(link.url)
+        shapes[shape] = shapes.get(shape, 0) + 1
+    dominant, count = max(shapes.items(), key=lambda kv: kv[1])
+    if count < LISTING_MIN_LINKS:
+        return PageKind.UNKNOWN
+
+    # **自分と同じ形のリンクが並ぶページは、一覧ではなく記事。**
+    #
+    # 実測で、`okinawatimes.co.jp/articles/-/1863932` が一覧と誤判定された。
+    # 関連記事のサイドバーに `/articles/-/#` が 91 本並ぶためで、
+    # **そのページ自身も同じ形**（記事の隣に記事が並んでいるだけ）。
+    #
+    # 一覧ページは自分と違う形の子を並べる
+    # （`/ja/events/` の下に `/ja/events/309310`）。
+    if _path_shape(base_url) == dominant:
+        return PageKind.ARTICLE
+
+    return PageKind.LISTING
 
 
 def same_shape_links(links: list[Link], *, limit: int | None = None) -> list[Link]:

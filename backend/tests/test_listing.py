@@ -122,3 +122,24 @@ def test_the_prefilter_question_counts_a_listing_as_an_opportunity():
     assert "個別の開催へたどれる" in q.IS_OPPORTUNITY
     # 記事は従来どおり該当しない。
     assert "解説記事" in q.IS_OPPORTUNITY
+
+
+def test_an_article_with_a_related_sidebar_is_not_a_listing():
+    """**実測で、ニュース記事が一覧と誤判定された。**
+
+    `okinawatimes.co.jp/articles/-/1863932` の関連記事欄に
+    `/articles/-/#` が 91 本並ぶ。**そのページ自身も同じ形**で、
+    記事の隣に記事が並んでいるだけ。一覧ではない。
+    """
+    url = "https://www.okinawatimes.co.jp/articles/-/1863932"
+    body = "\n".join(
+        f"[記事{i}](https://www.okinawatimes.co.jp/articles/-/19{i:05d})" for i in range(20)
+    )
+    assert listing.classify_page(body, base_url=url) is listing.PageKind.ARTICLE
+
+
+def test_a_real_listing_has_children_of_a_different_shape():
+    """`clubberia.com/ja/events/` の下に `/ja/events/309310` が並ぶ形。"""
+    url = "https://clubberia.com/ja/events/"
+    body = "\n".join(f"[Event {i}](https://clubberia.com/ja/events/3093{i:02d})" for i in range(20))
+    assert listing.classify_page(body, base_url=url) is listing.PageKind.LISTING

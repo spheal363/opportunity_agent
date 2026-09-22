@@ -270,3 +270,12 @@ def test_a_wish_is_not_replaced_by_a_crossing():
     """
     assert "希望を交差点で置き換えない" in prompt.SYSTEM
     assert "枠を使い切るなら" in prompt.SYSTEM
+
+
+def test_ticketed_events_do_not_get_an_application_word():
+    """**実測で、クラブイベントの検索に「募集」が付いて外れた。**
+
+    応募するものではないので、募集を示す語を付けると検索が外れる。
+    """
+    assert "チケットを買って行く催し" in prompt.SYSTEM
+    assert "応募するものではないので検索が外れる" in prompt.SYSTEM

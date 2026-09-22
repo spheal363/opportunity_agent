@@ -307,7 +307,13 @@ def _search_and_extract(db: Session, state: AgentState) -> list[str]:
     # 取ってきた本文も Web 由来。抽出へ渡す前に検査する。
     sources = _guard_bodies(db, state, _with_bodies([r for _, r in candidates]))
 
-    # --- ⑤ 一覧ページは「探索元」として先へ進む -----------------------------
+    # --- ⑤ 足りない方向だけ、未読の候補を追加で読む -------------------------
+    # **粗選別は snippet だけで決めている。** 一覧サイトの抜粋は
+    # 「clubberia | クラブイベント情報」のように中身が無く、実測で
+    # 有望な探索元が落ちた。**足りない方向だけ、読んでから判断し直す。**
+    sources = _read_more_for_thin_directions(db, state, sources, candidates, deferred)
+
+    # --- ⑥ 一覧ページは「探索元」として先へ進む -----------------------------
     # **一覧を個別イベントとして数えない。** 実測で、音楽方向は一覧 4 件と
     # 記事 1 件で個別イベントが 0 件だった。ここが無いと先へ届かない。
     sources = _follow_listings(db, state, sources)
@@ -458,6 +464,51 @@ def _save_search_candidates(db: Session, state: AgentState, candidates: list) ->
         run.search_candidates = rows
         db.commit()
     _log(db, state, AgentStep.SEARCHING, f"検索で{len(rows)}件の候補が見つかりました")
+
+
+def _read_more_for_thin_directions(
+    db: Session, state: AgentState, sources: list, candidates: list, deferred: list
+) -> list:
+    """候補の少ない探索方向について、後回しにした分を追加で読む（#47）。
+
+    **全方向をやり直さない。** 読んだ本文が 1 件以下の方向だけを対象にする。
+
+    粗選別は抜粋しか見ていない。一覧サイトの抜粋は中身が無く、実測で
+    `clubberia` `iflyer` `odhackathon` のような**探索元が落ちた**。
+    本文を読めば一覧だと分かるので、**読む機会を作る**のがここの役目。
+    """
+    settings = get_settings()
+    if not deferred or settings.listing_max_fetches <= 0:
+        return sources
+
+    order = {id(d): i for i, d in enumerate(state.search_directions)}
+    read_per_direction: dict[int, int] = {}
+    for direction, _ in candidates:
+        index = order.get(id(direction))
+        if index is not None:
+            read_per_direction[index] = read_per_direction.get(index, 0) + 1
+
+    # 読んだ本文が 1 件以下の方向。**0 件だけに絞らない**（1 件では選べない）。
+    thin = {i for i in range(len(state.search_directions)) if read_per_direction.get(i, 0) <= 1}
+    if not thin:
+        return sources
+
+    extra = [(direction, r) for direction, r in deferred if order.get(id(direction)) in thin][
+        : settings.prefilter_extra_reads
+    ]
+    if not extra:
+        return sources
+
+    _log(
+        db,
+        state,
+        AgentStep.SEARCHING,
+        f"候補の少ない{len(thin)}方向について、{len(extra)}件を追加で読みます",
+    )
+    cost.record_dropped("thin_direction_reads", len(extra))
+    more = _guard_bodies(db, state, _with_bodies([r for _, r in extra]))
+    candidates.extend(extra)
+    return [*sources, *more]
 
 
 def _follow_listings(db: Session, state: AgentState, sources: list) -> list:
