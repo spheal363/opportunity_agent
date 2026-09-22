@@ -544,7 +544,13 @@ def test_page_flagged_at_verification_is_dropped(db, state, real_mode, monkeypat
     loop._verify(db, state)
 
     assert state.selected_ids == []
-    assert db.get(Opportunity, "opp_v").status == OpportunityStatus.DISCOVERED
+    row = db.get(Opportunity, "opp_v")
+    assert row.status == OpportunityStatus.DISCOVERED
+    # そのページを読んだ LLM の判断は採らない
+    assert row.verified is False
     logs = _logs(db)
-    assert any("推薦から外しました" in m for m in logs)
+    assert loop._DROPPED_MESSAGE in logs
+    # タイトルも、そのページを読んだ LLM が書いた警告も Log に出さない
+    assert not any("AI Hackathon" in m for m in logs)
+    assert not any("申込先" in m for m in logs)
     assert all("evil.example" not in m for m in logs)

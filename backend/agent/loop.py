@@ -664,17 +664,21 @@ def _verify(db: Session, state: AgentState) -> None:
     state.flagged_urls |= flagged
 
     for row, out in zip(rows, outs, strict=True):
+        if row.url in flagged:
+            # 推薦した後で見つかっても、推薦のままにしない（#77）。
+            # **タイトルも確認結果も警告も Log に出さない。** 警告はそのページを LLM が
+            # 読んで書いた文で、書き手の文が混ざりうる。同じ理由で「確認済み」にもしない。
+            row.verified = False
+            _log(
+                db, state, AgentStep.VERIFYING, "TOP3の1件の公式ページで指示らしき文を見つけました"
+            )
+            _drop_flagged(db, state, row, AgentStep.VERIFYING)
+            state.selected_ids = [i for i in state.selected_ids if i != row.opportunity_id]
+            continue
+
         row.verified = out.verified
         row.verified_at = out.verified_at
         row.verification_source = out.verification_source
-
-        if row.url in flagged:
-            _log(
-                db,
-                state,
-                AgentStep.VERIFYING,
-                f"「{row.title}」の公式ページで指示らしき文を見つけ、取り除いてから確認しました",
-            )
         # 確認できなかったことも、食い違いも隠さない。
         if out.verified:
             _log(db, state, AgentStep.VERIFYING, f"「{row.title}」を公式ページで確認しました")
@@ -683,10 +687,6 @@ def _verify(db: Session, state: AgentState) -> None:
         for warning in out.warnings:
             # 警告も LLM が書いた文。Agent Log として画面に出る（#77）。
             _log(db, state, AgentStep.VERIFYING, f"「{row.title}」: {guard.strip_links(warning)}")
-        if row.url in flagged:
-            # 推薦した後で見つかっても、推薦のままにしない（#77）。
-            _drop_flagged(db, state, row, AgentStep.VERIFYING)
-            state.selected_ids = [i for i in state.selected_ids if i != row.opportunity_id]
 
     db.commit()
 
