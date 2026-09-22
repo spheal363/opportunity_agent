@@ -17,6 +17,7 @@ import { useAppState } from '../../state/context';
 import type { OpportunityDetail, Reaction } from '../../types';
 import { formatDateTime } from '../../utils/date';
 import { Dialog } from '../Dialog';
+import { AutoRunNotice } from './AutoRunNotice';
 import { CalendarPanel, type CalendarOutcome } from './CalendarPanel';
 import { StillPose } from './Pose';
 import { DIALOG, DIALOG_CLOSE, DIALOG_H2, EYEBROW, MUTED, PRIMARY } from './styles';
@@ -190,6 +191,9 @@ export function DetailDialog() {
               </button>
             ))}
           </div>
+          {/* 👎が重なって Agent が探し直し始めたら、ここで知らせる（ダイアログの外の知らせは
+              ダイアログに隠れて見えないため）。開くかどうかは本人が選ぶ。 */}
+          <AutoRunNotice only="feedback" onOpen={closeDetail} />
 
           <button type="button" onClick={openPrepare} className={`${PRIMARY} w-full`}>
             {inSteps ? '参加準備リストを見る' : '参加に向けて準備する'} ↗

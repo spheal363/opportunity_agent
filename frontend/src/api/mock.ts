@@ -2,7 +2,14 @@
  * Backend 未完成でも画面を作れるようにするための Mock Data。
  * backend/agent/stub_data.py と内容を合わせてある。
  */
-import type { AgentLogEntry, Opportunity, OpportunityDetail, UserProfile } from '../types';
+import type {
+  AgentLogEntry,
+  AgentRun,
+  Opportunity,
+  OpportunityDetail,
+  Reaction,
+  UserProfile,
+} from '../types';
 
 const day = (offset: number, hour: number) => {
   const d = new Date();
@@ -162,3 +169,71 @@ export const MOCK_AGENT_LOGS: AgentLogEntry[] = [
   { step: 'evaluating', message: '3件からTOP3件に絞り込み', created_at: null },
   { step: 'verifying', message: 'TOP3の公式情報を確認しました', created_at: null },
 ];
+
+// --- 自動探索（backend/services/auto_explore.py の feedback） ---
+
+export const MOCK_RUN_ID = 'run_mock';
+export const MOCK_FEEDBACK_RUN_ID = 'run_mock_feedback';
+
+/** 探索中の見え方を確かめられるよう、探し直しを始めてからしばらくは running を返す。 */
+const MOCK_FEEDBACK_RUNNING_MS = 4000;
+
+const mockDisliked = new Set<string>();
+let mockFeedbackRun: { startedAt: number; reason: string } | null = null;
+
+/**
+ * 👎を覚えておき、推薦の過半数（2 件以上）に付いたら探し直しを 1 回だけ始めたことにする。
+ * 理由の文は Backend と同じ決まった文面と数値だけ。
+ */
+export function recordMockFeedback(opportunityId: string, reaction: Reaction): void {
+  if (reaction !== 'dislike') return;
+  mockDisliked.add(opportunityId);
+  const total = MOCK_OPPORTUNITIES.length;
+  const disliked = mockDisliked.size;
+  if (mockFeedbackRun || disliked < 2 || disliked * 2 <= total) return;
+  mockFeedbackRun = {
+    startedAt: Date.now(),
+    reason: `今回の推薦${total}件のうち${disliked}件に👎が付いたため、反応を踏まえて探し直します`,
+  };
+}
+
+export function mockAgentRun(runId: string): AgentRun {
+  const base = { run_id: runId, error: null, cost_jpy: 0, expensive_model_calls: 0 };
+  if (runId === MOCK_FEEDBACK_RUN_ID && mockFeedbackRun) {
+    const running = Date.now() - mockFeedbackRun.startedAt < MOCK_FEEDBACK_RUNNING_MS;
+    return {
+      ...base,
+      status: running ? 'running' : 'completed',
+      current_step: running ? 'searching' : 'completed',
+      message: running ? 'Webを探索しています' : '探索が完了しました',
+      progress: running ? 60 : 100,
+      trigger: 'feedback',
+      trigger_reason: mockFeedbackRun.reason,
+    };
+  }
+  return {
+    ...base,
+    status: 'completed',
+    current_step: 'completed',
+    message: '探索が完了しました',
+    progress: 100,
+    trigger: 'manual',
+    trigger_reason: null,
+  };
+}
+
+/** GET /agent/runs/latest の Mock。探し直しを始めていればそれ、無ければ手動の run。 */
+export function mockLatestAgentRun(): AgentRun {
+  return mockAgentRun(mockFeedbackRun ? MOCK_FEEDBACK_RUN_ID : MOCK_RUN_ID);
+}
+
+/** 自動で始めた run は、最初の Log に「なぜ始めたか」が入る（Backend と同じ）。 */
+export function mockAgentLogs(runId: string): AgentLogEntry[] {
+  if (runId === MOCK_FEEDBACK_RUN_ID && mockFeedbackRun) {
+    return [
+      { step: 'analyzing_profile', message: mockFeedbackRun.reason, created_at: null },
+      ...MOCK_AGENT_LOGS,
+    ];
+  }
+  return MOCK_AGENT_LOGS;
+}

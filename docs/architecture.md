@@ -143,3 +143,26 @@ MVP は SQLite + SQLAlchemy。PostgreSQL へ移す場合も `DATABASE_URL` の�
 
 MVP では認証を入れない。単一ユーザー（`DEFAULT_USER_ID = "user_001"`）で動く。
 認証を追加するときは `backend/api/deps.py` の `current_user_id` だけ差し替える。
+
+## 自動探索（Agent が「いつ探すか」を決める）
+
+**自動にするのは発見だけ。** Calendar への書き込みなど外部に影響する操作は、
+これまでどおり人の操作に残す（Autonomous discovery, human-controlled action）。
+既定はオフ。条件と既定値は `docs/api.md` の「自動探索」。
+
+```
+POST .../feedback（👎） ─→ auto_explore.start_after_feedback ─┐
+                                                               ├─→ create_run(trigger, reason) ─→ run_agent
+scheduler（N 秒ごと）   ─→ auto_explore.start_on_tick ─────────┘
+```
+
+- **判定と上限は `backend/services/auto_explore.py` に集め、LLM は使わない。**
+  上限（回数・費用・最低間隔・実行中の run・プロフィール必須・同じ run への探し直しは 1 回）は
+  全 trigger に共通で、きっかけごとの例外を作らない
+- **理由の文は決まった文面と数値だけ。** 候補のタイトルなど Web 由来の文を
+  「Agent の判断理由」として画面に出さない。run の最初の Log に入れ、探索中画面の先頭に出す。
+  AgentStep は増やさない
+- 定期チェックは `backend/agent/scheduler.py`。フラグがオンのときだけ lifespan で asyncio の
+  タスクを 1 本起動し、run は `asyncio.to_thread` で走らせる。**1 プロセス前提**
+  （uvicorn の worker を増やすとチェックも重複する）
+- Frontend は `GET /api/agent/runs/latest` を見て知らせを出す。**画面は勝手に移らない**

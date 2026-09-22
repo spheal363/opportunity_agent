@@ -63,6 +63,18 @@ def latest_row(db: Session, user_id: str) -> AgentRun | None:
     )
 
 
+def get_latest_run(db: Session, user_id: str) -> AgentRunState | None:
+    """その人の最新の run。無ければ None。
+
+    Agent が自分で始めた探索（trigger が manual 以外）を画面が見つけるのに使う。
+    他人の run は返さない（#69）。
+    """
+    row = latest_row(db, user_id)
+    if row is None:
+        return None
+    return AgentRunState.model_validate(row, from_attributes=True)
+
+
 def get_run(db: Session, run_id: str, user_id: str) -> AgentRunState | None:
     """その人の run だけを返す（#69）。他人の run は存在しないのと同じに扱う。"""
     row = db.get(AgentRun, run_id)

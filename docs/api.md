@@ -71,6 +71,7 @@ POST /api/opportunities/{id}/feedback
 | | `GET /api/profile` | 実装済み |
 | 2 | `POST /api/agent/runs` | 実装済み |
 | 3 | `GET /api/agent/runs/{run_id}` | 実装済み |
+| | `GET /api/agent/runs/latest` | 実装済み（現在のユーザーの最新 run。無ければ `data: null`） |
 | | `GET /api/agent/runs/{run_id}/logs` | 実装済み |
 | | `GET /api/agent/runs/{run_id}/result` | 実装済み（**この run の最終選定**） |
 | 4 | `GET /api/opportunities` | 実装済み |
@@ -134,6 +135,19 @@ Calendar への追加など外部への操作は人の操作のまま。**既定
   止まった run とみなし、妨げにしない（決まった文言で `failed` にする。例外の文字列は載せない）
 - プロフィールが無ければ始めない
 - 同じ run への探し直しは 1 回まで（探し直した run が失敗しても繰り返さない）
+
+#### 最新の run（`GET /api/agent/runs/latest`）
+
+現在のユーザーのいちばん新しい run（状態は問わない）を `AgentRunState` で返す。他人の run は返さない。
+
+**run が 1 件も無いときは 404 ではなく `{"success": true, "data": null}`。**
+まだ探索していないのは正常な状態で、ホームが定期的に取りに来るため
+（404 だと毎回エラーとして扱うことになる）。
+
+画面はホーム（表示時・フォーカス時・30 秒ごと。自動の run が実行中の間は 5 秒ごと）と
+👎の後にこれを取る。`trigger` が `manual` 以外で、最後に自分で始めた run とも、
+見た・閉じた run とも違えば、`trigger_reason` と「見る」リンク（実行中なら探索中画面、
+完了なら結果）を出す。**画面は勝手に移らない。**
 
 ### 今回の選定結果と保存一覧は別経路
 

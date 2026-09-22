@@ -88,6 +88,7 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Agent Run / Log API | 実装済み |
 | Opportunity API | 実装済み |
 | Feedback API | 実装済み（Reflection 未接続） |
+| 自動探索 | 実装済み・**既定オフ**（👎が重なったら探し直す／締切切れ・経過時間で定期的に探す。上限はコードが強制。[docs/api.md](docs/api.md) の「自動探索」） |
 | Tool 権限制御 | 枠組みのみ（`backend/tools/`） |
 | Agent Loop: Web 探索 | 実装済み（検索 → 抽出 → 保存。重複は URL で除去） |
 | Agent Loop: Goal 分析 | 実装済み（プロフィール → 目標・興味の交差点） |
@@ -110,6 +111,27 @@ LLM / Web Search はまだ繋いでいない（`backend/agent/loop.py` の `_ste
 | Retry / Fallback | 実装済み（tier ごとに Retry し、駄目なら上の tier へ Fallback） |
 
 Frontend 側は `VITE_USE_MOCK=true` にすると Backend なしで画面を作れる。
+
+### 自動探索の設定（任意）
+
+Agent が自分で探索を始める機能。**自動にするのは発見だけ**で、Calendar への追加などは人の操作のまま。
+既定はすべてオフ。`backend/.env` で有効にする（キーと既定値は [`backend/.env.example`](backend/.env.example)）。
+
+| 設定 | 既定 | |
+| --- | --- | --- |
+| `AUTO_EXPLORE_ON_FEEDBACK` | `false` | 最新の推薦の過半数に👎が付いたら探し直す |
+| `AUTO_EXPLORE_SCHEDULE` | `false` | 定期チェック（締切切れで推薦が減った・前回から時間がたった） |
+| `AUTO_EXPLORE_TICK_SECONDS` | `300` | 定期チェックの間隔（秒） |
+| `AUTO_EXPLORE_SCHEDULE_INTERVAL_MINUTES` | `1440` | 前回の探索からこれだけたったら新着を探す（分） |
+| `AUTO_EXPLORE_MAX_RUNS_PER_DAY` | `3` | 直近 24 時間の自動 run の回数上限 |
+| `AUTO_EXPLORE_MAX_COST_JPY_PER_DAY` | `20` | 直近 24 時間の全 run の見積もり額の上限（円） |
+| `AUTO_EXPLORE_MIN_INTERVAL_MINUTES` | `60` | 自動 run 同士の最低間隔（分） |
+| `AUTO_EXPLORE_ABANDONED_AFTER_MINUTES` | `30` | 進捗がこれだけ無い queued / running の run は止まったとみなす（分） |
+
+デモでは、たとえば `AUTO_EXPLORE_ON_FEEDBACK=true` にして探索結果の 3 件のうち 2 件に
+「今回は違うかも」を押すと、探し直しが始まり知らせが出る。定期チェックを見せるなら
+`AUTO_EXPLORE_SCHEDULE=true AUTO_EXPLORE_TICK_SECONDS=10 AUTO_EXPLORE_SCHEDULE_INTERVAL_MINUTES=1 AUTO_EXPLORE_MIN_INTERVAL_MINUTES=0`
+で、最後の探索から 1 分ほどでホームに知らせが出る（回数と費用の上限はそのまま効く）。
 
 ---
 
