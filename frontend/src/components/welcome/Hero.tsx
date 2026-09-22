@@ -66,11 +66,9 @@ export function Hero({ onStart }: { onStart: () => void }) {
             'lte900:text-[16px] lte640:mb-[24px]'
           }
         >
-          「やってみたい」の、その先に。
-          <br />
           あなたの目標と興味から、
           <br />
-          次の一歩になる機会が見つかります。
+          次の一歩になる出会いが見つかります。
         </p>
         <div
           className={
@@ -81,16 +79,23 @@ export function Hero({ onStart }: { onStart: () => void }) {
           <button
             type="button"
             onClick={onStart}
-            className={`${BUTTON} lte1250:text-[14px] lte1250:gap-[20px] lte640:text-[15px] lte640:px-[16px] lte640:py-[14px] lte640:gap-[15px]`}
+            // gap-x (column-gap) is emitted after BUTTON's gap, so it reliably narrows the label–arrow gap.
+            className={`${BUTTON} group gap-x-[20px] hover:-translate-y-[2px] active:translate-y-0 lte1250:text-[14px] lte1250:gap-x-[16px] lte640:text-[15px] lte640:px-[16px] lte640:py-[14px] lte640:gap-x-[12px]`}
           >
-            機会を探しはじめる <span>↗</span>
+            探しに行く{' '}
+            <span
+              // On hover the arrow heads off the way it points, as if setting out.
+              className="inline-block transition-transform duration-200 group-hover:translate-x-[3px] group-hover:-translate-y-[3px]"
+            >
+              ↗
+            </span>
           </button>
           <Link to="/app" className="text-[14px] font-medium tracking-[.04em] hover:text-[#a76b4f]">
             まずは体験してみる →
           </Link>
         </div>
         <p className="text-[12px] text-[#8b927e] mt-[15px] lte640:mt-[13px]">
-          プロトタイプ公開中 · 登録なしで体験できます
+          登録不要・無料で体験できます
         </p>
       </div>
       <HeroDuo />

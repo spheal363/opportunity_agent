@@ -4,7 +4,10 @@ const CAPTION =
   'block text-center text-[13px] text-[#818771] whitespace-nowrap tracking-[.045em] ' +
   'font-medium mt-[15px] lte900:text-[12px] lte900:whitespace-normal lte640:mt-[8px]';
 
-const PORTRAIT_IMG = 'absolute w-[78%] h-[78%] object-contain left-[11%] top-[11%]';
+const PORTRAIT_IMG = 'absolute object-contain';
+const LISTEN_IMG = `${PORTRAIT_IMG} w-[78%] h-[78%] left-[11%] top-[11%]`;
+/* Smaller and nudged left, so the star and its rays stay clear of the scalloped outline. */
+const FOUND_IMG = `${PORTRAIT_IMG} z-[1] w-[74%] h-[74%] left-[11%] top-[13%]`;
 const FRAME_IMG = 'absolute [inset:-5%] w-[110%] h-[110%] object-contain z-[-1]';
 
 /**
@@ -26,7 +29,7 @@ export function HeroDuo() {
         <div className="frame-portrait relative aspect-square isolate">
           <img className={FRAME_IMG} src="/assets/frame-listen.png" alt="" aria-hidden="true" />
           <img
-            className={PORTRAIT_IMG}
+            className={LISTEN_IMG}
             src="/assets/welcome-listen.png"
             width={1254}
             height={1254}
@@ -42,7 +45,7 @@ export function HeroDuo() {
         <div className="frame-portrait relative aspect-square isolate">
           <img className={FRAME_IMG} src="/assets/frame-found.png" alt="" aria-hidden="true" />
           <img
-            className={`${PORTRAIT_IMG} z-[1]`}
+            className={FOUND_IMG}
             src="/assets/welcome-found.png"
             width={1254}
             height={1254}

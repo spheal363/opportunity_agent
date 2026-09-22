@@ -81,9 +81,18 @@
     line-height: 1.85;
   }
 
+  /* ページ内リンクの着地点が、上に固定したヘッダー（94 / 82 / 76px）に隠れないようにする。 */
   html:has(body[data-page='welcome']) {
     scroll-behavior: smooth;
-    scroll-padding-top: 40px;
+    scroll-padding-top: calc(94px + 40px);
+
+    @media (max-width: 900px) {
+      scroll-padding-top: calc(82px + 40px);
+    }
+
+    @media (max-width: 640px) {
+      scroll-padding-top: calc(76px + 40px);
+    }
   }
 
   a {
