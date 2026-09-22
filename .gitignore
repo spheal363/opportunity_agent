@@ -238,6 +238,9 @@ token.json
 # SQLite（MVP のローカル DB）
 *.db
 *.db-journal
+# 手で取った DB の控え。**実データを含む。**
+*.db.bak-*
+*.db.bak
 *.sqlite3
 
 # OS
