@@ -1052,3 +1052,16 @@ def test_a_community_that_started_long_ago_is_not_closed():
         now=NOW,
     )
     assert status is not availability.Availability.CLOSED
+
+
+def test_a_ticketed_event_still_has_an_action():
+    """**応募が要らない催しにも行動がある。**
+
+    実測で、入場料と会場が分かっているクラブイベント（`Azumaya -Tuesday-`、
+    ¥1500・渋谷）の `recommended_action` が null になり、推薦の手前で落ちた。
+    応募先が無いことを理由に null にしない。
+    """
+    from ai.prompts import extraction as prompt
+
+    assert "チケットを購入する" in prompt.SYSTEM
+    assert "応募先が無いことを理由に null にしない" in prompt.SYSTEM

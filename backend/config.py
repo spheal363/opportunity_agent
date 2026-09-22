@@ -89,9 +89,10 @@ class Settings(BaseSettings):
     # 候補が足りない希望について、一覧を何ページ辿るか
     listing_pages_per_wish: int = 2
     # 1 つの一覧から、個別イベントを何件まで読むか
-    listing_links_per_page: int = 4
+    # **品質優先で増やした。** 参考にする出力は 1 ジャンル 10 件規模。
+    listing_links_per_page: int = 8
     # 1 run 全体で、一覧からの追加取得を何件まで許すか
-    listing_max_fetches: int = 12
+    listing_max_fetches: int = 24
     # 条件に合う候補が 0 件の方向について、読み足す巡の上限。
     # **0 なら読み足さない**（従来の挙動）。新しい候補が増えなくなっても止まる。
     listing_stop_after_empty_rounds: int = 2

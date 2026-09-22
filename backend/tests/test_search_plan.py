@@ -279,3 +279,9 @@ def test_ticketed_events_do_not_get_an_application_word():
     """
     assert "チケットを買って行く催し" in prompt.SYSTEM
     assert "応募するものではないので検索が外れる" in prompt.SYSTEM
+
+
+def test_listings_may_be_targeted_by_words_not_by_site_name():
+    """一覧・カレンダーを狙う語は使ってよい。**サイト名は書かせない。**"""
+    assert "イベントカレンダー" in prompt.SYSTEM
+    assert "特定のサイト名を書かない" in prompt.SYSTEM
