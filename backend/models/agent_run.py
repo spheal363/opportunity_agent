@@ -44,6 +44,17 @@ class AgentRun(Base):
     # **本文を読んだかどうかに関わらず全件。** 読んだ分だけが Opportunity 行になる。
     # 保存するのはタイトルと URL だけで、**本文は残さない**。
     search_candidates: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 検索専用モデルの回答そのものと引用 URL（#47）。
+    # **一覧は本文を取りに行かないので、根拠はこれしか残らない。**
+    # 切れた回答・解析できなかった回答も、そのまま残す。
+    discovery_answers: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # **この run の入力原文。** プロフィールを後から編集しても、
+    # 過去 run の探索条件が置き換わらないようにする（#47）。
+    # 古い run は None。**現在のプロフィールで補わない。**
+    wishes_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    region_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    # `selected_ids` の先頭いくつが「おすすめ」か。**評価できなければ 0。**
+    recommended_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # コスト計測（OrcaRouter のモデル振り分けを見せるため）
     cost_jpy: Mapped[float] = mapped_column(Float, default=0.0)

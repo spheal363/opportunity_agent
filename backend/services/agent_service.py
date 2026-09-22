@@ -29,13 +29,54 @@ def get_run(db: Session, run_id: str, user_id: str) -> AgentRunState | None:
     row = db.get(AgentRun, run_id)
     if row is None or row.user_id != user_id:
         return None
-    return AgentRunState.model_validate(row, from_attributes=True)
+    state = AgentRunState.model_validate(row, from_attributes=True)
+    # **原文とは別枠。** AI が整理した方向を、原文の置き換えに使わない。
+    state.goal_directions = _goal_directions(row)
+    return state
 
 
 def list_logs(db: Session, run_id: str) -> list[AgentLogEntry]:
     """run の Log。**呼ぶ前に `get_run` で所有者を確かめること。**"""
     rows = db.query(AgentLog).filter(AgentLog.run_id == run_id).order_by(AgentLog.id.asc()).all()
     return [AgentLogEntry.model_validate(r, from_attributes=True) for r in rows]
+
+
+def _profile_changed_since(db: Session, run) -> bool:
+    """この run のあとにプロフィールが編集されたか（#47）。
+
+    **編集しただけでは探索は走らない。** 画面が「いまの希望の結果」に
+    見えてしまうので、区別できるようにする。
+    """
+    profile = db.get(UserProfile, run.user_id)
+    if profile is None or profile.updated_at is None or run.created_at is None:
+        return False
+    return profile.updated_at > run.created_at
+
+
+def _goal_directions(run) -> list[str]:
+    """AI が整理した探索方向。**原文の置き換えには使わない。**"""
+    ga = run.goal_analysis or {}
+    return list(ga.get("wanted_now") or [])
+
+
+def latest_result(db: Session, user_id: str) -> AgentRunResult | None:
+    """**そのユーザーの最新の完了 run**の結果（#47）。
+
+    ホームはここを見る。`GET /api/opportunities` は保存一覧の母集合で、
+    **複数 run の候補が混ざる**。実測で、ホームが過去 run の候補まで
+    全部並べ、「3つの機会」の横に 59 と出ていた。
+
+    **評価できなかった run でも、古い run のおすすめで埋めない。**
+    最新の run の結果をそのまま返す。
+    """
+    row = (
+        db.query(AgentRun)
+        .filter(AgentRun.user_id == user_id, AgentRun.status == AgentRunStatus.COMPLETED.value)
+        # 同じ秒に 2 件あっても順序が決まるようにする。
+        .order_by(AgentRun.created_at.desc(), AgentRun.updated_at.desc())
+        .first()
+    )
+    return get_result(db, row.run_id) if row is not None else None
 
 
 def get_result(db: Session, run_id: str) -> AgentRunResult | None:
@@ -58,7 +99,16 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
     if ids is None:
         # **失敗したときこそ理由が要る。** 「記録されていません」だけでは、
         # 設定が足りないのか、探しても見つからなかったのかが分からない。
-        return AgentRunResult(run_id=run_id, status=run.status, recorded=False, error=run.error)
+        return AgentRunResult(
+            run_id=run_id,
+            status=run.status,
+            recorded=False,
+            error=run.error,
+            wishes_source=run.wishes_source,
+            region_source=run.region_source,
+            goal_directions=_goal_directions(run),
+            discovery_route=run.discovery_answers is not None,
+        )
 
     rows = {
         r.opportunity_id: r
@@ -90,6 +140,12 @@ def get_result(db: Session, run_id: str) -> AgentRunResult | None:
     return AgentRunResult(
         run_id=run_id,
         status=run.status,
+        wishes_source=run.wishes_source,
+        region_source=run.region_source,
+        goal_directions=_goal_directions(run),
+        discovery_route=run.discovery_answers is not None,
+        recommended_count=run.recommended_count or 0,
+        profile_changed_since=_profile_changed_since(db, run),
         recorded=True,
         selected=selected,
         others=others,

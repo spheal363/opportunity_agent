@@ -41,7 +41,30 @@ def list_recommended(
         .order_by(Opportunity.score.desc())
     )
     rows = (query.limit(limit) if limit else query).all()
+    rows = _ordered(rows)
     return [OpportunitySummary.model_validate(r, from_attributes=True) for r in rows]
+
+
+# 日付が分からない候補を後ろへ回すための値。**架空の日付を入れない。**
+_NO_DATE = "9999-99-99"
+
+
+def _ordered(rows: list[Opportunity]) -> list[Opportunity]:
+    """並び順。**未評価の候補に点数順を使わない（#47）。**
+
+    評価済みだけなら従来どおり点数順。1 件でも未評価があるなら
+    **ジャンル（希望）別・日付順**にする。評価は一覧表示の必須処理ではない。
+    """
+    if rows and all(bool(getattr(r, "evaluated", False)) for r in rows):
+        return rows
+    return sorted(
+        rows,
+        key=lambda r: (
+            r.wish or "",
+            r.start_at.date().isoformat() if r.start_at else _NO_DATE,
+            r.title or "",
+        ),
+    )
 
 
 def get_owned(db: Session, opportunity_id: str, user_id: str) -> Opportunity | None:

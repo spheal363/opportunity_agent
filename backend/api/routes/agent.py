@@ -41,6 +41,22 @@ def start_run(
     return ok(AgentRunCreated(run_id=run_id, status=AgentRunStatus.QUEUED))
 
 
+@router.get("/runs/latest/result", response_model=ApiSuccess[AgentRunResult])
+def get_latest_result(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(current_user_id),
+) -> dict:
+    """**そのユーザーの最新の完了 run**の結果（#47）。ホームが使う。
+
+    `GET /api/opportunities` は複数 run の候補が混ざるので、
+    ホームの「おすすめ」には使わない。
+    """
+    result = agent_service.latest_result(db, user_id)
+    if result is None:
+        raise NotFound("完了した探索がまだありません")
+    return ok(result)
+
+
 @router.get("/runs/{run_id}", response_model=ApiSuccess[AgentRunState])
 def get_run(
     run_id: str,

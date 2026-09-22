@@ -34,6 +34,12 @@ class AgentRunState(BaseModel):
 
     run_id: str
     status: AgentRunStatus
+    # **この run の入力原文。** 改行を保ったまま返す。
+    # 古い run は None。**現在のプロフィールで補わない。**
+    wishes_source: str | None = None
+    region_source: str | None = None
+    # AI が整理した探索方向。**原文の置き換えには使わない。別枠で見せる。**
+    goal_directions: list[str] = Field(default_factory=list)
     current_step: AgentStep | None = None
     message: str | None = None
     progress: int = Field(default=0, ge=0, le=100)
@@ -82,6 +88,20 @@ class AgentRunResult(BaseModel):
 
     run_id: str
     status: AgentRunStatus
+    # **この run の入力原文。** 改行を保ったまま返す。古い run は None。
+    # **現在のプロフィールで補わない。**
+    wishes_source: str | None = None
+    region_source: str | None = None
+    # AI が整理した探索方向。**原文の置き換えには使わない。別枠で見せる。**
+    goal_directions: list[str] = Field(default_factory=list)
+    # この run が新しい探索経路か。**旧経路の画面を変えないため。**
+    discovery_route: bool = False
+    # `selected` の先頭いくつが「おすすめ」か。**評価できなければ 0。**
+    # **未評価を「おすすめ」と呼ばないため、件数で区別する。**
+    recommended_count: int = 0
+    # **この探索のあとにプロフィールが編集されたか。**
+    # True なら画面は「前回の探索結果」と分かるように出す。
+    profile_changed_since: bool = False
     # 結果が記録されているか。未完了・古い run では False
     recorded: bool = False
     # 順位順。**3 件に満たないことがある**
