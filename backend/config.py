@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # LLM を呼ばずモックデータで Agent Loop を流すモード。
     agent_stub_mode: bool = True
 
+    # 攻撃を仕込んだページを検索結果に 1 件混ぜる（Prompt Injection のデモ, #52）。
+    # 検知と除去は本番と同じコードが行う。本番の探索では false のまま。
+    demo_injection: bool = False
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.frontend_url.split(",") if o.strip()]

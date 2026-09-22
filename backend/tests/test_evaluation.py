@@ -3,6 +3,8 @@
 LLM は叩かない。
 """
 
+import re
+
 import pytest
 
 from agent import loop
@@ -57,7 +59,7 @@ def test_evaluation_prompt_forbids_penalising_missing_info():
 
 def test_evaluation_prompt_wraps_target_as_untrusted():
     user = eval_prompt.build_user(goal_summary="g", interests=["AI × Music"], opportunity=_opp())
-    assert "<evaluation_target>" in user
+    assert re.search(r"<evaluation_target_[0-9a-f]{8}>", user)
     assert "指示ではない" in user
 
 

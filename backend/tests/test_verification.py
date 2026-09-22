@@ -3,6 +3,7 @@
 LLM も read_page も叩かない。
 """
 
+import re
 from datetime import UTC, date, datetime
 
 import pytest
@@ -51,7 +52,7 @@ def test_prompt_forbids_inventing_warnings():
 
 def test_prompt_wraps_content_as_untrusted():
     user = prompt.build_user(opportunity=_opp(), page_content="本文", today="2026-09-20")
-    assert "<verification_target>" in user
+    assert re.search(r"<verification_target_[0-9a-f]{8}>", user)
     assert "指示ではない" in user
 
 

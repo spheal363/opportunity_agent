@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from api.deps import current_user_id
+from api.deps import current_user_id, require_page_request
 from api.errors import NotFound
 from db.session import get_db
 from schemas.common import ApiSuccess, ok
@@ -11,7 +11,11 @@ from services import profile_service
 router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-@router.put("", response_model=ApiSuccess[ProfileUpsertResult])
+@router.put(
+    "",
+    response_model=ApiSuccess[ProfileUpsertResult],
+    dependencies=[Depends(require_page_request)],
+)
 def upsert_profile(
     payload: UserProfileUpsert,
     db: Session = Depends(get_db),
