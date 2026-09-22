@@ -34,6 +34,9 @@ TOP_N = 3
 # 0 にすると王道の求人ばかりが並び、この製品である意味がなくなる。
 # 1 にすると目標から遠いものが上位に来る。
 _SERENDIPITY_WEIGHT = 0.3
+# 学習（agent/reflection.py）が意外性の重みを動かしてよい範囲。
+# **狭く取る。** 反応が偏っても、王道ばかり・遠いものばかりにはしない。
+SERENDIPITY_WEIGHT_RANGE = (0.2, 0.45)
 
 
 def evaluate(

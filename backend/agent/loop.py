@@ -21,7 +21,7 @@ from urllib.parse import unquote_plus, urlparse
 
 from sqlalchemy.orm import Session
 
-from agent import demo_attack, stub_data
+from agent import demo_attack, reflection, stub_data
 from agent.state import AgentState
 from ai import availability, cost, guard
 from ai.concurrency import map_parallel
@@ -119,6 +119,10 @@ def _run(db: Session, run_id: str, user_id: str) -> None:
             return
 
         _step(db, state, AgentStep.ANALYZING_PROFILE, "プロフィールを分析しています")
+        # ⑧ Reflection は run の冒頭で行う（フィードバックを受けた時点ではない）。
+        # 毎回すべての反応から作り直すので、押した順番や途中で落ちた run に左右されない。
+        # **AgentStep は増やさない**（API Schema の変更になる）。プロフィール分析の一部として出す。
+        _reflect(db, state)
         with cost.step("goal_analysis"):
             state.goal_analysis = _analyze_goal(profile)
         _log(db, state, AgentStep.ANALYZING_PROFILE, state.goal_analysis.goal_summary)
@@ -170,6 +174,29 @@ def _public_error(exc: Exception) -> str:
 # --------------------------------------------------------------------------
 # 各ステップ（TODO: stub を実処理へ差し替える）
 # --------------------------------------------------------------------------
+
+
+def _reflect(db: Session, state: AgentState) -> reflection.Learned:
+    """⑧ Reflection。前回までの反応を振り返る（#48）。
+
+    **LLM を使わない**ので stub でも同じコードが走る（API キー無しのデモでも見える）。
+    振り返りに失敗しても探索は止めない。学習を反映しない、いつもの探索に戻るだけ。
+    """
+    try:
+        learned = reflection.reflect(db, state.user_id)
+    except Exception as exc:  # 学習は補助。失敗で run 全体を落とさない
+        logger.warning("reflection.failed run_id=%s %s", state.run_id, describe_exception(exc))
+        db.rollback()
+        _log(
+            db,
+            state,
+            AgentStep.ANALYZING_PROFILE,
+            "前回までの反応を読み込めなかったため、今回は反映せずに探します",
+        )
+        return reflection.NOTHING
+    if message := reflection.describe(learned):
+        _log(db, state, AgentStep.ANALYZING_PROFILE, message)
+    return learned
 
 
 def _analyze_goal(profile: UserProfile) -> GoalAnalysisOutput:
