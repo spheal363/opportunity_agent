@@ -109,6 +109,6 @@ def record_feedback(
         row.status = OpportunityStatus.DISMISSED
     db.commit()
     # Reflection（Feedback から Agent Memory を更新する）はここでは行わない。
-    # 次の run の冒頭で行う（agent/reflection.py、別ブランチで実装中）。
+    # 次の run の冒頭で行う（agent/reflection.py）。
     # 👎が重なったときに探し直すかどうかは services/auto_explore.py が決める。
     return True
