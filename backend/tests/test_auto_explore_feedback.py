@@ -109,6 +109,20 @@ def test_same_dislike_twice_counts_once(db, picks):
     assert _decide(db) is None
 
 
+def test_latest_like_cancels_an_earlier_dislike_even_if_status_is_dismissed(db, picks):
+    add_dislike(db, "a")
+    db.get(Opportunity, "a").status = OpportunityStatus.DISMISSED
+    db.add(Feedback(user_id=USER, opportunity_id="a", reaction="like"))
+    db.commit()
+    add_dislike(db, "b")
+
+    assert _decide(db) is None
+
+    # もう一度👎に変えた場合は最新の反応で数える。
+    add_dislike(db, "a")
+    assert _decide(db) is not None
+
+
 @pytest.mark.parametrize(
     "status", [AgentRunStatus.QUEUED, AgentRunStatus.RUNNING, AgentRunStatus.FAILED]
 )

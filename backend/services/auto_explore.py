@@ -113,7 +113,8 @@ def decide_after_feedback(
     成り立つ条件:
       - 最新の run が完了している（**それより新しい run があれば始めない**）
       - その推薦（selected_ids）が 2 件以上
-      - そのうち 2 件以上、かつ過半数に👎（reaction=dislike か status=dismissed）
+      - そのうち 2 件以上、かつ過半数に👎（最新の reaction が dislike。
+        反応の記録が無い候補だけ status=dismissed を使う）
 
     **同じ run への探し直しは 1 回まで。** 探し直した run は元の run より新しいので、
     以後は「最新の run が完了している」を満たさない。探し直した run が失敗しても、
@@ -270,26 +271,25 @@ def _unless_blocked(
 
 
 def _count_disliked(db: Session, user_id: str, ids: list[str]) -> int:
-    """推薦のうち👎が付いた件数。Feedback の dislike か、status=dismissed。"""
-    by_feedback = {
-        oid
-        for (oid,) in db.query(Feedback.opportunity_id)
+    """最新の反応を数える。付け直した👍を古い👎や dismissed で上書きしない。"""
+    latest: dict[str, str] = {}
+    for oid, reaction in (
+        db.query(Feedback.opportunity_id, Feedback.reaction)
         .filter(
             Feedback.user_id == user_id,
             Feedback.opportunity_id.in_(ids),
-            Feedback.reaction == Reaction.DISLIKE,
         )
-        .distinct()
-    }
-    by_status = {
-        oid
-        for (oid,) in db.query(Opportunity.opportunity_id).filter(
-            Opportunity.user_id == user_id,
-            Opportunity.opportunity_id.in_(ids),
-            Opportunity.status == OpportunityStatus.DISMISSED,
-        )
-    }
-    return len(by_feedback | by_status)
+        .order_by(Feedback.created_at, Feedback.id)
+    ):
+        latest[oid] = reaction
+    rows = db.query(Opportunity.opportunity_id, Opportunity.status).filter(
+        Opportunity.user_id == user_id,
+        Opportunity.opportunity_id.in_(ids),
+    )
+    return sum(
+        latest[oid] == Reaction.DISLIKE if oid in latest else status == OpportunityStatus.DISMISSED
+        for oid, status in rows
+    )
 
 
 # --------------------------------------------------------------------------
