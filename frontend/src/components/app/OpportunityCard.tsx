@@ -103,12 +103,34 @@ export function OpportunityCard({
           </span>
         </div>
         {opportunity.reason ? (
-          <p className="text-[14px] leading-[1.85] p-[12px] bg-[#f7f8f4] rounded-[5px] mt-[14px] mb-[17px] flex-1 text-[#596653]">
+          <div className="text-[14px] leading-[1.85] p-[12px] bg-[#f7f8f4] rounded-[5px] mt-[14px] mb-[17px] flex-1 text-[#596653]">
+            {/* **マッチ度は「AI による希望との適合度の目安」。**
+                正確さでも、受付中である確率でも、参加資格を満たす確率でもない。
+                未評価の候補には出さない（架空の点を出さないため）。 */}
+            {opportunity.evaluated ? (
+              <span
+                className="inline-block text-[12px] font-medium mb-[6px] px-[8px] py-[2px] rounded-[20px] bg-[#e7ede4] text-[#4d6b52]"
+                title="AIによる希望との適合度の目安です。正確さ・受付状況・参加資格の判定ではありません。"
+              >
+                マッチ度 {opportunity.score}
+                <span className="text-[#7a8977]">（適合度の目安）</span>
+              </span>
+            ) : null}
             <strong className="block text-[12px] tracking-[.04em] font-medium mb-[5px] text-[#7a8977]">
               あなたにおすすめする理由
             </strong>
             {opportunity.reason}
-          </p>
+            {opportunity.match_reasons.length > 0 ? (
+              <span className="block text-[12px] text-[#7a8977] mt-[6px]">
+                合致した希望: {opportunity.match_reasons.join(' / ')}
+              </span>
+            ) : null}
+            {opportunity.unknowns.length > 0 ? (
+              <span className="block text-[12px] text-[#8a7f6d] mt-[4px]">
+                判断に必要な未確認: {opportunity.unknowns.join(' / ')}
+              </span>
+            ) : null}
+          </div>
         ) : (
           <div className="flex-1" />
         )}

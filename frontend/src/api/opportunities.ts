@@ -24,6 +24,18 @@ export async function fetchOpportunity(id: string): Promise<OpportunityDetail> {
   return api.get<OpportunityDetail>(`/opportunities/${id}`);
 }
 
+/**
+ * ユーザーが選んだ **1 件だけ** 出典を取得して確かめる（#47）。
+ *
+ * 一覧の全件には行わない。直近に確認済みなら Backend 側で取り直さないので、
+ * 連打しても二重に走らない。
+ * **取得できなかったことは誤りではない。** 未確認のまま返る。
+ */
+export async function checkDetail(id: string): Promise<OpportunityDetail> {
+  if (USE_MOCK) return fetchOpportunity(id);
+  return api.post<OpportunityDetail>(`/opportunities/${id}/detail-check`);
+}
+
 /** 「参加したい」。Backend 側で status 更新と公式情報の再確認を行う。 */
 export async function markInterested(id: string): Promise<InterestResult> {
   if (USE_MOCK) {

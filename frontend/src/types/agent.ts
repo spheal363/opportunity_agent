@@ -16,6 +16,11 @@ export type AgentRunCreated = {
 export type AgentRun = {
   run_id: string;
   status: AgentRunStatus;
+  /** **この run の入力原文。** 改行を保つ。古い run は null。 */
+  wishes_source: string | null;
+  region_source: string | null;
+  /** AI が整理した探索方向。**原文の置き換えには使わない。** */
+  goal_directions: string[];
   current_step: AgentStep | null;
   message: string | null;
   progress: number;
@@ -71,6 +76,9 @@ export type SearchCandidate = {
   verified: boolean;
 };
 
+/** run の対象期間。**日付は `tz` で解釈する。** */
+export type SearchWindow = { start: string; end: string; tz: string; days: number };
+
 export type AgentRunResult = {
   run_id: string;
   status: AgentRunStatus;
@@ -81,7 +89,7 @@ export type AgentRunResult = {
   /** 3 件に満たなかった理由 */
   shortfall_reason: string | null;
   /** この run が対象にした期間（#47）。この列が付く前の run では null */
-  search_window: { start: string; end: string; tz: string; days: number } | null;
+  search_window: SearchWindow | null;
   /**
    * 推薦しなかったが、**本文まで読んで抽出できた**候補。
    *
@@ -96,4 +104,15 @@ export type AgentRunResult = {
   search_candidates: SearchCandidate[];
   /** 失敗した理由。**「記録されていません」だけでは原因が分からない。** */
   error: string | null;
+  /** **この run の入力原文。** 改行を保つ。古い run は null。 */
+  wishes_source: string | null;
+  region_source: string | null;
+  /** AI が整理した探索方向。**原文の置き換えには使わない。** */
+  goal_directions: string[];
+  /** 新しい探索経路の run か。**旧経路の画面を変えないため。** */
+  discovery_route: boolean;
+  /** `selected` の先頭いくつが「おすすめ」か。**評価できなければ 0。** */
+  recommended_count: number;
+  /** **この探索のあとにプロフィールが編集されたか。** */
+  profile_changed_since: boolean;
 };

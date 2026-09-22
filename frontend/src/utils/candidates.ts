@@ -91,3 +91,40 @@ export function splitCandidates(selected: Opportunity[], others: Opportunity[]):
     },
   ].filter((b) => b.items.length > 0);
 }
+
+
+/** 開催日ごとのまとまり（#47）。**一覧は日付見出しで区切る。** */
+export type CompactGroup = { key: string; heading: string; items: Opportunity[] };
+
+/** 見出しに使う日付。**時刻は出さない。** */
+function dateHeading(value: string): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  }).format(new Date(value));
+}
+
+/**
+ * 開催日ごとにまとめる。
+ *
+ * **複数日開催は開始日の見出しに 1 度だけ置く。** 日ごとに同じ企画を
+ * 並べると、1 つの催しが何件にも見える。
+ */
+export function groupByDate(items: Opportunity[]): CompactGroup[] {
+  const map = new Map<string, Opportunity[]>();
+  for (const o of items) {
+    if (!o.start_at) continue;
+    const key = new Date(o.start_at).toDateString();
+    const bucket = map.get(key);
+    if (bucket) bucket.push(o);
+    else map.set(key, [o]);
+  }
+  return [...map.entries()]
+    .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+    .map(([key, group]) => ({
+      key,
+      heading: dateHeading(group[0].start_at as string),
+      items: group,
+    }));
+}

@@ -17,14 +17,19 @@ import { EYEBROW } from './styles';
 
 type Props = {
   selected: Opportunity[];
+  /** 上の一覧で出した枠。**同じ候補を 2 度出さない。** */
+  skipKeys?: string[];
   others: Opportunity[];
   /** 期間が分かる run か。分からない run では 0 件の断定をしない。 */
   hasWindow: boolean;
 };
 
-export function CandidateSections({ selected, others, hasWindow }: Props) {
-  const buckets = splitCandidates(selected, others);
-  const inWindow = buckets.find((b) => b.key === 'in_window');
+export function CandidateSections({ selected, others, hasWindow, skipKeys = [] }: Props) {
+  const all = splitCandidates(selected, others);
+  const buckets = all.filter((b) => !skipKeys.includes(b.key));
+  // **上の一覧で出した枠も数に入れる。** ここから外しただけで
+  // 「期間内は 0 件」と書くと、上に並べた候補と食い違う。
+  const inWindow = all.find((b) => b.key === 'in_window');
 
   return (
     <div className="mt-[24px]">
